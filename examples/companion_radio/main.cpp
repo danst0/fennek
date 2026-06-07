@@ -2740,10 +2740,21 @@ static bool otaRadioPaused = false;
 void otaPauseRadio() {
   otaRadioPaused = true;
   radio.standby();
+  // Transfer in progress (file manager / OTA): full speed ahead — WiFi
+  // modem sleep throttles throughput to a fraction, and the CPU may be
+  // scaled down. Both are restored in otaResumeRadio().
+  #if defined(MECK_WIFI_COMPANION) || defined(MECK_FILEMGR_STA)
+  WiFi.setSleep(false);
+  #endif
+  cpuPower.setBoost();
   Serial.println("OTA: Radio standby, mesh loop paused");
 }
 
 void otaResumeRadio() {
+  // Transfer done — re-enable WiFi modem sleep (battery)
+  #if defined(MECK_WIFI_COMPANION) || defined(MECK_FILEMGR_STA)
+  WiFi.setSleep(true);
+  #endif
   #ifdef MECK_RADIO_TOGGLES
   if (loraRadioOff) {
     // User has LoRa toggled off — return the radio to sleep, not RX
