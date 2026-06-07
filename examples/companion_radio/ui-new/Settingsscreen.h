@@ -28,6 +28,7 @@
 #endif
 
 #include "WifiConfig.h"  // central /web/wifi.cfg helpers (DHCP / static IP)
+#include <vector>        // fmDeleteRecursive child collection
 
 #ifdef MECK_OTA_UPDATE
   #ifndef MECK_WIFI_COMPANION
@@ -1484,7 +1485,13 @@ public:
           String dir = _otaServer->arg("dir");
           if (dir.isEmpty()) dir = "/";
           if (!dir.endsWith("/")) dir += "/";
-          String fullPath = dir + upload.filename;
+          // Folder uploads: ?rel= carries the path relative to the target
+          // dir (e.g. "album/01.mp3"); subfolders are created as needed.
+          String name = _otaServer->arg("rel");
+          while (name.startsWith("/")) name = name.substring(1);
+          if (name.length() == 0 || name.indexOf("..") >= 0) name = upload.filename;
+          String fullPath = dir + name;
+          fmEnsureParentDirs(fullPath);
           Serial.printf("FM: Upload start: %s\n", fullPath.c_str());
           fmUploadFile = SD.open(fullPath, FILE_WRITE);
           if (!fmUploadFile) Serial.println("FM: Failed to open file for write");
@@ -1529,7 +1536,8 @@ public:
       _otaServer->send(303);
     });
 
-    // --- Delete file/folder: GET /rm?path=/file&ret=/parent ---
+    // --- Delete file/folder (recursive, no confirmation):
+    //     GET /rm?path=/file&ret=/parent ---
     _otaServer->on("/rm", HTTP_GET, [this]() {
       String path = _otaServer->arg("path");
       String ret = _otaServer->arg("ret");
@@ -1539,45 +1547,12 @@ public:
         _otaServer->send(303);
         return;
       }
-      File f = SD.open(path);
-      bool ok = false;
-      if (f) {
-        bool isDir = f.isDirectory();
-        f.close();
-        ok = isDir ? SD.rmdir(path) : SD.remove(path);
-      }
+      bool ok = fmDeleteRecursive(path);
       digitalWrite(SDCARD_CS, HIGH);
       Serial.printf("FM: rm '%s' %s\n", path.c_str(), ok ? "OK" : "FAIL");
       _otaServer->sendHeader("Location",
         "/?path=" + ret + "&msg=" + (ok ? "Deleted" : "Delete+failed"));
       _otaServer->send(303);
-    });
-
-    // --- Confirm delete page: GET /confirm-rm?path=/file&ret=/parent ---
-    _otaServer->on("/confirm-rm", HTTP_GET, [this]() {
-      String path = _otaServer->arg("path");
-      String ret = _otaServer->arg("ret");
-      if (ret.isEmpty()) ret = "/";
-      String name = path;
-      int sl = name.lastIndexOf('/');
-      if (sl >= 0) name = name.substring(sl + 1);
-      String html = "<!DOCTYPE html><html><head>"
-        "<meta charset='UTF-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>Confirm Delete</title>"
-        "<style>"
-        "body{font-family:-apple-system,sans-serif;max-width:480px;margin:40px auto;"
-        "padding:0 20px;background:#1a1a2e;color:#e0e0e0;text-align:center}"
-        ".b{display:inline-block;padding:10px 24px;border-radius:6px;text-decoration:none;"
-        "font-weight:bold;margin:8px;font-size:1em}"
-        ".br{background:#e74c3c;color:#fff}.bg{background:#4ecca3;color:#1a1a2e}"
-        "</style></head><body>"
-        "<h2 style='color:#e74c3c'>Delete?</h2>"
-        "<p style='font-size:1.1em'>" + fmHtmlEscape(name) + "</p>"
-        "<a class='b br' href='/rm?path=" + fmUrlEncode(path) + "&ret=" + fmUrlEncode(ret) + "'>Delete</a>"
-        "<a class='b bg' href='/?path=" + fmUrlEncode(ret) + "'>Cancel</a>"
-        "</body></html>";
-      _otaServer->send(200, "text/html", html);
     });
 
     // --- Rename file/folder: GET /rename?path=/old&name=newname&ret=/parent ---
@@ -1694,6 +1669,47 @@ public:
   }
 
   // --- Helpers for server-rendered HTML ---
+
+  // Delete a file, or a directory tree recursively (FAT rmdir only works on
+  // empty directories). Collects child names first — deleting while
+  // iterating an open directory is unreliable on the SD VFS.
+  static bool fmDeleteRecursive(const String& path) {
+    File f = SD.open(path);
+    if (!f) return false;
+    if (!f.isDirectory()) {
+      f.close();
+      return SD.remove(path);
+    }
+    std::vector<String> children;
+    File child = f.openNextFile();
+    while (child) {
+      const char* n = child.name();
+      children.push_back(String(n));
+      child.close();
+      child = f.openNextFile();
+    }
+    f.close();
+    for (auto& c : children) {
+      // File::name() returns the basename on current cores, a full path on
+      // older ones — handle both.
+      String childPath = c.startsWith("/") ? c : (path + "/" + c);
+      yield();  // feed WDT on large trees
+      if (!fmDeleteRecursive(childPath)) return false;
+    }
+    return SD.rmdir(path);
+  }
+
+  // Create all parent directories of an absolute SD file path (for folder
+  // uploads where ?rel= contains subdirectories).
+  static void fmEnsureParentDirs(const String& fullPath) {
+    int from = 1;
+    int slash;
+    while ((slash = fullPath.indexOf('/', from)) > 0) {
+      String d = fullPath.substring(0, slash);
+      if (!SD.exists(d)) SD.mkdir(d);
+      from = slash + 1;
+    }
+  }
 
   static String fmHtmlEscape(const String& s) {
     String r;
@@ -1845,19 +1861,116 @@ public:
             html += "<span class='sz'>" + fmFormatSize(entries[i].size) + "</span>";
           }
           html += "<a class='b br' style='background:#16213e;color:#4ecca3' href='/confirm-ren?path=" + fmUrlEncode(fp) + "&ret=" + fmUrlEncode(path) + "'>Ren</a>";
-          html += "<a class='b br' href='/confirm-rm?path=" + fmUrlEncode(fp) + "&ret=" + fmUrlEncode(path) + "'>Del</a>";
+          html += "<a class='b br' href='/rm?path=" + fmUrlEncode(fp) + "&ret=" + fmUrlEncode(path) + "'>Del</a>";
           html += "</div>";
         }
       }
     }
 
-    // --- Upload form (standard HTML form, no JS needed) ---
-    html += "<div class='up'>"
-      "<form method='POST' action='/upload?dir=" + fmUrlEncode(path) + "' enctype='multipart/form-data'>"
-      "<p>Select files to upload</p>"
-      "<input type='file' name='file' multiple><br><br>"
-      "<button class='b' type='submit'>Upload</button>"
-      "</form></div>";
+    // --- Upload area: drag & drop (files AND whole folder trees) ---
+    // Dropped directories are traversed recursively via webkitGetAsEntry();
+    // every file is uploaded sequentially with its relative path in ?rel=,
+    // and the server creates the subfolders. One picker button remains as
+    // the fallback for mobile browsers (no folder drop support there).
+    html += "<div class='up' id='drop'>"
+      "<p><b>Drag &amp; drop</b> files or folders here</p>"
+      "<div style='display:flex;gap:6px;justify-content:center;flex-wrap:wrap'>"
+      "<label class='b'>Select files<input type='file' id='fsel' multiple hidden></label>"
+      "<label class='b'>Select folder<input type='file' id='dsel' webkitdirectory multiple hidden></label>"
+      "</div>"
+      "<div id='bar' style='height:12px;background:#16213e;border:1px solid #4ecca3;"
+      "border-radius:6px;overflow:hidden;margin-top:8px;display:none'>"
+      "<div id='barfill' style='height:100%;width:0%;background:#4ecca3'></div></div>"
+      "<div id='prog' style='margin-top:6px;font-size:0.9em'></div>"
+      "</div>"
+      "<script>\n"
+      "var dir=decodeURIComponent('" + fmUrlEncode(path) + "');\n"
+      "var drop=document.getElementById('drop'),prog=document.getElementById('prog');\n"
+      "var bar=document.getElementById('bar'),barfill=document.getElementById('barfill');\n"
+      "var busy=false;\n"
+      "function setBar(done,total,label){\n"
+      " bar.style.display='block';\n"
+      " var pct=total?Math.min(100,Math.round(done*100/total)):0;\n"
+      " barfill.style.width=pct+'%';\n"
+      " prog.textContent=pct+'%  '+label;\n"
+      "}\n"
+      "function uploadOne(it,base,total){return new Promise(function(res,rej){\n"
+      " var xhr=new XMLHttpRequest();\n"
+      " xhr.open('POST','/upload?dir='+encodeURIComponent(dir)+'&rel='+encodeURIComponent(it.rel));\n"
+      " xhr.upload.onprogress=function(ev){if(ev.lengthComputable)setBar(base+ev.loaded,total,it.rel);};\n"
+      " xhr.onload=function(){xhr.status<400?res():rej('HTTP '+xhr.status);};\n"
+      " xhr.onerror=function(){rej('network error');};\n"
+      " var fd=new FormData();fd.append('file',it.f,it.f.name);\n"
+      " xhr.send(fd);\n"
+      "});}\n"
+      "async function uploadList(list){\n"
+      " if(busy||!list.length)return;busy=true;\n"
+      " var total=0,doneBytes=0,done=0;\n"
+      " for(var it of list)total+=it.f.size;\n"
+      " for(var it of list){\n"
+      "  setBar(doneBytes,total,'('+(done+1)+'/'+list.length+') '+it.rel);\n"
+      "  try{await uploadOne(it,doneBytes,total);}\n"
+      "  catch(e){prog.textContent='FAILED at '+it.rel+' ('+e+')';busy=false;return;}\n"
+      "  doneBytes+=it.f.size;done++;\n"
+      " }\n"
+      " setBar(total,total,'done');\n"
+      " location.href='/?path='+encodeURIComponent(dir)+'&msg='+done+'+file(s)+uploaded';\n"
+      "}\n"
+      "async function walkEntry(entry,prefix,out){\n"
+      " if(entry.isFile){\n"
+      "  var f=await new Promise(function(res,rej){entry.file(res,rej);});\n"
+      "  out.push({f:f,rel:prefix+entry.name});\n"
+      " }else if(entry.isDirectory){\n"
+      "  var rd=entry.createReader(),batch;\n"
+      "  do{\n"
+      "   batch=await new Promise(function(res,rej){rd.readEntries(res,rej);});\n"
+      "   for(var e of batch)await walkEntry(e,prefix+entry.name+'/',out);\n"
+      "  }while(batch.length);\n"
+      " }\n"
+      "}\n"
+      "drop.ondragover=function(e){e.preventDefault();drop.style.background='#1f2b50';};\n"
+      "drop.ondragleave=function(){drop.style.background='';};\n"
+      "drop.ondrop=function(e){\n"
+      " e.preventDefault();drop.style.background='';\n"
+      " /* collect entries SYNCHRONOUSLY - DataTransferItems are neutered after the first await */\n"
+      " var items=e.dataTransfer.items,entries=[];\n"
+      " if(items)for(var i=0;i<items.length;i++){\n"
+      "  var en=items[i].webkitGetAsEntry?items[i].webkitGetAsEntry():null;\n"
+      "  if(en)entries.push(en);\n"
+      " }\n"
+      " if(entries.length){\n"
+      "  prog.textContent='Scanning...';\n"
+      "  (async function(){\n"
+      "   var out=[];\n"
+      "   try{for(var en of entries)await walkEntry(en,'',out);}\n"
+      "   catch(err){prog.textContent='Scan failed: '+err;return;}\n"
+      "   if(!out.length){prog.textContent='Nothing to upload';return;}\n"
+      "   uploadList(out);\n"
+      "  })();\n"
+      " }else if(e.dataTransfer.files&&e.dataTransfer.files.length){\n"
+      "  /* no entry API (e.g. drag from a network share) - upload readable\n"
+      "     files flat, skip directory pseudo-files */\n"
+      "  (async function(){\n"
+      "   var out=[],skipped=0;\n"
+      "   for(var f of e.dataTransfer.files){\n"
+      "    try{await f.slice(0,1).arrayBuffer();out.push({f:f,rel:f.name});}\n"
+      "    catch(err){skipped++;}\n"
+      "   }\n"
+      "   if(skipped)prog.textContent=skipped+' folder(s) skipped - use the Select folder button for those';\n"
+      "   if(out.length)uploadList(out);\n"
+      "   else if(!skipped)prog.textContent='Nothing to upload';\n"
+      "  })();\n"
+      " }else{\n"
+      "  prog.textContent='Folder drop not supported here - use the Select folder button';\n"
+      " }\n"
+      "};\n"
+      "fsel.onchange=function(){\n"
+      " uploadList([...fsel.files].map(function(f){return {f:f,rel:f.webkitRelativePath||f.name};}));\n"
+      "};\n"
+      "dsel.onchange=function(){\n"
+      " uploadList([...dsel.files].map(function(f){return {f:f,rel:f.webkitRelativePath||f.name};}));\n"
+      "};\n"
+      "</script>";
 
     // --- New folder (tiny inline form) ---
     html += "<form action='/mkdir' method='GET' style='margin:8px 0;display:flex;gap:6px'>"

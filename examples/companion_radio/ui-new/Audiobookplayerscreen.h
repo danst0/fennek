@@ -74,9 +74,11 @@ static bool isAudiobookFile(const String& name) {
   String lower = name;
   lower.toLowerCase();
   // .m4b excluded: these can't currently be played, so they are hidden from
-  // the file explorer. (.m4a/.mp3/.wav remain listed.)
+  // the file explorer. FLAC/OGG/OPUS decode natively in ESP32-audioI2S.
   return lower.endsWith(".m4a") ||
-         lower.endsWith(".mp3") || lower.endsWith(".wav");
+         lower.endsWith(".mp3") || lower.endsWith(".wav") ||
+         lower.endsWith(".flac") || lower.endsWith(".ogg") ||
+         lower.endsWith(".opus");
 }
 
 // ============================================================================
@@ -717,6 +719,10 @@ private:
           entry.fileType = "M4B";
         } else if (nameLower.endsWith(".mp3")) {
           entry.fileType = "MP3";
+        } else if (nameLower.endsWith(".flac")) {
+          entry.fileType = "FLAC";
+        } else if (nameLower.endsWith(".ogg") || nameLower.endsWith(".opus")) {
+          entry.fileType = "OGG";
         } else {
           entry.fileType = "WAV";
         }
