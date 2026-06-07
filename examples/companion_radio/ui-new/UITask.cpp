@@ -1457,7 +1457,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   splash = new SplashScreen(this);
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
 #ifdef MECK_SIMPLE_LAUNCHER
-  launcher_screen = new LauncherScreen(this);
+  launcher_screen = new LauncherScreen(this, node_prefs);
   simple_settings_screen = new SimpleSettingsScreen(this, node_prefs);
 #endif
   channel_screen = new ChannelScreen(this, &rtc_clock);

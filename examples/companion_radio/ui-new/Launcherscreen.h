@@ -21,7 +21,9 @@
 #include <Arduino.h>
 #include <helpers/ui/UIScreen.h>
 #include <helpers/ui/DisplayDriver.h>
+#include "../NodePrefs.h"
 #include "UITask.h"
+#include "Statusicons.h"
 
 // --- 12x12 icon sprites, MSB-first, 2 bytes/row (same format as homeicons.h),
 //     drawn scaled up by drawIconScaled() below ---
@@ -61,7 +63,7 @@ public:
   static const int ITEM_COUNT = 5;
   enum Item : uint8_t { ITEM_READER, ITEM_MUSIC, ITEM_AUDIOBOOKS, ITEM_MESH, ITEM_SETTINGS };
 
-  LauncherScreen(UITask* task) : _task(task), _sel(0) {}
+  LauncherScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs), _sel(0) {}
 
   int render(DisplayDriver& display) override {
     static const struct { const uint8_t* icon; const char* label; } ITEMS[ITEM_COUNT] = {
@@ -73,6 +75,9 @@ public:
     };
 
     display.setColor(DisplayDriver::LIGHT);
+
+    // Title bar: WiFi + MeshCore status icons (top right, when active)
+    meckDrawStatusIcons(display, _prefs);
 
     // Edge arrows (tap zones: left/right third scroll, centre opens)
     display.setTextSize(0);
@@ -112,7 +117,7 @@ public:
       else           display.drawRect(x, 112, dotW, dotW);
     }
 
-    return 5000;  // static screen — re-rendered on input
+    return 2000;  // status icons track WiFi/LoRa state changes
   }
 
   bool handleInput(char c) override {
@@ -174,6 +179,7 @@ private:
   }
 
   UITask* _task;
+  NodePrefs* _prefs;
   int _sel;
 };
 

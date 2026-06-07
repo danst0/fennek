@@ -29,6 +29,7 @@
 #include "UITask.h"
 #include "Settingsscreen.h"
 #include "WifiConfig.h"
+#include "Statusicons.h"
 
 class SimpleSettingsScreen : public UIScreen {
 public:
@@ -52,6 +53,9 @@ public:
     display.setCursor(2, 2);
     display.print("Settings");
     display.setColor(DisplayDriver::LIGHT);
+
+    // Title bar: WiFi + MeshCore status icons (top right, when active)
+    meckDrawStatusIcons(display, _prefs);
 
     if (_editingIp) {
       renderIpEditor(display);
