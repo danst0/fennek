@@ -1276,6 +1276,15 @@ static void lastHeardToggleContact() {
       return 0;
     }
 
+#ifdef MECK_SIMPLE_LAUNCHER
+    // Launcher carousel: left/right third scrolls, centre opens the entry
+    if (ui_task.isOnLauncher()) {
+      if (vx < 43) return (char)KEY_PREV;
+      if (vx > 85) return (char)KEY_NEXT;
+      return (char)KEY_ENTER;
+    }
+#endif
+
     // --- Status bar tap (top ~18 virtual units) → go home from any non-home screen ---
     // Exception: text reader reading mode uses full screen for content (no header)
     if (vy < 18 && !ui_task.isOnHomeScreen()) {
@@ -1630,6 +1639,16 @@ static void lastHeardToggleContact() {
 #endif
 
     // Home screen: swipe left = next page, swipe right = previous page
+#ifdef MECK_SIMPLE_LAUNCHER
+    // Launcher carousel: horizontal swipe scrolls entries
+    if (ui_task.isOnLauncher()) {
+      if (horizontal) {
+        return (dx < 0) ? (char)KEY_NEXT : (char)KEY_PREV;
+      }
+      return 0;  // ignore vertical swipes on the launcher
+    }
+#endif
+
     if (ui_task.isOnHomeScreen()) {
       if (horizontal) {
         return (dx < 0) ? (char)KEY_NEXT : (char)KEY_PREV;
@@ -4351,6 +4370,24 @@ void initKeyboard() {
   }
 }
 
+#if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
+// Open the audiobook player, lazy-initing the Audio object + screen on first
+// use (~40KB of DMA/decode buffers — allocating at boot starves the BLE/WiFi
+// stack). Called from the 'p' key handler and the launcher's MP3 entry.
+void meckOpenAudiobookPlayer() {
+  if (!ui_task.getAudiobookScreen()) {
+    Serial.printf("Audiobook: lazy init - free heap: %d, largest block: %d\n",
+                   ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+    audio = new Audio();
+    AudiobookPlayerScreen* abScreen = new AudiobookPlayerScreen(&ui_task, audio, the_mesh.getNodePrefs());
+    abScreen->setSDReady(sdCardReady);
+    ui_task.setAudiobookScreen(abScreen);
+    Serial.printf("Audiobook: init complete - free heap: %d\n", ESP.getFreeHeap());
+  }
+  ui_task.gotoAudiobookPlayer();
+}
+#endif
+
 void handleKeyboardInput() {
   if (!keyboard.isReady()) return;
   
@@ -5285,16 +5322,7 @@ void handleKeyboardInput() {
     #if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
       // Otherwise: open audiobook player - lazy-init Audio + screen on first use
       Serial.println("Opening audiobook player");
-      if (!ui_task.getAudiobookScreen()) {
-        Serial.printf("Audiobook: lazy init - free heap: %d, largest block: %d\n",
-                       ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-        audio = new Audio();
-        AudiobookPlayerScreen* abScreen = new AudiobookPlayerScreen(&ui_task, audio, the_mesh.getNodePrefs());
-        abScreen->setSDReady(sdCardReady);
-        ui_task.setAudiobookScreen(abScreen);
-        Serial.printf("Audiobook: init complete - free heap: %d\n", ESP.getFreeHeap());
-      }
-      ui_task.gotoAudiobookPlayer();
+      meckOpenAudiobookPlayer();
     #endif
       break;
 

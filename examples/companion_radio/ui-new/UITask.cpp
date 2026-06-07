@@ -70,6 +70,9 @@
 #include "Textreaderscreen.h"
 #endif
 #include "Settingsscreen.h"
+#ifdef MECK_SIMPLE_LAUNCHER
+#include "Launcherscreen.h"
+#endif
 #ifdef MECK_AUDIO_VARIANT
 #include "Audiobookplayerscreen.h"
 #include "Voicemessagescreen.h"
@@ -1241,6 +1244,14 @@ public:
       // Left/right fall through to page cycling below
     }
 
+#ifdef MECK_SIMPLE_LAUNCHER
+    // Launcher build: q/Esc on the mesh home returns to the launcher hub
+    if (c == 'q' || c == KEY_CANCEL) {
+      _task->gotoHomeScreen();
+      return true;
+    }
+#endif
+
     if (c == KEY_LEFT || c == KEY_PREV || c == 'a') {
       _page = (_page + HomePage::Count - 1) % HomePage::Count;
       return true;
@@ -1444,6 +1455,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   splash = new SplashScreen(this);
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
+#ifdef MECK_SIMPLE_LAUNCHER
+  launcher_screen = new LauncherScreen(this);
+#endif
   channel_screen = new ChannelScreen(this, &rtc_clock);
   ((ChannelScreen*)channel_screen)->setDMUnreadPtr(_dmUnread);
   channel_picker_screen = new ChannelPickerScreen(this);
@@ -2891,14 +2905,21 @@ void UITask::injectKey(char c) {
 }
 
 void UITask::gotoHomeScreen() {
-  // Cancel any active editing state when navigating to home
-  ((HomeScreen *) home)->cancelEditing();
-  setCurrScreen(home);
-  if (_display != NULL && !_display->isOn()) {
-    _display->turnOn();
+#ifdef MECK_SIMPLE_LAUNCHER
+  // Launcher build: "home" is the 4-icon carousel; the stock Meck home stays
+  // reachable behind the MeshCore entry (gotoMeshHomeScreen).
+  if (launcher_screen) {
+    setCurrScreen(launcher_screen);
+    if (_display != NULL && !_display->isOn()) {
+      _display->turnOn();
+    }
+    _auto_off = millis() + AUTO_OFF_MILLIS;
+    _next_refresh = 100;
+    _pendingBootHint = false;  // hint explains the stock home layout — skip
+    return;
   }
-  _auto_off = millis() + AUTO_OFF_MILLIS;
-  _next_refresh = 100;
+#endif
+  gotoMeshHomeScreen();
 
   // Activate deferred boot hint now that home screen is visible
   if (_pendingBootHint) {
@@ -2908,6 +2929,17 @@ void UITask::gotoHomeScreen() {
     _next_refresh = millis() + 100;
     Serial.println("[UI] Boot hint activated");
   }
+}
+
+void UITask::gotoMeshHomeScreen() {
+  // Cancel any active editing state when navigating to home
+  ((HomeScreen *) home)->cancelEditing();
+  setCurrScreen(home);
+  if (_display != NULL && !_display->isOn()) {
+    _display->turnOn();
+  }
+  _auto_off = millis() + AUTO_OFF_MILLIS;
+  _next_refresh = 100;
 }
 
 bool UITask::isEditingHomeScreen() const {
