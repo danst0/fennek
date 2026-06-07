@@ -52,7 +52,12 @@
 #define BOARD_XL9555_07_TOUCH_RST (7)
 #endif
 #ifndef BOARD_TOUCH_RST
+#if defined(LilyGo_TDeck_Pro_Max)
 #define BOARD_TOUCH_RST XL9555_GPIO(BOARD_XL9555_07_TOUCH_RST)
+#else
+// T-Deck Pro (non-MAX): touch reset is a native GPIO (schematic: T_RST = IO38)
+#define BOARD_TOUCH_RST 38
+#endif
 #endif
 
 // Panel resolution. Driver convention follows the factory config: HOR=240,

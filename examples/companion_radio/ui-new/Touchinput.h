@@ -85,6 +85,32 @@ public:
   bool getPoint(int16_t &x, int16_t &y) {
     if (!_initialized) return false;
 
+    #ifdef TOUCH_DEBUG_VERBOSE
+    // Diagnostic: every 2s, log INT level + a forced raw read regardless of
+    // the IRQ flag, to see whether the controller reports touches at all.
+    {
+      static unsigned long lastDiag = 0;
+      static uint32_t irqCount = 0;
+      if (_touchIrqFired) irqCount++;
+      if (millis() - lastDiag > 2000) {
+        lastDiag = millis();
+        uint8_t dbuf[7]; memset(dbuf, 0, sizeof(dbuf));
+        _wire->beginTransmission(TOUCH_ADDR);
+        _wire->write(0xD0); _wire->write(0x00);
+        uint8_t werr = _wire->endTransmission(true);
+        uint8_t rcv = (werr == 0) ? _wire->requestFrom(TOUCH_ADDR, (uint8_t)7) : 0;
+        for (int i = 0; i < rcv && i < 7; i++) dbuf[i] = _wire->read();
+        // ack
+        _wire->beginTransmission(TOUCH_ADDR);
+        _wire->write(0xD0); _wire->write(0x00); _wire->write(0xAB);
+        _wire->endTransmission(true);
+        Serial.printf("[Touch] DIAG INT=%d irqs=%lu werr=%d rcv=%d raw: %02X %02X %02X %02X %02X %02X %02X\n",
+                      digitalRead(_intPin), (unsigned long)irqCount, werr, rcv,
+                      dbuf[0], dbuf[1], dbuf[2], dbuf[3], dbuf[4], dbuf[5], dbuf[6]);
+      }
+    }
+    #endif
+
     // Only touch the bus when the INT line has signalled a new report. With no
     // pending report there is nothing to read, and reading anyway is what
     // produced the i2cRead -1/263 errors.

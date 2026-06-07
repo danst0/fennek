@@ -130,6 +130,14 @@
         *out_value = board.xl9555_digitalRead(XL9555_GPIO_TO_PIN(gpio_id)) ? 1 : 0;
         return true;
       }
+    #elif defined(MECK_HYN_TOUCH_PRO)
+      // T-Deck Pro: use the vendored Hynitron driver with chip auto-detection
+      // (CST226SE / CST3xx / CST66xx — LilyGo shipped different controllers
+      // across Pro batches; the minimal CST328 driver only matches some).
+      // Reset is a native GPIO (38), no XL9555 — the driver's real-GPIO
+      // fallthrough in hyn_i2c.cpp handles it.
+      #include "HynTouch.h"
+      #include "HynTouchBoard.h"
     #endif
   #endif
 
@@ -903,7 +911,7 @@
       return readTouchPortrait(outX, outY);
     }
     return readTouchLandscape(outX, outY);
-  #elif defined(LilyGo_TDeck_Pro_Max)
+  #elif defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
     {
       int16_t hx[1], hy[1];
       if (hyn_touch_get_point(hx, hy, 1) > 0) {
@@ -1928,7 +1936,34 @@ void setup() {
           MESH_DEBUG_PRINTLN("setup() - Touch input FAILED (HynTouch)");
         }
       }
+    #elif defined(MECK_HYN_TOUCH_PRO)
+      // T-Deck Pro: Hynitron driver with chip auto-detection. The driver
+      // performs its own reset via reset_pin (native GPIO 38 from
+      // HynTouchBoard.h) and attaches its own INT handler on GPIO 12.
+      {
+        HynTouchConfig hcfg = hyn_touch_default_config();
+        if (hyn_touch_init_with_config(&hcfg)) {
+          MESH_DEBUG_PRINTLN("setup() - Touch input initialized (HynTouch Pro)");
+        } else {
+          MESH_DEBUG_PRINTLN("setup() - Touch input FAILED (HynTouch Pro)");
+        }
+      }
     #else
+      // CST328 hardware reset BEFORE begin() — begin() puts the controller
+      // into normal report mode (0xD109). The old sequence reset the chip
+      // AFTER begin() (in the display-init section), wiping that mode and
+      // leaving touch dead on some Pro revisions.
+      #ifdef CST328_PIN_RST
+      if ((int)CST328_PIN_RST >= 0) {
+        pinMode(CST328_PIN_RST, OUTPUT);
+        digitalWrite(CST328_PIN_RST, HIGH);
+        delay(20);
+        digitalWrite(CST328_PIN_RST, LOW);
+        delay(80);
+        digitalWrite(CST328_PIN_RST, HIGH);
+        delay(120);  // let the controller boot before the I2C probe
+      }
+      #endif
       if (touchInput.begin(CST328_PIN_INT)) {
         MESH_DEBUG_PRINTLN("setup() - Touch input initialized");
       } else {
@@ -1951,18 +1986,8 @@ void setup() {
     digitalWrite(PIN_DISPLAY_RST, HIGH);
     MESH_DEBUG_PRINTLN("setup() - E-Ink reset pin initialized");
     
-    // Initialize Touch reset pin (GPIO 38) 
-    Serial.printf(">>> TOUCH DIAG: compiled CST328_PIN_RST = %d (MAX expects -1; a real GPIO means stale Pro variant)\n", (int)CST328_PIN_RST);
-    #ifdef CST328_PIN_RST
-      pinMode(CST328_PIN_RST, OUTPUT);
-      digitalWrite(CST328_PIN_RST, HIGH);
-      delay(20);
-      digitalWrite(CST328_PIN_RST, LOW);
-      delay(80);
-      digitalWrite(CST328_PIN_RST, HIGH);
-      delay(20);
-      MESH_DEBUG_PRINTLN("setup() - Touch reset pin initialized");
-    #endif
+    // Touch reset now happens BEFORE touchInput.begin() (see touch init
+    // above) — resetting here wiped the report mode set by begin().
   #endif
   // =========================================================================
   
@@ -4260,7 +4285,7 @@ void loop() {
       SMSScreen* smsScr = (SMSScreen*)ui_task.getSMSScreen();
       if (smsScr && smsScr->getSubView() == SMSScreen::PHONE_DIALER) {
         int16_t tx, ty;
-        #if defined(LilyGo_TDeck_Pro_Max)
+        #if defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
         int16_t _htx[1], _hty[1];
         bool _have = (hyn_touch_get_point(_htx, _hty, 1) > 0);
         if (_have) { tx = _htx[0]; ty = _hty[0]; }
