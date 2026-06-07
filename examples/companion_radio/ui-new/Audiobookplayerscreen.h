@@ -176,6 +176,9 @@ private:
   int _scrollOffset;
   String _currentPath;    // Current browsed directory (starts as AUDIOBOOKS_FOLDER)
   String _lastScanPath;   // Path of last completed scan (skip rescan if unchanged)
+  String _rootFolder;     // Library root: "/audiobooks" or "/music" (launcher apps)
+  String _bmFolder;       // <root>/.bookmarks
+  bool   _musicMode;      // true: whole tree uses music semantics (no bookmarks)
 
   // Current book state
   String      _currentFile;
@@ -392,14 +395,17 @@ private:
     if (slash >= 0) base = base.substring(slash + 1);
     int dot = base.lastIndexOf('.');
     if (dot > 0) base = base.substring(0, dot);
-    return String(AB_BOOKMARK_FOLDER) + "/" + base + ".bmk";
+    return _bmFolder + "/" + base + ".bmk";
   }
 
   // True when the current folder is the music library (/audiobooks/music or any
   // subfolder). Music files are played without bookmarks: no position is saved
   // or restored, and any stale bookmark for the file is deleted when it opens.
+  // In music mode (the launcher's Music app rooted at /music) the whole tree
+  // uses music semantics.
   bool isMusicPath() const {
-    String musicRoot = String(AUDIOBOOKS_FOLDER) + "/music";
+    if (_musicMode) return true;
+    String musicRoot = _rootFolder + "/music";
     return _currentPath == musicRoot || _currentPath.startsWith(musicRoot + "/");
   }
 
@@ -468,8 +474,8 @@ private:
     if (!_bookOpen || _currentFile.length() == 0) return;
     if (isMusicPath()) return;  // Music files don't use bookmarks
 
-    if (!SD.exists(AB_BOOKMARK_FOLDER)) {
-      SD.mkdir(AB_BOOKMARK_FOLDER);
+    if (!SD.exists(_bmFolder)) {
+      SD.mkdir(_bmFolder);
     }
 
     String path = getBookmarkPath(_currentFile);
@@ -601,7 +607,7 @@ private:
   // Used on re-entry when we skip the full rescan.
   void refreshBookmarkFlags() {
     std::vector<String> bookmarkNames;
-    File bmkDir = SD.open(AB_BOOKMARK_FOLDER);
+    File bmkDir = SD.open(_bmFolder);
     if (bmkDir && bmkDir.isDirectory()) {
       File bmkFile = bmkDir.openNextFile();
       while (bmkFile) {
@@ -628,16 +634,16 @@ private:
 
   void scanFiles() {
     _fileList.clear();
-    if (!SD.exists(AUDIOBOOKS_FOLDER)) {
-      SD.mkdir(AUDIOBOOKS_FOLDER);
-      Serial.printf("AB: Created %s\n", AUDIOBOOKS_FOLDER);
+    if (!SD.exists(_rootFolder)) {
+      SD.mkdir(_rootFolder);
+      Serial.printf("AB: Created %s\n", _rootFolder.c_str());
     }
 
     File root = SD.open(_currentPath.c_str());
     if (!root || !root.isDirectory()) return;
 
     // Add ".." entry if not at the audiobooks root
-    if (_currentPath != String(AUDIOBOOKS_FOLDER)) {
+    if (_currentPath != _rootFolder) {
       AudiobookFileEntry upEntry;
       upEntry.name = "..";
       upEntry.displayTitle = "..";
@@ -652,7 +658,7 @@ private:
     // Scan .bookmarks/ directory once to build a set, instead of
     // calling SD.exists() individually for each of the ~50 files.
     std::vector<String> bookmarkNames;
-    File bmkDir = SD.open(AB_BOOKMARK_FOLDER);
+    File bmkDir = SD.open(_bmFolder);
     if (bmkDir && bmkDir.isDirectory()) {
       File bmkFile = bmkDir.openNextFile();
       while (bmkFile) {
@@ -767,7 +773,7 @@ private:
           // In subdirectories, filenames often follow "Artist - Album - NN Track"
           // pattern. The folder already provides context, so extract just the
           // last segment after " - " to show the track-relevant part.
-          if (_currentPath != String(AUDIOBOOKS_FOLDER)) {
+          if (_currentPath != _rootFolder) {
             int lastSep = cleaned.lastIndexOf(" - ");
             if (lastSep > 0 && lastSep < (int)cleaned.length() - 3) {
               cleaned = cleaned.substring(lastSep + 3);
@@ -1273,11 +1279,11 @@ private:
 
     if (_fileList.size() == 0) {
       display.setCursor(0, 20);
-      display.print("No audiobooks found.");
+      display.print(_musicMode ? "No music found." : "No audiobooks found.");
       display.setCursor(0, 30);
       display.print("Place .m4b/.mp3 in");
       display.setCursor(0, 38);
-      display.print("/audiobooks/ on SD");
+      display.print((_rootFolder + "/ on SD").c_str());
 
       drawFooter(display, "0 files", "Q:Back");
       return;
@@ -1522,6 +1528,9 @@ public:
       _selectedFile(0), _scrollOffset(0),
       _currentPath(AUDIOBOOKS_FOLDER),
       _lastScanPath(""),
+      _rootFolder(AUDIOBOOKS_FOLDER),
+      _bmFolder(String(AUDIOBOOKS_FOLDER) + "/.bookmarks"),
+      _musicMode(false),
       _bookOpen(false), _isPlaying(false), _isPaused(false),
       _volume(AB_DEFAULT_VOLUME),
       _coverBitmap(nullptr), _coverW(0), _coverH(0), _hasCover(false),
@@ -1539,6 +1548,24 @@ public:
   }
 
   void setSDReady(bool ready) { _sdReady = ready; }
+
+  // Switch the library root — the launcher's "Music" (/music, music
+  // semantics: no bookmarks) and "Audiobooks" (/audiobooks) apps share this
+  // screen. Closes any open book/track when the root actually changes.
+  void setLibraryRoot(const char* root, bool musicMode) {
+    if (_rootFolder == root && _musicMode == musicMode) return;
+    if (_bookOpen) closeBook();
+    _rootFolder = root;
+    _bmFolder = _rootFolder + "/.bookmarks";
+    _musicMode = musicMode;
+    _currentPath = _rootFolder;
+    _lastScanPath = "";
+    _selectedFile = 0;
+    _scrollOffset = 0;
+    _mode = FILE_LIST;
+  }
+
+  bool isMusicLibrary() const { return _musicMode; }
 
   // ---- Audio Tick ----
   // Called from main loop() every iteration for uninterrupted playback.
@@ -1681,7 +1708,7 @@ public:
       display.setCursor(0, 35);
       display.print("Insert SD with");
       display.setCursor(0, 43);
-      display.print("/audiobooks/ folder");
+      display.print((_rootFolder + "/ folder").c_str());
       return 5000;
     }
 
@@ -1744,7 +1771,7 @@ public:
             if (lastSlash > 0) {
               _currentPath = _currentPath.substring(0, lastSlash);
             } else {
-              _currentPath = AUDIOBOOKS_FOLDER;
+              _currentPath = _rootFolder;
             }
           } else {
             // Navigate into subdirectory

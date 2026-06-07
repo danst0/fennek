@@ -32,10 +32,16 @@ static const uint8_t lr_icon_book[] PROGMEM = {
   0x4F,0x20, 0x40,0x20, 0x40,0x20, 0x7F,0xE0, 0x3F,0xC0, 0x00,0x00,
 };
 
-// Beamed music note (MP3 Player)
+// Beamed music note (Music)
 static const uint8_t lr_icon_note[] PROGMEM = {
   0x00,0x00, 0x1F,0xC0, 0x1F,0xC0, 0x18,0x40, 0x18,0x40, 0x18,0x40,
   0x18,0x40, 0x79,0xE0, 0xFB,0xE0, 0xFB,0xE0, 0x71,0xC0, 0x00,0x00,
+};
+
+// Headphones (Audiobooks)
+static const uint8_t lr_icon_headphones[] PROGMEM = {
+  0x1F,0x80, 0x30,0xC0, 0x60,0x60, 0x40,0x20, 0x40,0x20, 0xC0,0x30,
+  0xE0,0x70, 0xE0,0x70, 0xE0,0x70, 0xE0,0x70, 0x60,0x60, 0x00,0x00,
 };
 
 // Antenna with radio waves (MeshCore)
@@ -52,17 +58,18 @@ static const uint8_t lr_icon_gear[] PROGMEM = {
 
 class LauncherScreen : public UIScreen {
 public:
-  static const int ITEM_COUNT = 4;
-  enum Item : uint8_t { ITEM_READER, ITEM_MP3, ITEM_MESH, ITEM_SETTINGS };
+  static const int ITEM_COUNT = 5;
+  enum Item : uint8_t { ITEM_READER, ITEM_MUSIC, ITEM_AUDIOBOOKS, ITEM_MESH, ITEM_SETTINGS };
 
   LauncherScreen(UITask* task) : _task(task), _sel(0) {}
 
   int render(DisplayDriver& display) override {
     static const struct { const uint8_t* icon; const char* label; } ITEMS[ITEM_COUNT] = {
-      { lr_icon_book,    "E-Reader" },
-      { lr_icon_note,    "MP3 Player" },
-      { lr_icon_antenna, "MeshCore" },
-      { lr_icon_gear,    "Settings" },
+      { lr_icon_book,       "E-Reader" },
+      { lr_icon_note,       "Music" },
+      { lr_icon_headphones, "Audiobooks" },
+      { lr_icon_antenna,    "MeshCore" },
+      { lr_icon_gear,       "Settings" },
     };
 
     display.setColor(DisplayDriver::LIGHT);
@@ -128,9 +135,17 @@ private:
   void open(Item item) {
     switch (item) {
       case ITEM_READER:   _task->gotoTextReader();       break;
-      case ITEM_MP3: {
+      case ITEM_MUSIC: {
         #if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
-        // Lazy-inits the Audio object + player screen (defined in main.cpp)
+        // Shared player screen rooted at /music (defined in main.cpp)
+        extern void meckOpenMusicPlayer();
+        meckOpenMusicPlayer();
+        #endif
+        break;
+      }
+      case ITEM_AUDIOBOOKS: {
+        #if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
+        // Shared player screen rooted at /audiobooks (defined in main.cpp)
         extern void meckOpenAudiobookPlayer();
         meckOpenAudiobookPlayer();
         #endif

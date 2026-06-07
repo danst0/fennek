@@ -27,6 +27,7 @@
   #include "MeckImport.h"
   #include "Settingsscreen.h"
   #include "Simplesettingsscreen.h"
+  #include "WifiConfig.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -735,6 +736,7 @@
   #include "MeckImport.h"
   #include "Settingsscreen.h"
   #include "Simplesettingsscreen.h"
+  #include "WifiConfig.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -958,6 +960,7 @@
   #include "Channelpickerscreen.h"
   #include "Settingsscreen.h"
   #include "Simplesettingsscreen.h"
+  #include "WifiConfig.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -2323,31 +2326,9 @@ void setup() {
     #endif
     if (wifi_autostart) WiFi.mode(WIFI_STA);
     if (wifi_autostart && sdCardReady) {
-      File f = SD.open("/web/wifi.cfg", FILE_READ);
-      if (f) {
-        String ssid = f.readStringUntil('\n'); ssid.trim();
-        String pass = f.readStringUntil('\n'); pass.trim();
-        f.close();
-        digitalWrite(SDCARD_CS, HIGH);
-        if (ssid.length() > 0) {
-          MESH_DEBUG_PRINTLN("setup() - WiFi: connecting to '%s'", ssid.c_str());
-          WiFi.begin(ssid.c_str(), pass.c_str());
-          unsigned long timeout = millis() + 3000;  // 3s max — non-critical, Settings can retry
-          while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
-            yield();  // Feed WDT during wait
-            delay(50);
-          }
-          if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("WiFi companion: connected to %s, IP: %s\n",
-                          ssid.c_str(), WiFi.localIP().toString().c_str());
-          } else {
-            Serial.println("WiFi companion: auto-connect failed (configure in Settings)");
-          }
-        }
-      } else {
-        digitalWrite(SDCARD_CS, HIGH);
-        Serial.println("WiFi companion: no /web/wifi.cfg found (configure in Settings)");
-      }
+      // Central helper: reads /web/wifi.cfg (incl. optional static IP,
+      // DHCP by default) and connects. 3s max — non-critical, retry via Settings.
+      meckWifiConnectSaved(3000);
     }
     serial_interface.begin(TCP_PORT);
     MESH_DEBUG_PRINTLN("setup() - WiFi TCP server started on port %d", TCP_PORT);
@@ -2845,6 +2826,22 @@ void loop() {
   }
   #endif
 
+  // Background SD file server — online whenever WiFi is connected. Polled
+  // every loop iteration (handleClient is cheap when idle); the watcher
+  // starts/stops the server on WiFi state changes once per second.
+  #if defined(MECK_OTA_UPDATE) && defined(MECK_FILEMGR_STA)
+  {
+    SettingsScreen* fsss = (SettingsScreen*)ui_task.getSettingsScreen();
+    if (fsss) {
+      static unsigned long lastFsCheck = 0;
+      if (millis() - lastFsCheck >= 1000) {
+        lastFsCheck = millis();
+        fsss->ensureBackgroundFileServer(WiFi.status() == WL_CONNECTED);
+      }
+      fsss->pollOTAServer();
+    }
+  }
+  #endif
 
   sensors.loop();
 
@@ -4382,10 +4379,12 @@ void initKeyboard() {
 }
 
 #if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
-// Open the audiobook player, lazy-initing the Audio object + screen on first
-// use (~40KB of DMA/decode buffers — allocating at boot starves the BLE/WiFi
-// stack). Called from the 'p' key handler and the launcher's MP3 entry.
-void meckOpenAudiobookPlayer() {
+// Open the shared player screen rooted at the given library, lazy-initing the
+// Audio object + screen on first use (~40KB of DMA/decode buffers —
+// allocating at boot starves the BLE/WiFi stack). The launcher's "Music"
+// (/music, music semantics) and "Audiobooks" (/audiobooks) apps share one
+// screen instance — switching roots closes any open book/track.
+static void meckOpenPlayerWithRoot(const char* root, bool musicMode) {
   if (!ui_task.getAudiobookScreen()) {
     Serial.printf("Audiobook: lazy init - free heap: %d, largest block: %d\n",
                    ESP.getFreeHeap(), ESP.getMaxAllocHeap());
@@ -4395,8 +4394,12 @@ void meckOpenAudiobookPlayer() {
     ui_task.setAudiobookScreen(abScreen);
     Serial.printf("Audiobook: init complete - free heap: %d\n", ESP.getFreeHeap());
   }
+  ((AudiobookPlayerScreen*)ui_task.getAudiobookScreen())->setLibraryRoot(root, musicMode);
   ui_task.gotoAudiobookPlayer();
 }
+
+void meckOpenAudiobookPlayer() { meckOpenPlayerWithRoot("/audiobooks", false); }
+void meckOpenMusicPlayer()     { meckOpenPlayerWithRoot("/music", true); }
 #endif
 
 void handleKeyboardInput() {

@@ -27,6 +27,8 @@
   #include <SD.h>
 #endif
 
+#include "WifiConfig.h"  // central /web/wifi.cfg helpers (DHCP / static IP)
+
 #ifdef MECK_OTA_UPDATE
   #ifndef MECK_WIFI_COMPANION
     #include <WiFi.h>
@@ -387,6 +389,7 @@ private:
   const char* _fmError;
   DNSServer* _dnsServer;
   bool _fmStaMode;       // true: serving on existing WiFi (STA) instead of softAP
+  bool _fmBackground;    // true: file server running in the background (WiFi on)
   #endif
 
   // ---------------------------------------------------------------------------
@@ -729,6 +732,7 @@ public:
     _fmError = nullptr;
     _dnsServer = nullptr;
     _fmStaMode = false;
+    _fmBackground = false;
     #endif
     #if defined(MECK_AUDIO_VARIANT) || defined(HAS_4G_MODEM)
     _notifSoundSelected = 0;
@@ -844,11 +848,22 @@ public:
     Serial.printf("Settings: WiFi scan found %d networks\n", n);
 
     if (n > 0) {
-      _wifiSSIDCount = min(n, 10);
-      for (int si = 0; si < _wifiSSIDCount; si++) {
-        _wifiSSIDs[si] = WiFi.SSID(si);
-        Serial.printf("  [%d] %s (RSSI %d)\n", si,
-                      _wifiSSIDs[si].c_str(), WiFi.RSSI(si));
+      // Dedupe by SSID — multiple APs of the same network (mesh/repeaters)
+      // show up once. Results are RSSI-sorted, so the first hit is the
+      // strongest AP.
+      _wifiSSIDCount = 0;
+      for (int si = 0; si < n && _wifiSSIDCount < 10; si++) {
+        String ssid = WiFi.SSID(si);
+        if (ssid.length() == 0) continue;  // hidden networks
+        bool dup = false;
+        for (int sj = 0; sj < _wifiSSIDCount; sj++) {
+          if (_wifiSSIDs[sj] == ssid) { dup = true; break; }
+        }
+        if (dup) continue;
+        _wifiSSIDs[_wifiSSIDCount] = ssid;
+        Serial.printf("  [%d] %s (RSSI %d)\n", _wifiSSIDCount,
+                      ssid.c_str(), WiFi.RSSI(si));
+        _wifiSSIDCount++;
       }
     } else if (n < 0) {
       Serial.printf("Settings: WiFi scan error %d\n", n);
@@ -860,18 +875,11 @@ public:
   // After WiFi setup exits (connect success or user quit), try to
   // reconnect to saved credentials so the companion TCP server works.
   void wifiReconnectSaved() {
-    File f = SD.open("/web/wifi.cfg", FILE_READ);
-    if (f) {
-      String ssid = f.readStringUntil('\n'); ssid.trim();
-      String pass = f.readStringUntil('\n'); pass.trim();
-      f.close();
-      digitalWrite(SDCARD_CS, HIGH);
-      if (ssid.length() > 0) {
-        Serial.printf("Settings: Reconnecting to saved WiFi '%s'\n", ssid.c_str());
-        WiFi.begin(ssid.c_str(), pass.c_str());
-      }
-    } else {
-      digitalWrite(SDCARD_CS, HIGH);
+    String ssid, pass, staticIp;
+    if (meckWifiReadConfig(ssid, pass, staticIp)) {
+      Serial.printf("Settings: Reconnecting to saved WiFi '%s'\n", ssid.c_str());
+      meckWifiApplyStatic(staticIp);
+      WiFi.begin(ssid.c_str(), pass.c_str());
     }
   }
 
@@ -894,18 +902,18 @@ public:
     // Trigger the same connect sequence as pressing Enter in password phase
     _wifiPhase = WIFI_PHASE_CONNECTING;
 
-    // Save credentials to SD (so web reader can reuse them)
+    // Save credentials to SD (so web reader can reuse them); preserves the
+    // optional static-IP line.
     if (SD.exists("/web") || SD.mkdir("/web")) {
-      File f = SD.open("/web/wifi.cfg", FILE_WRITE);
-      if (f) {
-        f.println(_wifiSSIDs[_wifiSSIDSelected]);
-        f.println(_wifiPassBuf);
-        f.close();
-      }
-      digitalWrite(SDCARD_CS, HIGH);
+      meckWifiSaveCredentials(_wifiSSIDs[_wifiSSIDSelected], _wifiPassBuf);
     }
 
     WiFi.disconnect(false);
+    {
+      String _s, _p, _ip;
+      meckWifiReadConfig(_s, _p, _ip);
+      meckWifiApplyStatic(_ip);
+    }
     WiFi.begin(_wifiSSIDs[_wifiSSIDSelected].c_str(), _wifiPassBuf);
 
     // Brief blocking wait — fine for e-ink
@@ -1036,6 +1044,7 @@ public:
 
     // Start web server
     if (_otaServer) { _otaServer->stop(); delete _otaServer; }
+    _fmBackground = false;  // overlay flow owns the server now
     _otaServer = new WebServer(80);
 
     _otaServer->on("/", HTTP_GET, [this]() {
@@ -1213,7 +1222,8 @@ public:
   // Handles both OTA firmware upload and SD file manager modes.
   void pollOTAServer() {
     if (_otaServer) {
-      if ((_editMode == EDIT_OTA && (_otaPhase == OTA_PHASE_WAITING || _otaPhase == OTA_PHASE_RECEIVING)) ||
+      if (_fmBackground ||
+          (_editMode == EDIT_OTA && (_otaPhase == OTA_PHASE_WAITING || _otaPhase == OTA_PHASE_RECEIVING)) ||
           (_editMode == EDIT_FILEMGR && _fmPhase == FM_PHASE_WAITING)) {
         _otaServer->handleClient();
       }
@@ -1297,6 +1307,15 @@ public:
     _fmError = nullptr;
   }
 
+  #ifdef MECK_WIFI_COMPANION
+  // Jump straight into the WiFi scan/select/password flow (used by the
+  // simple settings list's "WiFi Setup" row).
+  void startWifiSetup() {
+    _editMode = EDIT_WIFI;
+    performWifiScan();
+  }
+  #endif
+
   void startFileMgrServer() {
     // Pause LoRa radio — SD and LoRa share the same SPI bus on both
     // platforms. Incoming packets during SD writes cause bus contention.
@@ -1310,26 +1329,9 @@ public:
     // credentials from /web/wifi.cfg. Falls back to softAP below.
     if (WiFi.status() == WL_CONNECTED) {
       _fmStaMode = true;
-    } else if (SD.exists("/web/wifi.cfg")) {
-      File f = SD.open("/web/wifi.cfg", FILE_READ);
-      String ssid, pass;
-      if (f) {
-        ssid = f.readStringUntil('\n'); ssid.trim();
-        pass = f.readStringUntil('\n'); pass.trim();
-        f.close();
-      }
-      digitalWrite(SDCARD_CS, HIGH);
-      if (ssid.length() > 0) {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(ssid.c_str(), pass.c_str());
-        unsigned long timeout = millis() + 8000;
-        while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
-          yield();
-          delay(100);
-        }
-        _fmStaMode = (WiFi.status() == WL_CONNECTED);
-        if (!_fmStaMode) Serial.println("FM: STA join failed, falling back to softAP");
-      }
+    } else {
+      _fmStaMode = meckWifiConnectSaved(8000);
+      if (!_fmStaMode) Serial.println("FM: STA join failed, falling back to softAP");
     }
     if (_fmStaMode) {
       Serial.printf("FM: STA mode on '%s', IP: %s\n",
@@ -1364,6 +1366,7 @@ public:
 
     // Start web server
     if (_otaServer) { _otaServer->stop(); delete _otaServer; }
+    _fmBackground = false;  // overlay flow owns the server now
     _otaServer = new WebServer(80);
 
     if (!_fmStaMode) {
@@ -1405,6 +1408,17 @@ public:
     });
     }  // !_fmStaMode (captive portal handlers)
 
+    registerFileMgrRoutes();
+
+    _otaServer->begin();
+    Serial.println("FM: Web server started on port 80");
+    _fmPhase = FM_PHASE_WAITING;
+  }
+
+  // All SD file-manager routes — shared by the overlay flow
+  // (startFileMgrServer) and the background server that runs whenever WiFi
+  // is connected (ensureBackgroundFileServer).
+  void registerFileMgrRoutes() {
     // --- Main page: server-rendered directory listing (no JS needed) ---
     _otaServer->on("/", HTTP_GET, [this]() {
       String path = _otaServer->arg("path");
@@ -1418,11 +1432,16 @@ public:
     // --- File download: GET /dl?path=/file.txt ---
     _otaServer->on("/dl", HTTP_GET, [this]() {
       String path = _otaServer->arg("path");
+      // Background mode: pause LoRa for the duration of the sustained SD
+      // read (SD and LoRa share the SPI bus). The overlay flow pauses the
+      // radio for its whole session instead.
+      if (_fmBackground) { extern void otaPauseRadio(); otaPauseRadio(); }
       File f = SD.open(path, FILE_READ);
       if (!f || f.isDirectory()) {
         if (f) f.close();
         digitalWrite(SDCARD_CS, HIGH);
         _otaServer->send(404, "text/plain", "Not found");
+        if (_fmBackground) { extern void otaResumeRadio(); otaResumeRadio(); }
         return;
       }
       String name = path;
@@ -1444,6 +1463,7 @@ public:
       }
       f.close();
       digitalWrite(SDCARD_CS, HIGH);
+      if (_fmBackground) { extern void otaResumeRadio(); otaResumeRadio(); }
     });
 
     // --- File upload: POST /upload?dir=/ → redirect back to listing ---
@@ -1459,6 +1479,8 @@ public:
         static File fmUploadFile;
 
         if (upload.status == UPLOAD_FILE_START) {
+          // Background mode: pause LoRa while streaming to SD (shared SPI bus)
+          if (_fmBackground) { extern void otaPauseRadio(); otaPauseRadio(); }
           String dir = _otaServer->arg("dir");
           if (dir.isEmpty()) dir = "/";
           if (!dir.endsWith("/")) dir += "/";
@@ -1477,11 +1499,13 @@ public:
             Serial.printf("FM: Upload done: %s (%d bytes)\n",
                           upload.filename.c_str(), upload.totalSize);
           }
+          if (_fmBackground) { extern void otaResumeRadio(); otaResumeRadio(); }
 
         } else if (upload.status == UPLOAD_FILE_ABORTED) {
           if (fmUploadFile) fmUploadFile.close();
           digitalWrite(SDCARD_CS, HIGH);
           Serial.println("FM: Upload aborted");
+          if (_fmBackground) { extern void otaResumeRadio(); otaResumeRadio(); }
         }
       }
     );
@@ -1612,13 +1636,30 @@ public:
     // Catch-all: redirect unknown URLs to file manager (catches captive portal probes)
     _otaServer->onNotFound([this]() {
       Serial.printf("FM: redirect %s -> /\n", _otaServer->uri().c_str());
-      _otaServer->sendHeader("Location", _fmStaMode ? "/" : "http://192.168.4.1/");
+      _otaServer->sendHeader("Location", (_fmStaMode || _fmBackground) ? "/" : "http://192.168.4.1/");
       _otaServer->send(302, "text/plain", "");
     });
+  }
 
-    _otaServer->begin();
-    Serial.println("FM: Web server started on port 80");
-    _fmPhase = FM_PHASE_WAITING;
+  // Keep the SD file server online whenever WiFi is connected ("Dateiserver
+  // immer online"). Called from the main loop ~1/s. Does nothing while an
+  // overlay flow (file manager / OTA update) owns the web server.
+  void ensureBackgroundFileServer(bool wifiConnected) {
+    if (_editMode == EDIT_FILEMGR || _editMode == EDIT_OTA) return;
+    if (wifiConnected && _otaServer == nullptr) {
+      _otaServer = new WebServer(80);
+      _fmBackground = true;     // set BEFORE registering (lambdas check it live)
+      registerFileMgrRoutes();
+      _otaServer->begin();
+      Serial.printf("FM: background file server on http://%s\n",
+                    WiFi.localIP().toString().c_str());
+    } else if (!wifiConnected && _otaServer != nullptr && _fmBackground) {
+      _otaServer->stop();
+      delete _otaServer;
+      _otaServer = nullptr;
+      _fmBackground = false;
+      Serial.println("FM: background file server stopped (WiFi down)");
+    }
   }
 
   void stopFileMgr() {
@@ -2603,14 +2644,18 @@ public:
         display.setCursor(bx + 4, wy);
         display.print("Select network:");
         wy += 10;
+        // Row pitch and highlight placement follow the active font — the old
+        // hardcoded 8px pitch / +5 offset turned the selection bar into a
+        // solid black smear with the larger/custom fonts.
+        int wifiLineH = _prefs->smallLineH();
         for (int wi = 0; wi < _wifiSSIDCount && wy < by + bh - 16; wi++) {
           bool sel = (wi == _wifiSSIDSelected);
           if (sel) {
             display.setColor(DisplayDriver::LIGHT);
 #if defined(LilyGo_T5S3_EPaper_Pro)
-            display.fillRect(bx + 2, wy, bw - 4, 8);
+            display.fillRect(bx + 2, wy, bw - 4, wifiLineH);
 #else
-            display.fillRect(bx + 2, wy + 5, bw - 4, 8);
+            display.fillRect(bx + 2, wy + _prefs->smallHighlightOff(), bw - 4, wifiLineH);
 #endif
             display.setColor(DisplayDriver::DARK);
           } else {
@@ -2624,7 +2669,7 @@ public:
             snprintf(ssidLine, sizeof(ssidLine), "  %.33s", _wifiSSIDs[wi].c_str());
           }
           display.print(ssidLine);
-          wy += 8;
+          wy += wifiLineH;
         }
         }
 
@@ -3309,18 +3354,18 @@ public:
           _wifiPassBuf[_wifiPassLen] = '\0';
           _wifiPhase = WIFI_PHASE_CONNECTING;
 
-          // Save credentials to SD first (so web reader can reuse them)
+          // Save credentials to SD first (so web reader can reuse them);
+          // preserves the optional static-IP line.
           if (SD.exists("/web") || SD.mkdir("/web")) {
-            File f = SD.open("/web/wifi.cfg", FILE_WRITE);
-            if (f) {
-              f.println(_wifiSSIDs[_wifiSSIDSelected]);
-              f.println(_wifiPassBuf);
-              f.close();
-            }
-            digitalWrite(SDCARD_CS, HIGH);
+            meckWifiSaveCredentials(_wifiSSIDs[_wifiSSIDSelected], _wifiPassBuf);
           }
 
           WiFi.disconnect(false);
+          {
+            String _s, _p, _ip;
+            meckWifiReadConfig(_s, _p, _ip);
+            meckWifiApplyStatic(_ip);
+          }
           WiFi.begin(_wifiSSIDs[_wifiSSIDSelected].c_str(), _wifiPassBuf);
 
           // Brief blocking wait — fine for e-ink (screen won't update during this anyway)
@@ -3820,31 +3865,8 @@ public:
             WiFi.mode(WIFI_OFF);
             Serial.println("Settings: WiFi radio OFF");
           } else {
-            // Turn WiFi ON — reconnect using saved credentials
-            WiFi.mode(WIFI_STA);
-            if (SD.exists("/web/wifi.cfg")) {
-              File f = SD.open("/web/wifi.cfg", FILE_READ);
-              if (f) {
-                String ssid = f.readStringUntil('\n'); ssid.trim();
-                String pass = f.readStringUntil('\n'); pass.trim();
-                f.close();
-                digitalWrite(SDCARD_CS, HIGH);
-                if (ssid.length() > 0) {
-                  WiFi.begin(ssid.c_str(), pass.c_str());
-                  unsigned long timeout = millis() + 8000;
-                  while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
-                    delay(100);
-                  }
-                  if (WiFi.status() == WL_CONNECTED) {
-                    Serial.printf("Settings: WiFi ON, connected to %s\n", ssid.c_str());
-                  } else {
-                    Serial.println("Settings: WiFi ON, but connection failed");
-                  }
-                }
-              } else {
-                digitalWrite(SDCARD_CS, HIGH);
-              }
-            }
+            // Turn WiFi ON — reconnect using the saved config (DHCP or static IP)
+            meckWifiConnectSaved(8000);
             Serial.println("Settings: WiFi radio ON");
           }
           break;

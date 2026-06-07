@@ -40,6 +40,7 @@
 #endif
 #include "Utf8cp437.h"
 #include "../NodePrefs.h"
+#include "WifiConfig.h"  // central /web/wifi.cfg helpers
 
 // Forward declarations
 class UITask;
@@ -1496,6 +1497,12 @@ private:
 
   void connectToSSID(const String& ssid, const char* password) {
     _wifiState = WIFI_CONNECTING;
+    {
+      // Apply the optional static-IP config (DHCP by default)
+      String _s, _p, _ip;
+      meckWifiReadConfig(_s, _p, _ip);
+      meckWifiApplyStatic(_ip);
+    }
     WiFi.begin(ssid.c_str(), password);
     _wifiTimeout = millis() + 15000;
     _connectedSSID = ssid;
@@ -1547,31 +1554,17 @@ private:
 
   void saveWifiCredentials(const char* ssid, const char* pass) {
     if (!SD.exists(WEB_CACHE_DIR)) SD.mkdir(WEB_CACHE_DIR);
-    File f = SD.open("/web/wifi.cfg", FILE_WRITE);
-    if (f) {
-      f.println(ssid);
-      f.println(pass);
-      f.close();
-    }
-    digitalWrite(SDCARD_CS, HIGH);
+    // Preserves the optional static-IP line in /web/wifi.cfg
+    meckWifiSaveCredentials(ssid, pass);
   }
 
   bool loadAndAutoConnect() {
-    File f = SD.open("/web/wifi.cfg", FILE_READ);
-    if (!f) { digitalWrite(SDCARD_CS, HIGH); return false; }
-
-    String ssid = f.readStringUntil('\n');
-    String pass = f.readStringUntil('\n');
-    f.close();
-    digitalWrite(SDCARD_CS, HIGH);
-
-    ssid.trim();
-    pass.trim();
-
-    if (ssid.length() == 0) return false;
+    String ssid, pass, staticIp;
+    if (!meckWifiReadConfig(ssid, pass, staticIp)) return false;
 
     Serial.printf("WebReader: Auto-connecting to %s\n", ssid.c_str());
     // WiFi STA mode already set by main.cpp before enter()
+    meckWifiApplyStatic(staticIp);
     WiFi.begin(ssid.c_str(), pass.c_str());
 
     // Brief blocking wait (up to 5 seconds) during init
