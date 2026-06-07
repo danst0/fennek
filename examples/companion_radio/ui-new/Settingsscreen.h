@@ -380,6 +380,7 @@ private:
   FmPhase _fmPhase;
   const char* _fmError;
   DNSServer* _dnsServer;
+  bool _fmStaMode;       // true: serving on existing WiFi (STA) instead of softAP
   #endif
 
   // ---------------------------------------------------------------------------
@@ -715,6 +716,7 @@ public:
     _fmPhase = FM_PHASE_CONFIRM;
     _fmError = nullptr;
     _dnsServer = nullptr;
+    _fmStaMode = false;
     #endif
     #if defined(MECK_AUDIO_VARIANT) || defined(HAS_4G_MODEM)
     _notifSoundSelected = 0;
@@ -1284,39 +1286,76 @@ public:
   }
 
   void startFileMgrServer() {
-    // Build AP name with last 4 of MAC for uniqueness
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    snprintf(_otaApName, sizeof(_otaApName), "Meck-Files-%02X%02X", mac[4], mac[5]);
-
     // Pause LoRa radio — SD and LoRa share the same SPI bus on both
     // platforms. Incoming packets during SD writes cause bus contention.
     extern void otaPauseRadio();
     otaPauseRadio();
 
-    // Clean WiFi init from any state
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(200);
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_otaApName);
-    delay(500);
-    Serial.printf("FM: AP '%s' started, IP: %s\n",
-                  _otaApName, WiFi.softAPIP().toString().c_str());
+    _fmStaMode = false;
+    #ifdef MECK_FILEMGR_STA
+    // STA mode: serve the file manager on the home network instead of a
+    // softAP. Reuse an existing connection, or join with the saved
+    // credentials from /web/wifi.cfg. Falls back to softAP below.
+    if (WiFi.status() == WL_CONNECTED) {
+      _fmStaMode = true;
+    } else if (SD.exists("/web/wifi.cfg")) {
+      File f = SD.open("/web/wifi.cfg", FILE_READ);
+      String ssid, pass;
+      if (f) {
+        ssid = f.readStringUntil('\n'); ssid.trim();
+        pass = f.readStringUntil('\n'); pass.trim();
+        f.close();
+      }
+      digitalWrite(SDCARD_CS, HIGH);
+      if (ssid.length() > 0) {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(ssid.c_str(), pass.c_str());
+        unsigned long timeout = millis() + 8000;
+        while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
+          yield();
+          delay(100);
+        }
+        _fmStaMode = (WiFi.status() == WL_CONNECTED);
+        if (!_fmStaMode) Serial.println("FM: STA join failed, falling back to softAP");
+      }
+    }
+    if (_fmStaMode) {
+      Serial.printf("FM: STA mode on '%s', IP: %s\n",
+                    WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+    }
+    #endif
 
-    // Start DNS server — redirect ALL DNS lookups to our AP IP.
-    // This triggers captive portal detection on phones, which opens the
-    // page in a real browser instead of the restricted captive webview.
-    if (_dnsServer) { delete _dnsServer; }
-    _dnsServer = new DNSServer();
-    _dnsServer->start(53, "*", WiFi.softAPIP());
-    Serial.println("FM: DNS captive portal started");
+    if (!_fmStaMode) {
+      // Build AP name with last 4 of MAC for uniqueness
+      uint8_t mac[6];
+      WiFi.macAddress(mac);
+      snprintf(_otaApName, sizeof(_otaApName), "Meck-Files-%02X%02X", mac[4], mac[5]);
+
+      // Clean WiFi init from any state
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      delay(200);
+      WiFi.mode(WIFI_AP);
+      WiFi.softAP(_otaApName);
+      delay(500);
+      Serial.printf("FM: AP '%s' started, IP: %s\n",
+                    _otaApName, WiFi.softAPIP().toString().c_str());
+
+      // Start DNS server — redirect ALL DNS lookups to our AP IP.
+      // This triggers captive portal detection on phones, which opens the
+      // page in a real browser instead of the restricted captive webview.
+      if (_dnsServer) { delete _dnsServer; }
+      _dnsServer = new DNSServer();
+      _dnsServer->start(53, "*", WiFi.softAPIP());
+      Serial.println("FM: DNS captive portal started");
+    }
 
     // Start web server
     if (_otaServer) { _otaServer->stop(); delete _otaServer; }
     _otaServer = new WebServer(80);
 
-    // --- Captive portal detection handlers ---
+    if (!_fmStaMode) {
+    // --- Captive portal detection handlers (softAP mode only) ---
     // Phones/OS probe these URLs to detect captive portals. Redirecting
     // them to our page causes the OS to open a real browser.
     // iOS / macOS
@@ -1352,6 +1391,7 @@ public:
     _otaServer->on("/success.txt", HTTP_GET, [this]() {
       _otaServer->send(200, "text/plain", "success");
     });
+    }  // !_fmStaMode (captive portal handlers)
 
     // --- Main page: server-rendered directory listing (no JS needed) ---
     _otaServer->on("/", HTTP_GET, [this]() {
@@ -1504,10 +1544,63 @@ public:
       _otaServer->send(200, "text/html", html);
     });
 
+    // --- Rename file/folder: GET /rename?path=/old&name=newname&ret=/parent ---
+    _otaServer->on("/rename", HTTP_GET, [this]() {
+      String path = _otaServer->arg("path");
+      String name = _otaServer->arg("name");
+      String ret = _otaServer->arg("ret");
+      if (ret.isEmpty()) ret = "/";
+      bool ok = false;
+      if (!path.isEmpty() && path != "/" && !name.isEmpty() &&
+          name.indexOf('/') < 0) {
+        String newPath = ret + (ret.endsWith("/") ? "" : "/") + name;
+        ok = SD.rename(path, newPath);
+        digitalWrite(SDCARD_CS, HIGH);
+        Serial.printf("FM: rename '%s' -> '%s' %s\n",
+                      path.c_str(), newPath.c_str(), ok ? "OK" : "FAIL");
+      }
+      _otaServer->sendHeader("Location",
+        "/?path=" + fmUrlEncode(ret) + "&msg=" + (ok ? "Renamed" : "Rename+failed"));
+      _otaServer->send(303);
+    });
+
+    // --- Rename form page: GET /confirm-ren?path=/file&ret=/parent ---
+    _otaServer->on("/confirm-ren", HTTP_GET, [this]() {
+      String path = _otaServer->arg("path");
+      String ret = _otaServer->arg("ret");
+      if (ret.isEmpty()) ret = "/";
+      String name = path;
+      int sl = name.lastIndexOf('/');
+      if (sl >= 0) name = name.substring(sl + 1);
+      String html = "<!DOCTYPE html><html><head>"
+        "<meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Rename</title>"
+        "<style>"
+        "body{font-family:-apple-system,sans-serif;max-width:480px;margin:40px auto;"
+        "padding:0 20px;background:#1a1a2e;color:#e0e0e0;text-align:center}"
+        "input[type=text]{width:100%;padding:10px;border-radius:6px;border:1px solid #4ecca3;"
+        "background:#16213e;color:#e0e0e0;font-size:1em;box-sizing:border-box}"
+        ".b{display:inline-block;padding:10px 24px;border-radius:6px;text-decoration:none;"
+        "border:none;font-weight:bold;margin:8px;font-size:1em;cursor:pointer}"
+        ".bg{background:#4ecca3;color:#1a1a2e}.bn{background:#16213e;color:#e0e0e0}"
+        "</style></head><body>"
+        "<h2 style='color:#4ecca3'>Rename</h2>"
+        "<p style='font-size:1.1em'>" + fmHtmlEscape(name) + "</p>"
+        "<form action='/rename' method='GET'>"
+        "<input type='hidden' name='path' value='" + fmHtmlEscape(path) + "'>"
+        "<input type='hidden' name='ret' value='" + fmHtmlEscape(ret) + "'>"
+        "<input type='text' name='name' value='" + fmHtmlEscape(name) + "' autofocus>"
+        "<br><button class='b bg' type='submit'>Rename</button>"
+        "<a class='b bn' href='/?path=" + fmUrlEncode(ret) + "'>Cancel</a>"
+        "</form></body></html>";
+      _otaServer->send(200, "text/html", html);
+    });
+
     // Catch-all: redirect unknown URLs to file manager (catches captive portal probes)
     _otaServer->onNotFound([this]() {
       Serial.printf("FM: redirect %s -> /\n", _otaServer->uri().c_str());
-      _otaServer->sendHeader("Location", "http://192.168.4.1/");
+      _otaServer->sendHeader("Location", _fmStaMode ? "/" : "http://192.168.4.1/");
       _otaServer->send(302, "text/plain", "");
     });
 
@@ -1519,6 +1612,21 @@ public:
   void stopFileMgr() {
     if (_otaServer) { _otaServer->stop(); delete _otaServer; _otaServer = nullptr; }
     if (_dnsServer) { _dnsServer->stop(); delete _dnsServer; _dnsServer = nullptr; }
+    if (_fmStaMode) {
+      // STA mode: no AP/DNS to tear down. Keep the connection alive for the
+      // WiFi companion; on non-companion builds turn WiFi off to save power.
+      #ifndef MECK_WIFI_COMPANION
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      delay(100);
+      #endif
+      _fmStaMode = false;
+      _editMode = EDIT_NONE;
+      extern void otaResumeRadio();
+      otaResumeRadio();
+      Serial.println("FM: Stopped (STA), radio resumed");
+      return;
+    }
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(100);
@@ -1683,6 +1791,7 @@ public:
             html += "<a class='nm' href='/dl?path=" + fmUrlEncode(fp) + "'>" + fmHtmlEscape(entries[i].name) + "</a>";
             html += "<span class='sz'>" + fmFormatSize(entries[i].size) + "</span>";
           }
+          html += "<a class='b br' style='background:#16213e;color:#4ecca3' href='/confirm-ren?path=" + fmUrlEncode(fp) + "&ret=" + fmUrlEncode(path) + "'>Ren</a>";
           html += "<a class='b br' href='/confirm-rm?path=" + fmUrlEncode(fp) + "&ret=" + fmUrlEncode(path) + "'>Del</a>";
           html += "</div>";
         }
@@ -2642,23 +2751,42 @@ public:
       } else if (_fmPhase == FM_PHASE_WAITING) {
         display.drawTextCentered(display.width() / 2, oy, "SD File Manager");
         oy += 14;
-        display.setCursor(bx + 4, oy);
-        display.print("Connect to WiFi network:");
-        oy += 10;
-        display.setColor(DisplayDriver::GREEN);
-        display.setCursor(bx + 4, oy);
-        display.print(_otaApName);
-        display.setColor(DisplayDriver::LIGHT);
-        oy += 12;
-        display.setCursor(bx + 4, oy);
-        display.print("Then open browser:");
-        oy += 10;
-        display.setColor(DisplayDriver::GREEN);
-        display.setCursor(bx + 4, oy);
-        char ipBuf[32];
-        snprintf(ipBuf, sizeof(ipBuf), "http://%s", WiFi.softAPIP().toString().c_str());
-        display.print(ipBuf);
-        display.setColor(DisplayDriver::LIGHT);
+        char ipBuf[40];
+        if (_fmStaMode) {
+          display.setCursor(bx + 4, oy);
+          display.print("On WiFi network:");
+          oy += 10;
+          display.setColor(DisplayDriver::GREEN);
+          display.setCursor(bx + 4, oy);
+          display.print(WiFi.SSID().c_str());
+          display.setColor(DisplayDriver::LIGHT);
+          oy += 12;
+          display.setCursor(bx + 4, oy);
+          display.print("Open in browser:");
+          oy += 10;
+          display.setColor(DisplayDriver::GREEN);
+          display.setCursor(bx + 4, oy);
+          snprintf(ipBuf, sizeof(ipBuf), "http://%s", WiFi.localIP().toString().c_str());
+          display.print(ipBuf);
+          display.setColor(DisplayDriver::LIGHT);
+        } else {
+          display.setCursor(bx + 4, oy);
+          display.print("Connect to WiFi network:");
+          oy += 10;
+          display.setColor(DisplayDriver::GREEN);
+          display.setCursor(bx + 4, oy);
+          display.print(_otaApName);
+          display.setColor(DisplayDriver::LIGHT);
+          oy += 12;
+          display.setCursor(bx + 4, oy);
+          display.print("Then open browser:");
+          oy += 10;
+          display.setColor(DisplayDriver::GREEN);
+          display.setCursor(bx + 4, oy);
+          snprintf(ipBuf, sizeof(ipBuf), "http://%s", WiFi.softAPIP().toString().c_str());
+          display.print(ipBuf);
+          display.setColor(DisplayDriver::LIGHT);
+        }
         oy += 12;
         display.setCursor(bx + 4, oy);
         display.print("File server active...");
