@@ -1522,6 +1522,11 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   _prefs.lora_enabled = 1;      // LoRa mesh on by default
+  #ifdef MECK_WIFI_AUTOSTART_DEFAULT_OFF
+  _prefs.wifi_autostart = 0;    // battery-focused builds: WiFi off at boot
+  #else
+  _prefs.wifi_autostart = 1;    // upstream behaviour: WiFi on at boot
+  #endif
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 }
 

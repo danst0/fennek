@@ -2257,8 +2257,17 @@ void setup() {
     // WiFi companion: load credentials from SD at runtime.
     // TCP server starts regardless — companion connects when WiFi comes up.
     MESH_DEBUG_PRINTLN("setup() - WiFi companion mode (runtime credentials)");
-    WiFi.mode(WIFI_STA);
-    if (sdCardReady) {
+    #ifdef MECK_RADIO_TOGGLES
+    bool wifi_autostart = the_mesh.getNodePrefs()->wifi_autostart != 0;
+    if (!wifi_autostart) {
+      WiFi.mode(WIFI_OFF);
+      Serial.println("WiFi companion: autostart off (toggle in Settings)");
+    }
+    #else
+    const bool wifi_autostart = true;
+    #endif
+    if (wifi_autostart) WiFi.mode(WIFI_STA);
+    if (wifi_autostart && sdCardReady) {
       File f = SD.open("/web/wifi.cfg", FILE_READ);
       if (f) {
         String ssid = f.readStringUntil('\n'); ssid.trim();

@@ -486,6 +486,13 @@ void GxEPDDisplay::endFrame() {
     display.display(true);   // Partial refresh
 #endif
     last_display_crc_value = crc;
+#ifdef EINK_POWER_OFF_IDLE
+    // Switch the panel booster off between refreshes — e-ink retains the
+    // image with no power. The next update powers it back on automatically
+    // (~50ms vs ~700ms for a partial refresh). Not hibernate(): that needs
+    // a working RST line to recover; powerOff() recovers via command only.
+    display.powerOff();
+#endif
   }
 }
 

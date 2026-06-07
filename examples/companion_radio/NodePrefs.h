@@ -79,6 +79,11 @@ struct NodePrefs {  // persisted to file
   // 1 = normal mesh operation (default). Applied at boot and on toggle.
   uint8_t lora_enabled;            // 0 = off, 1 = on (default)
 
+  // --- WiFi autostart (MECK_RADIO_TOGGLES + MECK_WIFI_COMPANION builds) ---
+  // 0 = WiFi stays off at boot (toggle on in Settings or via the file
+  //     manager when needed), 1 = connect at boot (upstream behaviour).
+  uint8_t wifi_autostart;          // 0 = off at boot, 1 = on at boot
+
   // --- Font helpers (inline, no overhead) ---
   // Returns the DisplayDriver text-size index for "small/body" text.
   // T-Deck Pro: 0 = built-in 6×8 (or 7pt with custom fonts), 1 = 9pt.

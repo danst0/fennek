@@ -160,6 +160,9 @@ enum SettingsRowType : uint8_t {
   #ifdef MECK_WIFI_COMPANION
   ROW_WIFI_SETUP,     // WiFi SSID/password configuration
   ROW_WIFI_TOGGLE,    // WiFi radio on/off toggle
+  #ifdef MECK_RADIO_TOGGLES
+  ROW_WIFI_AUTOSTART, // WiFi connect at boot on/off (persisted)
+  #endif
   #endif
   #ifdef HAS_4G_MODEM
   ROW_MODEM_TOGGLE,   // 4G modem enable/disable toggle (4G builds only)
@@ -524,6 +527,9 @@ private:
       #ifdef MECK_WIFI_COMPANION
       addRow(ROW_WIFI_SETUP);
       addRow(ROW_WIFI_TOGGLE);
+      #ifdef MECK_RADIO_TOGGLES
+      addRow(ROW_WIFI_AUTOSTART);
+      #endif
       #endif
       #ifdef HAS_4G_MODEM
       addRow(ROW_MODEM_TOGGLE);
@@ -2132,6 +2138,13 @@ public:
                    (WiFi.getMode() != WIFI_OFF) ? "ON" : "OFF");
           display.print(tmp);
           break;
+        #ifdef MECK_RADIO_TOGGLES
+        case ROW_WIFI_AUTOSTART:
+          snprintf(tmp, sizeof(tmp), "WiFi at Boot: %s",
+                   _prefs->wifi_autostart ? "ON" : "OFF");
+          display.print(tmp);
+          break;
+        #endif
         #endif
 
         #ifdef HAS_4G_MODEM
@@ -3835,6 +3848,14 @@ public:
             Serial.println("Settings: WiFi radio ON");
           }
           break;
+        #ifdef MECK_RADIO_TOGGLES
+        case ROW_WIFI_AUTOSTART:
+          _prefs->wifi_autostart = _prefs->wifi_autostart ? 0 : 1;
+          the_mesh.savePrefs();
+          Serial.printf("Settings: WiFi at boot = %s\n",
+                        _prefs->wifi_autostart ? "ON" : "OFF");
+          break;
+        #endif
         #endif
         #ifdef HAS_4G_MODEM
         case ROW_MODEM_TOGGLE:
