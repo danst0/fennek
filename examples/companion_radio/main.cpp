@@ -2633,6 +2633,16 @@ void setup() {
   the_mesh.setVoiceEnvelopeHandler(voiceEnvelopeCallback);
   #endif
 
+  // LoRa toggle — honour saved pref: put the radio to sleep and pause the
+  // mesh loop if the user switched LoRa off (Settings > LoRa Mesh).
+  #ifdef MECK_RADIO_TOGGLES
+  if (!the_mesh.getNodePrefs()->lora_enabled) {
+    extern void loraRadioSetEnabled(bool enable);
+    loraRadioSetEnabled(false);
+    Serial.println("LoRa: disabled by saved pref (toggle in Settings)");
+  }
+  #endif
+
 #ifdef ESP32
   Serial.printf("setup() complete - free heap: %d, largest block: %d\n",
                  ESP.getFreeHeap(), ESP.getMaxAllocHeap());
@@ -2645,6 +2655,32 @@ void setup() {
   }
   MESH_DEBUG_PRINTLN("=== setup() - COMPLETE ===");
 }
+
+// ---------------------------------------------------------------------------
+// User-facing LoRa mesh toggle (MECK_RADIO_TOGGLES) — puts the SX1262 into
+// sleep (config retained) and pauses the mesh loop for power saving.
+// Persisted in NodePrefs.lora_enabled and applied at boot.
+// ---------------------------------------------------------------------------
+#ifdef MECK_RADIO_TOGGLES
+extern RADIO_CLASS radio;  // Defined in target.cpp
+
+static bool loraRadioOff = false;
+
+bool loraRadioIsOff() { return loraRadioOff; }
+
+void loraRadioSetEnabled(bool enable) {
+  if (enable) {
+    radio.standby();       // wake from sleep before re-arming RX
+    radio.startReceive();
+    loraRadioOff = false;
+    Serial.println("LoRa: radio receive resumed (toggle ON)");
+  } else {
+    radio.sleep();         // warm sleep — configuration retained
+    loraRadioOff = true;
+    Serial.println("LoRa: radio sleeping (toggle OFF)");
+  }
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // OTA radio control — pause LoRa during firmware updates to prevent SPI
@@ -2663,6 +2699,15 @@ void otaPauseRadio() {
 }
 
 void otaResumeRadio() {
+  #ifdef MECK_RADIO_TOGGLES
+  if (loraRadioOff) {
+    // User has LoRa toggled off — return the radio to sleep, not RX
+    radio.sleep();
+    otaRadioPaused = false;
+    Serial.println("OTA: Radio back to sleep (LoRa toggle OFF)");
+    return;
+  }
+  #endif
   radio.startReceive();
   otaRadioPaused = false;
   Serial.println("OTA: Radio receive resumed, mesh loop active");
@@ -2697,7 +2742,11 @@ void loop() {
   #endif
 
   #ifdef MECK_OTA_UPDATE
-  if (!otaRadioPaused) {
+  bool meshPaused = otaRadioPaused;
+  #ifdef MECK_RADIO_TOGGLES
+  meshPaused = meshPaused || loraRadioOff;  // user LoRa toggle (radio asleep)
+  #endif
+  if (!meshPaused) {
   #endif
 
   #ifdef LILYGO_TECHO_CARD

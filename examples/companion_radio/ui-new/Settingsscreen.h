@@ -139,6 +139,9 @@ enum SettingsRowType : uint8_t {
   ROW_SF,             // Spreading factor (5-12)
   ROW_CR,             // Coding rate (5-8)
   ROW_TX_POWER,       // TX power (1-20 dBm)
+  #ifdef MECK_RADIO_TOGGLES
+  ROW_LORA_TOGGLE,    // LoRa mesh on/off toggle (radio sleep, persisted)
+  #endif
   ROW_UTC_OFFSET,     // UTC offset (-12 to +14)
   ROW_BACKLIGHT_BRIGHTNESS,  // Backlight brightness % the heart button toggles to (MAX only)
   ROW_MSG_NOTIFY,     // Keyboard flash on new msg toggle
@@ -494,6 +497,9 @@ private:
       addRow(ROW_SF);
       addRow(ROW_CR);
       addRow(ROW_TX_POWER);
+      #ifdef MECK_RADIO_TOGGLES
+      addRow(ROW_LORA_TOGGLE);
+      #endif
       addRow(ROW_UTC_OFFSET);
 #if defined(LilyGo_TDeck_Pro_Max)
       addRow(ROW_BACKLIGHT_BRIGHTNESS);
@@ -2059,6 +2065,14 @@ public:
           display.print(tmp);
           break;
 #endif
+
+        #ifdef MECK_RADIO_TOGGLES
+        case ROW_LORA_TOGGLE:
+          snprintf(tmp, sizeof(tmp), "LoRa Mesh: %s",
+                   _prefs->lora_enabled ? "ON" : "OFF");
+          display.print(tmp);
+          break;
+        #endif
 
         case ROW_DARK_MODE:
           snprintf(tmp, sizeof(tmp), "Dark Mode: %s",
@@ -3739,6 +3753,17 @@ public:
                         _prefs->lora_antenna ? "External" : "Internal");
           break;
 #endif
+        #ifdef MECK_RADIO_TOGGLES
+        case ROW_LORA_TOGGLE: {
+          _prefs->lora_enabled = _prefs->lora_enabled ? 0 : 1;
+          extern void loraRadioSetEnabled(bool enable);
+          loraRadioSetEnabled(_prefs->lora_enabled != 0);
+          the_mesh.savePrefs();
+          Serial.printf("Settings: LoRa mesh = %s\n",
+                        _prefs->lora_enabled ? "ON" : "OFF");
+          break;
+        }
+        #endif
         case ROW_DARK_MODE:
           _prefs->dark_mode = _prefs->dark_mode ? 0 : 1;
           the_mesh.savePrefs();

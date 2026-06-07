@@ -1521,6 +1521,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.buzzer_quiet = 0;
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
+  _prefs.lora_enabled = 1;      // LoRa mesh on by default
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 }
 

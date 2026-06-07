@@ -74,6 +74,11 @@ struct NodePrefs {  // persisted to file
   // 0 = unset/legacy; treated as the default 100 on load.
   uint8_t backlight_brightness_pct; // 5..100, default 100
 
+  // --- LoRa radio enable (MECK_RADIO_TOGGLES builds) ---
+  // 0 = radio sleeps and the mesh loop is paused (power saving),
+  // 1 = normal mesh operation (default). Applied at boot and on toggle.
+  uint8_t lora_enabled;            // 0 = off, 1 = on (default)
+
   // --- Font helpers (inline, no overhead) ---
   // Returns the DisplayDriver text-size index for "small/body" text.
   // T-Deck Pro: 0 = built-in 6×8 (or 7pt with custom fonts), 1 = 9pt.
