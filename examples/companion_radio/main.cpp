@@ -2174,6 +2174,12 @@ void setup() {
   // settings from a previous firmware flash.  The display SPI bus is already
   // up (display.begin() ran earlier), so SD can share it now.
   // ---------------------------------------------------------------------------
+  // SD SPI clock: 4 MHz stock; override via -D MECK_SD_SPI_HZ (file transfers
+  // are SD-bound — 8 MHz roughly doubles throughput; back off if SD mounts
+  // get flaky on the shared bus).
+  #ifndef MECK_SD_SPI_HZ
+  #define MECK_SD_SPI_HZ 4000000
+  #endif
   #if defined(LilyGo_TDeck_Pro) && defined(HAS_SDCARD)
   {
     // Deselect ALL SPI devices before SD init to prevent bus contention.
@@ -2204,7 +2210,7 @@ void setup() {
         delay(250);
         MESH_DEBUG_PRINTLN("setup() - SD card retry %d/3", attempt + 1);
       }
-      mounted = SD.begin(SDCARD_CS, displaySpi, 4000000);
+      mounted = SD.begin(SDCARD_CS, displaySpi, MECK_SD_SPI_HZ);
     }
 
     if (mounted) {
@@ -2240,7 +2246,7 @@ void setup() {
         delay(250);
         Serial.printf("setup() - SD card retry %d/3\n", attempt + 1);
       }
-      mounted = SD.begin(SDCARD_CS, sdSpi, 4000000);
+      mounted = SD.begin(SDCARD_CS, sdSpi, MECK_SD_SPI_HZ);
     }
 
     if (mounted) {
