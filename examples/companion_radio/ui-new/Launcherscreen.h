@@ -140,7 +140,7 @@ private:
       // MeshCore opens the channel/message list directly. The remaining
       // mesh features get pulled into the simple UI step by step.
       case ITEM_MESH:     _task->gotoChannelPickerScreen(); break;
-      case ITEM_SETTINGS: _task->gotoSettingsScreen();   break;
+      case ITEM_SETTINGS: _task->gotoSimpleSettings();   break;
     }
   }
 

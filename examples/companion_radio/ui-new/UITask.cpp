@@ -72,6 +72,7 @@
 #include "Settingsscreen.h"
 #ifdef MECK_SIMPLE_LAUNCHER
 #include "Launcherscreen.h"
+#include "Simplesettingsscreen.h"
 #endif
 #ifdef MECK_AUDIO_VARIANT
 #include "Audiobookplayerscreen.h"
@@ -1457,6 +1458,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
 #ifdef MECK_SIMPLE_LAUNCHER
   launcher_screen = new LauncherScreen(this);
+  simple_settings_screen = new SimpleSettingsScreen(this, node_prefs);
 #endif
   channel_screen = new ChannelScreen(this, &rtc_clock);
   ((ChannelScreen*)channel_screen)->setDMUnreadPtr(_dmUnread);
@@ -2941,6 +2943,17 @@ void UITask::gotoMeshHomeScreen() {
   _auto_off = millis() + AUTO_OFF_MILLIS;
   _next_refresh = 100;
 }
+
+#ifdef MECK_SIMPLE_LAUNCHER
+void UITask::gotoSimpleSettings() {
+  setCurrScreen(simple_settings_screen);
+  if (_display != NULL && !_display->isOn()) {
+    _display->turnOn();
+  }
+  _auto_off = millis() + AUTO_OFF_MILLIS;
+  _next_refresh = 100;
+}
+#endif
 
 bool UITask::isEditingHomeScreen() const {
   return curr == home && ((HomeScreen *) home)->isEditingUTC();

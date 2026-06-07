@@ -26,6 +26,7 @@
   #include "MeckExport.h"
   #include "MeckImport.h"
   #include "Settingsscreen.h"
+  #include "Simplesettingsscreen.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -733,6 +734,7 @@
   #include "MeckExport.h"
   #include "MeckImport.h"
   #include "Settingsscreen.h"
+  #include "Simplesettingsscreen.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -955,6 +957,7 @@
   #include "ChannelScreen.h"
   #include "Channelpickerscreen.h"
   #include "Settingsscreen.h"
+  #include "Simplesettingsscreen.h"
   #include "Repeateradminscreen.h"
   #include "Discoveryscreen.h"
   #include "Lastheardscreen.h"
@@ -1282,6 +1285,14 @@ static void lastHeardToggleContact() {
       if (vx < 43) return (char)KEY_PREV;
       if (vx > 85) return (char)KEY_NEXT;
       return (char)KEY_ENTER;
+    }
+
+    // Simple settings list: tap a row to toggle/open it; tap on the title
+    // area (or anywhere outside the rows) goes back to the launcher
+    if (ui_task.isOnSimpleSettings()) {
+      SimpleSettingsScreen* sss = (SimpleSettingsScreen*)ui_task.getSimpleSettingsScreen();
+      if (sss && sss->activateRowAtVY(vy)) return 0;
+      return (char)KEY_CANCEL;
     }
 #endif
 

@@ -83,6 +83,7 @@ class UITask : public AbstractUITask {
   UIScreen* home;
 #ifdef MECK_SIMPLE_LAUNCHER
   UIScreen* launcher_screen = nullptr;  // Simple 4-icon carousel home (replaces home as hub)
+  UIScreen* simple_settings_screen = nullptr;  // Flat settings list (toggles + Advanced)
 #endif
   UIScreen* msg_preview;
   UIScreen* channel_screen;  // Channel message history screen
@@ -193,6 +194,9 @@ public:
   void gotoMeshHomeScreen();  // The stock Meck home (mesh status pages); with
                               // MECK_SIMPLE_LAUNCHER, gotoHomeScreen() lands on
                               // the launcher and this opens the old home.
+#ifdef MECK_SIMPLE_LAUNCHER
+  void gotoSimpleSettings();  // Flat settings list (launcher Settings entry)
+#endif
   void gotoChannelScreen(bool resetDmView = true);  // Navigate to channel message screen
   void gotoChannelPickerScreen();  // Navigate to channel picker (bubble/list)
   void gotoDMTab();          // Navigate directly to DM tab on channel screen
@@ -261,6 +265,8 @@ public:
   bool isOnHomeScreen() const { return curr == home; }
 #ifdef MECK_SIMPLE_LAUNCHER
   bool isOnLauncher() const { return curr == launcher_screen; }
+  bool isOnSimpleSettings() const { return curr == simple_settings_screen; }
+  UIScreen* getSimpleSettingsScreen() const { return simple_settings_screen; }
 #endif
   bool isHomeShowingTiles() const { return _homeShowingTiles; }
   void setHomeShowingTiles(bool v) { _homeShowingTiles = v; }
