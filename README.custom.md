@@ -14,6 +14,8 @@ MeshCore-LoRa, Touch + Tastatur, Dateiverwaltung per Browser im Heim-WLAN).
 | WiFi-Boot-Toggle | `MECK_RADIO_TOGGLES` | Settings-Zeile **„WiFi at Boot: ON/OFF"** — WiFi bleibt nach dem Boot aus, bis es gebraucht wird (Dateimanager verbindet sich bei Bedarf selbst). |
 | WiFi ab Werk aus | `MECK_WIFI_AUTOSTART_DEFAULT_OFF` | Erster Boot startet mit WiFi aus (Batterie-Fokus). |
 | E-Ink-Booster aus im Idle | `EINK_POWER_OFF_IDLE` | Nach jedem Refresh wird der Panel-Booster abgeschaltet (`powerOff()`, nicht `hibernate()` — der braucht eine RST-Leitung). Das Bild bleibt stromlos stehen; der nächste Refresh schaltet automatisch wieder ein (~50 ms Zusatzlatenz). |
+| Einfacher Launcher | `MECK_SIMPLE_LAUNCHER` | Neuer Home-Screen: Karussell mit 4 großen Icons (**E-Reader → MP3 Player → MeshCore → Settings**). Wischen oder Tippen links/rechts blättert, Tippen in der Mitte (oder Enter) öffnet. MeshCore-Icon zeigt ungelesene Nachrichten; dahinter liegt das komplette alte Meck-Home (Status, Shutdown etc.), Q/Esc führt zurück zum Launcher. |
+| Touch auf dem Pro | `MECK_HYN_TOUCH_PRO` | Offizieller Hynitron-Multi-Chip-Treiber (CST226SE/CST3xx/CST66xx-Autodetection) statt des minimalen CST328-Treibers — LilyGo hat je Charge verschiedene Touch-Controller verbaut. |
 | Linux-Build-Fixes | — | Case-sensitive Includes/Pfade korrigiert; baut jetzt auch auf Linux/case-sensitiven Dateisystemen. |
 
 Bluetooth ist in diesem Build **nicht einkompiliert** (WiFi-Companion-Variante)
