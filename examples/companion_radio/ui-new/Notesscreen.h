@@ -4,7 +4,7 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <SD.h>
 #include <vector>
-#include "Utf8CP437.h"
+#include "Utf8cp437.h"
 #include "../NodePrefs.h"
 
 // Forward declarations

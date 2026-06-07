@@ -5,14 +5,14 @@
 
 #ifdef HAS_4G_MODEM
 #include <SD.h>
-#include "CellularMQTT.h"
+#include "Cellularmqtt.h"
 #endif
 
 #ifdef MECK_WIFI_REMOTE
 #if defined(HAS_SDCARD) || defined(SDCARD_CS)
 #include <SD.h>
 #endif
-#include "WiFiMQTT.h"
+#include "wifimqtt.h"
 #endif
 
 #ifdef DISPLAY_CLASS

@@ -16,26 +16,26 @@
 
 // T-Deck Pro Keyboard support
 #if defined(LilyGo_TDeck_Pro)
-  #include "TCA8418Keyboard.h"
+  #include "Tca8418keyboard.h"
   #include <SD.h>
-  #include "TextReaderScreen.h"
-  #include "NotesScreen.h"
-  #include "ContactsScreen.h"
+  #include "Textreaderscreen.h"
+  #include "Notesscreen.h"
+  #include "Contactsscreen.h"
   #include "ChannelScreen.h"
-  #include "ChannelPickerScreen.h"
+  #include "Channelpickerscreen.h"
   #include "MeckExport.h"
   #include "MeckImport.h"
-  #include "SettingsScreen.h"
-  #include "RepeaterAdminScreen.h"
-  #include "DiscoveryScreen.h"
-  #include "LastHeardScreen.h"
-  #include "PathEditorScreen.h"
+  #include "Settingsscreen.h"
+  #include "Repeateradminscreen.h"
+  #include "Discoveryscreen.h"
+  #include "Lastheardscreen.h"
+  #include "Patheditorscreen.h"
   #include "Tracescreen.h"
   #include "GamesMenuScreen.h"
-  #include "SnakeScreen.h"
+  #include "Snakescreen.h"
   #include "MinesweeperScreen.h"
   #ifdef MECK_WEB_READER
-    #include "WebReaderScreen.h"
+    #include "Webreaderscreen.h"
   #endif
   extern SPIClass displaySpi;  // From GxEPDDisplay.cpp, shared SPI bus
 
@@ -67,7 +67,7 @@
   static bool webReaderTextEntry = false;  // True when URL/password entry active
   #endif
   // Emoji picker state
-  #include "EmojiPicker.h"
+  #include "emojipicker.h"
   static bool emojiPickerMode = false;
   static EmojiPicker emojiPicker;
   
@@ -83,12 +83,12 @@
   // consuming ~40KB of DMA/decode buffers at boot (starves BLE stack).
   // Not available on 4G variant (I2S pins conflict with modem control lines).
   #if !defined(HAS_4G_MODEM) || defined(MECK_AUDIO_VARIANT)
-    #include "AudiobookPlayerScreen.h"
+    #include "Audiobookplayerscreen.h"
     #include "Audio.h"
     Audio* audio = nullptr;
   #endif
   #ifdef MECK_AUDIO_VARIANT
-    #include "VoiceMessageScreen.h"
+    #include "Voicemessagescreen.h"
     #include "BundledSounds.h"
     #ifdef HAS_ES8311_AUDIO
       #include "ES8311.h"   // MAX: native ES8311 codec init (Arduino Wire)
@@ -111,7 +111,7 @@
 
   // Touch input (for phone dialer numpad)
   #ifdef HAS_TOUCHSCREEN
-    #include "TouchInput.h"
+    #include "Touchinput.h"
     TouchInput touchInput(&Wire);
     #if defined(LilyGo_TDeck_Pro_Max)
       // T-Deck Pro MAX uses the vendored Hynitron driver (HynTouch) for the
@@ -717,21 +717,21 @@
 #if defined(LilyGo_T5S3_EPaper_Pro)
   #include "TouchDrvGT911.hpp"
   #include <SD.h>
-  #include "TextReaderScreen.h"
-  #include "NotesScreen.h"
-  #include "ContactsScreen.h"
+  #include "Textreaderscreen.h"
+  #include "Notesscreen.h"
+  #include "Contactsscreen.h"
   #include "ChannelScreen.h"
-  #include "ChannelPickerScreen.h"
+  #include "Channelpickerscreen.h"
   #include "MeckExport.h"
   #include "MeckImport.h"
-  #include "SettingsScreen.h"
-  #include "RepeaterAdminScreen.h"
-  #include "DiscoveryScreen.h"
-  #include "LastHeardScreen.h"
-  #include "PathEditorScreen.h"
+  #include "Settingsscreen.h"
+  #include "Repeateradminscreen.h"
+  #include "Discoveryscreen.h"
+  #include "Lastheardscreen.h"
+  #include "Patheditorscreen.h"
   #include "Tracescreen.h"   
   #include "GamesMenuScreen.h"
-  #include "SnakeScreen.h"
+  #include "Snakescreen.h"
   #include "MinesweeperScreen.h"
 
   static TouchDrvGT911 gt911Touch;
@@ -943,14 +943,14 @@
 
 // --- T-Echo Lite: CardKB keyboard, GxEPD2 e-ink, no touch ---
 #if defined(LILYGO_TECHO_LITE) || defined(LILYGO_TECHO_CARD)
-  #include "ContactsScreen.h"
+  #include "Contactsscreen.h"
   #include "ChannelScreen.h"
-  #include "ChannelPickerScreen.h"
-  #include "SettingsScreen.h"
-  #include "RepeaterAdminScreen.h"
-  #include "DiscoveryScreen.h"
-  #include "LastHeardScreen.h"
-  #include "PathEditorScreen.h"
+  #include "Channelpickerscreen.h"
+  #include "Settingsscreen.h"
+  #include "Repeateradminscreen.h"
+  #include "Discoveryscreen.h"
+  #include "Lastheardscreen.h"
+  #include "Patheditorscreen.h"
 
   #ifdef LILYGO_TECHO_CARD
     #include "TechoCardHomeScreen.h"
@@ -1082,7 +1082,7 @@ static uint32_t _atoi(const char* sp) {
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   #if HAS_GPS && !defined(LILYGO_TECHO_CARD)
-    #include "MapScreen.h"  // After BLE -- PNGdec headers conflict with BLE if included earlier
+    #include "Mapscreen.h"  // After BLE -- PNGdec headers conflict with BLE if included earlier
   #endif
   UITask ui_task(&board, &serial_interface);
 #endif

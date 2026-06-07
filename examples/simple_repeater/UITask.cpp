@@ -3,11 +3,11 @@
 #include <helpers/CommonCLI.h>
 
 #ifdef HAS_4G_MODEM
-#include "CellularMQTT.h"
+#include "Cellularmqtt.h"
 #endif
 
 #ifdef MECK_WIFI_REMOTE
-#include "WiFiMQTT.h"
+#include "wifimqtt.h"
 #endif
 
 #if defined(HAS_4G_MODEM) || defined(MECK_WIFI_REMOTE)

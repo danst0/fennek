@@ -18,7 +18,7 @@
 
 #include <Arduino.h>
 #include <helpers/ui/DisplayDriver.h>
-#include "EmojiSprites.h"
+#include "Emojisprites.h"
 
 enum VKBStatus { VKB_EDITING, VKB_SUBMITTED, VKB_CANCELLED };
 

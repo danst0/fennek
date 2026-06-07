@@ -38,7 +38,7 @@
 #ifdef HAS_4G_MODEM
 #include "ModemManager.h"
 #endif
-#include "Utf8CP437.h"
+#include "Utf8cp437.h"
 #include "../NodePrefs.h"
 
 // Forward declarations

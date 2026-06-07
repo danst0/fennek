@@ -1,7 +1,7 @@
 #ifdef MECK_WIFI_REMOTE
 
 #include "target.h"
-#include "WiFiMQTT.h"
+#include "wifimqtt.h"
 #include <esp_mac.h>
 #include <Update.h>
 #include <HTTPClient.h>

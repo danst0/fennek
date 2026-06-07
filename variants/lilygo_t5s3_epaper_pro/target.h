@@ -8,7 +8,7 @@
 #include <helpers/radiolib/RadioLibWrappers.h>
 #include <helpers/radiolib/CustomSX1262Wrapper.h>
 #include <T5S3Board.h>
-#include "PCF85063Clock.h"
+#include "Pcf85063clock.h"
 
 // Display support — FastEPDDisplay for parallel e-ink (not GxEPD2)
 #ifdef DISPLAY_CLASS

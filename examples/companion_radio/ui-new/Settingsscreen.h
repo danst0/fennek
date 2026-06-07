@@ -86,7 +86,7 @@ extern TDeckProMaxBoard board;
 // ---------------------------------------------------------------------------
 // Radio presets (shared with Serial CLI in MyMesh.cpp)
 // ---------------------------------------------------------------------------
-#include "RadioPresets.h"
+#include "Radiopresets.h"
 
 // ---------------------------------------------------------------------------
 // GPS baud rate options (shared with UITask GPS home page overlay)

@@ -1,9 +1,9 @@
 #include "UITask.h"
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
-#include "NotesScreen.h"
-#include "RepeaterAdminScreen.h"
-#include "MapScreen.h"
+#include "Notesscreen.h"
+#include "Repeateradminscreen.h"
+#include "Mapscreen.h"
 #include "target.h"
 #if defined(WIFI_SSID) || defined(MECK_WIFI_COMPANION)
   #include <WiFi.h>
@@ -34,11 +34,11 @@
 
 #include "icons.h"
 #include "ChannelScreen.h"
-#include "ContactsScreen.h"
-#include "TextReaderScreen.h"
-#include "SettingsScreen.h"
+#include "Contactsscreen.h"
+#include "Textreaderscreen.h"
+#include "Settingsscreen.h"
 #ifdef MECK_AUDIO_VARIANT
-#include "AudiobookPlayerScreen.h"
+#include "Audiobookplayerscreen.h"
 #endif
 #ifdef HAS_4G_MODEM
   #include "SMSScreen.h"

@@ -14,7 +14,7 @@
 #include <SD.h>
 #include <FS.h>
 #include "EpubZipReader.h"
-#include "Utf8CP437.h"
+#include "Utf8cp437.h"
 
 // Maximum chapters in spine (most novels have 20-80)
 #define EPUB_MAX_CHAPTERS 200

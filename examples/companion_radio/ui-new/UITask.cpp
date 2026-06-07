@@ -2,29 +2,29 @@
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #if !defined(LILYGO_TECHO_LITE) && !defined(LILYGO_TECHO_CARD)
-#include "NotesScreen.h"
+#include "Notesscreen.h"
 #endif
-#include "RepeaterAdminScreen.h"
-#include "PathEditorScreen.h"
-#include "DiscoveryScreen.h"
-#include "LastHeardScreen.h"
+#include "Repeateradminscreen.h"
+#include "Patheditorscreen.h"
+#include "Discoveryscreen.h"
+#include "Lastheardscreen.h"
 #include "RxLogScreen.h"
 #include "Tracescreen.h"
 #include "GamesMenuScreen.h"
-#include "SnakeScreen.h"
+#include "Snakescreen.h"
 #include "MinesweeperScreen.h"
 #ifdef MECK_WEB_READER
-  #include "WebReaderScreen.h"
+  #include "Webreaderscreen.h"
 #endif
 #if HAS_GPS && !defined(LILYGO_TECHO_CARD)
-  #include "MapScreen.h"
+  #include "Mapscreen.h"
 #endif
 #include "target.h"
 #if defined(LilyGo_TDeck_Pro_Max)
   #include "DRV2605Haptic.h"   // haptic motor for "Buzzer (vibrate)" channels
 #endif
 #if defined(LilyGo_T5S3_EPaper_Pro) || defined(MECK_AUDIO_VARIANT)
-  #include "HomeIcons.h"
+  #include "homeicons.h"
 #endif
 #if defined(WIFI_SSID) || defined(MECK_WIFI_COMPANION)
   #include <WiFi.h>
@@ -64,15 +64,15 @@
 
 #include "icons.h"
 #include "ChannelScreen.h"
-#include "ChannelPickerScreen.h"
-#include "ContactsScreen.h"
+#include "Channelpickerscreen.h"
+#include "Contactsscreen.h"
 #if !defined(LILYGO_TECHO_LITE) && !defined(LILYGO_TECHO_CARD)
-#include "TextReaderScreen.h"
+#include "Textreaderscreen.h"
 #endif
-#include "SettingsScreen.h"
+#include "Settingsscreen.h"
 #ifdef MECK_AUDIO_VARIANT
-#include "AudiobookPlayerScreen.h"
-#include "VoiceMessageScreen.h"
+#include "Audiobookplayerscreen.h"
+#include "Voicemessagescreen.h"
 #endif
 #ifdef HAS_4G_MODEM
   #include "SMSScreen.h"

@@ -26,7 +26,7 @@
 //        void invalidateFrameCRC() { last_display_crc_value = 0; }
 //
 //   3. Add to UITask.h:
-//        #include "MapScreen.h"
+//        #include "Mapscreen.h"
 //        UIScreen* map_screen;
 //        void gotoMapScreen();
 //        bool isOnMapScreen() const { return curr == map_screen; }

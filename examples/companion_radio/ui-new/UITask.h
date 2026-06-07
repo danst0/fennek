@@ -27,15 +27,15 @@
 #endif
 
 #ifdef MECK_WEB_READER
-  #include "WebReaderScreen.h"
+  #include "Webreaderscreen.h"
 #endif
 
 #ifdef MECK_AUDIO_VARIANT
-  #include "AlarmScreen.h"
+  #include "Alarmscreen.h"
 #endif
 
 #if defined(LilyGo_T5S3_EPaper_Pro)
-  #include "VirtualKeyboard.h"
+  #include "virtualkeyboard.h"
 #endif
 
 // MapScreen.h included in UITask.cpp and main.cpp only (PNGdec headers

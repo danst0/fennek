@@ -5,7 +5,7 @@
 // WASD navigation, Enter to select, $/Q/Backspace to cancel
 
 #include <helpers/ui/DisplayDriver.h>
-#include "EmojiSprites.h"
+#include "Emojisprites.h"
 
 #define EMOJI_PICKER_COLS 5
 #define EMOJI_PICKER_VISIBLE_ROWS 4

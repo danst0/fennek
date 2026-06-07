@@ -2,7 +2,7 @@
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
-#include "RadioPresets.h"        // Shared radio presets (serial CLI + settings screen)
+#include "Radiopresets.h"        // Shared radio presets (serial CLI + settings screen)
 
 #if defined(LilyGo_T5S3_EPaper_Pro)
   #include "target.h"            // for board.setBacklight() CLI command

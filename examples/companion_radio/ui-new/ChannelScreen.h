@@ -5,7 +5,7 @@
 #include <helpers/ChannelDetails.h>
 #include <MeshCore.h>
 #include <Packet.h>
-#include "EmojiSprites.h"
+#include "Emojisprites.h"
 
 // SD card message persistence
 #if defined(HAS_SDCARD) && defined(ESP32)
