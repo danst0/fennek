@@ -78,7 +78,14 @@ public:
         case ROW_WIFI_SETUP: display.print("WiFi Setup");   break;
         case ROW_STATIC_IP: {
           String ip = currentStaticIp();
-          String label = "IP: " + (ip.length() ? ip : String("DHCP"));
+          String label;
+          if (ip.length()) {
+            label = "IP: " + ip;  // configured static address
+          } else if (WiFi.status() == WL_CONNECTED) {
+            label = "IP: DHCP " + WiFi.localIP().toString();
+          } else {
+            label = "IP: DHCP";
+          }
           display.print(label.c_str());
           break;
         }
