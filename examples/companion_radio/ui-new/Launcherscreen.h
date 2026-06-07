@@ -11,9 +11,9 @@
 //   tap centre / Enter                        -> open entry
 //   keyboard: a/d or arrow keys cycle, Enter opens
 //
-// The stock Meck HomeScreen (status pages, shutdown, etc.) stays reachable
-// behind the MeshCore entry via UITask::gotoMeshHomeScreen(); q/Esc there
-// returns here.
+// The stock Meck HomeScreen (status pages, shutdown, etc.) is archived in
+// this build: MeshCore opens the channel/message list directly, and mesh
+// features are pulled into the simple UI step by step.
 // =============================================================================
 
 #ifdef MECK_SIMPLE_LAUNCHER
@@ -136,7 +136,10 @@ private:
         #endif
         break;
       }
-      case ITEM_MESH:     _task->gotoMeshHomeScreen();   break;
+      // The stock Meck home (status pages) is archived in launcher builds —
+      // MeshCore opens the channel/message list directly. The remaining
+      // mesh features get pulled into the simple UI step by step.
+      case ITEM_MESH:     _task->gotoChannelPickerScreen(); break;
       case ITEM_SETTINGS: _task->gotoSettingsScreen();   break;
     }
   }
