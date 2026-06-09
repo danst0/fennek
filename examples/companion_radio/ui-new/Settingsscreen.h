@@ -39,6 +39,7 @@
   #include <DNSServer.h>
   #include <Update.h>
   #include <esp_ota_ops.h>
+  #include "lamejs_min.h"  // /lame.js: in-browser FLAC->MP3 transcode for uploads
 #endif
 
 // Forward declarations
@@ -1430,6 +1431,14 @@ public:
       _otaServer->send(200, "text/html", html);
     });
 
+    // --- MP3 encoder lib (PROGMEM): GET /lame.js ---
+    // Served separately so the page stays small; the upload JS uses it to
+    // transcode hi-res / 24-bit FLAC the audio player cannot decode.
+    _otaServer->on("/lame.js", HTTP_GET, [this]() {
+      _otaServer->sendHeader("Cache-Control", "max-age=86400");
+      _otaServer->send_P(200, "application/javascript", LAMEJS_MIN);
+    });
+
     // --- File download: GET /dl?path=/file.txt ---
     _otaServer->on("/dl", HTTP_GET, [this]() {
       String path = _otaServer->arg("path");
@@ -1878,11 +1887,15 @@ public:
       "<label class='b'>Select files<input type='file' id='fsel' multiple hidden></label>"
       "<label class='b'>Select folder<input type='file' id='dsel' webkitdirectory multiple hidden></label>"
       "</div>"
+      "<div style='font-size:0.78em;color:#9aa;margin-top:7px'>"
+      "<label><input type='checkbox' id='cvtall'> Convert <b>all</b> FLAC to MP3 "
+      "(otherwise only 24-bit / hi-res FLAC that the player can't decode)</label></div>"
       "<div id='bar' style='height:12px;background:#16213e;border:1px solid #4ecca3;"
       "border-radius:6px;overflow:hidden;margin-top:8px;display:none'>"
       "<div id='barfill' style='height:100%;width:0%;background:#4ecca3'></div></div>"
       "<div id='prog' style='margin-top:6px;font-size:0.9em'></div>"
       "</div>"
+      "<script src='/lame.js'></script>\n"
       "<script>\n"
       "var dir=decodeURIComponent('" + fmUrlEncode(path) + "');\n"
       "var drop=document.getElementById('drop'),prog=document.getElementById('prog');\n"
@@ -1893,6 +1906,66 @@ public:
       " var pct=total?Math.min(100,Math.round(done*100/total)):0;\n"
       " barfill.style.width=pct+'%';\n"
       " prog.textContent=pct+'%  '+label;\n"
+      "}\n"
+      // --- FLAC -> MP3 transcode (client side, before upload) ---
+      // The audio player only decodes 8/16-bit FLAC, blocksize<=8192, mono/stereo.
+      // We parse STREAMINFO and convert only files it cannot play (or all, if the
+      // checkbox is set). Decoding uses the browser's native FLAC decoder; encoding
+      // uses lamejs from /lame.js. Output is 44.1kHz MP3, which has none of those limits.
+      "var cvtall=document.getElementById('cvtall');\n"
+      "function f32i16(f){var o=new Int16Array(f.length);for(var i=0;i<f.length;i++){var s=f[i];s=s<-1?-1:s>1?1:s;o[i]=s<0?s*0x8000:s*0x7FFF;}return o;}\n"
+      "function flacNeedsConv(b){\n"
+      " if(b.length<42||b[0]!=0x66||b[1]!=0x4C||b[2]!=0x61||b[3]!=0x43)return false;\n"
+      " var maxBlock=(b[10]<<8)|b[11];\n"
+      " var ch=((b[20]>>1)&0x07)+1;\n"
+      " var bps=(((b[20]&0x01)<<4)|(b[21]>>4))+1;\n"
+      " return (bps!=8&&bps!=16)||maxBlock>8192||ch>2;\n"
+      "}\n"
+      "async function flacToMp3(file,kbps,onpct){\n"
+      " var ab=await file.arrayBuffer();\n"
+      " var AC=window.AudioContext||window.webkitAudioContext;\n"
+      " var ctx;try{ctx=new AC({sampleRate:44100});}catch(e){ctx=new AC();}\n"
+      " var buf=await ctx.decodeAudioData(ab);\n"
+      " if(buf.sampleRate!=44100){\n"
+      "  var c=Math.min(buf.numberOfChannels,2);\n"
+      "  var off=new OfflineAudioContext(c,Math.ceil(buf.duration*44100),44100);\n"
+      "  var s=off.createBufferSource();s.buffer=buf;s.connect(off.destination);s.start();\n"
+      "  buf=await off.startRendering();\n"
+      " }\n"
+      " try{ctx.close&&ctx.close();}catch(e){}\n"
+      " var channels=Math.min(buf.numberOfChannels,2);\n"
+      " var L=f32i16(buf.getChannelData(0));\n"
+      " var R=channels==2?f32i16(buf.getChannelData(1)):null;\n"
+      " var enc=new lamejs.Mp3Encoder(channels,44100,kbps);\n"
+      " var BL=1152,total=L.length,out=[];\n"
+      " for(var i=0;i<total;i+=BL){\n"
+      "  var l=L.subarray(i,i+BL);\n"
+      "  var d=channels==2?enc.encodeBuffer(l,R.subarray(i,i+BL)):enc.encodeBuffer(l);\n"
+      "  if(d.length)out.push(d);\n"
+      "  if((i/BL)%64==0){if(onpct)onpct(i/total);await new Promise(function(r){setTimeout(r);});}\n"
+      " }\n"
+      " var t=enc.flush();if(t.length)out.push(t);\n"
+      " if(onpct)onpct(1);\n"
+      " return new Blob(out,{type:'audio/mpeg'});\n"
+      "}\n"
+      "async function prepare(list){\n"
+      " var res=[];\n"
+      " for(var i=0;i<list.length;i++){var it=list[i];\n"
+      "  if(/\\.flac$/i.test(it.rel)){\n"
+      "   var head=new Uint8Array(await it.f.slice(0,42).arrayBuffer());\n"
+      "   if((cvtall&&cvtall.checked)||flacNeedsConv(head)){\n"
+      "    if(typeof lamejs=='undefined'){prog.textContent='lame.js failed to load';throw 'lame.js missing';}\n"
+      "    bar.style.display='block';barfill.style.width='0%';\n"
+      "    prog.textContent='Converting ('+(i+1)+'/'+list.length+') '+it.rel+' ...';\n"
+      "    var blob=await flacToMp3(it.f,192,function(p){barfill.style.width=Math.round(p*100)+'%';});\n"
+      "    var nm=it.rel.replace(/\\.flac$/i,'.mp3');\n"
+      "    res.push({f:new File([blob],nm.split('/').pop(),{type:'audio/mpeg'}),rel:nm});\n"
+      "    continue;\n"
+      "   }\n"
+      "  }\n"
+      "  res.push(it);\n"
+      " }\n"
+      " return res;\n"
       "}\n"
       "function uploadOne(it,base,total){return new Promise(function(res,rej){\n"
       " var xhr=new XMLHttpRequest();\n"
@@ -1905,6 +1978,7 @@ public:
       "});}\n"
       "async function uploadList(list){\n"
       " if(busy||!list.length)return;busy=true;\n"
+      " try{list=await prepare(list);}catch(e){prog.textContent='Convert failed: '+e;busy=false;return;}\n"
       " var total=0,doneBytes=0,done=0;\n"
       " for(var it of list)total+=it.f.size;\n"
       " for(var it of list){\n"
