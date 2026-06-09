@@ -6,6 +6,7 @@
 #include <vector>
 #include "Utf8cp437.h"
 #include "Epubprocessor.h"
+#include "BookThumbnail.h"
 #include "../NodePrefs.h"
 
 // Forward declarations
@@ -20,6 +21,18 @@ class UITask;
 #define PREINDEX_PAGES    100
 #define READER_MAX_FILES  50
 #define READER_BUF_SIZE   4096
+#define BOOKMETA_CACHE    "/books/.bookmeta_cache"
+#define BOOKMETA_VERSION  1   // bump to invalidate cached thumbnails/metadata
+
+// Per-book display metadata (title/author) and a decoded cover thumbnail,
+// resolved on folder entry and cached to SD for instant re-browse.
+struct BookInfo {
+  String   title;       // CP437-encoded for direct printing in the list
+  String   author;      // CP437-encoded
+  uint8_t* thumb;       // 1-bit XBM, READER_THUMB_W x READER_THUMB_H, or nullptr
+  bool     resolved;    // attempted resolution (avoids re-work within a scan)
+  BookInfo() : thumb(nullptr), resolved(false) {}
+};
 
 // ============================================================================
 // Word Wrap Helper (same algorithm as standalone reader)
@@ -418,6 +431,7 @@ private:
   std::vector<String> _fileList;
   std::vector<String> _dirList;    // Subdirectories at current path
   std::vector<FileCache> _fileCache;
+  std::vector<BookInfo> _bookInfo; // Title/author/thumbnail, parallel to _fileList
   int _selectedFile;
   String _currentPath;             // Current browsed directory
 
@@ -772,6 +786,16 @@ private:
     return idx - dirEntryCount();
   }
 
+  // Uniform list row height: tall enough for a cover thumbnail plus a two-line
+  // title/author stack.  Used by both the renderer and the tap hit-test so they
+  // stay in lock-step.
+  int listRowH() const {
+    int lh = _prefs ? _prefs->smallLineH() : 9;
+    int textH = 2 * lh;
+    int h = (READER_THUMB_H > textH) ? READER_THUMB_H : textH;
+    return h + 4;
+  }
+
   void navigateToParent() {
     int lastSlash = _currentPath.lastIndexOf('/');
     if (lastSlash > 0) {
@@ -821,6 +845,190 @@ private:
     root.close();
     Serial.printf("TextReader: %s — %d dirs, %d files\n",
                   _currentPath.c_str(), (int)_dirList.size(), (int)_fileList.size());
+  }
+
+  // ---- Book Metadata + Cover Thumbnails ----
+
+  void freeBookInfo() {
+    for (auto& bi : _bookInfo) {
+      if (bi.thumb) { free(bi.thumb); bi.thumb = nullptr; }
+    }
+    _bookInfo.clear();
+  }
+
+  // Convert a UTF-8 string to CP437 so umlauts / typographic chars render with
+  // the built-in font the file list uses (drawTextEllipsized has no decoder).
+  static String utf8ToCp437(const char* s) {
+    String out;
+    int len = strlen(s);
+    int i = 0;
+    while (i < len) {
+      uint8_t c = (uint8_t)s[i];
+      if (c < 0x80) { out += (char)c; i++; continue; }
+      int pos = i;
+      uint32_t cp = decodeUtf8Char(s, len, &pos);
+      uint8_t g = unicodeToCP437(cp);
+      out += (char)(g ? g : '?');
+      i = (pos > i) ? pos : i + 1;
+    }
+    return out;
+  }
+
+  static uint32_t pathHash(const String& s) {
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < (int)s.length(); i++) { h ^= (uint8_t)s[i]; h *= 16777619u; }
+    return h;
+  }
+
+  String bookmetaCachePath(const String& fullPath) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s/%08lx.bin",
+             BOOKMETA_CACHE, (unsigned long)pathHash(fullPath));
+    return String(buf);
+  }
+
+  // Read dc:title / dc:creator from a sidecar metadata.opf file.
+  bool readOpfFile(const String& path, char* title, int tlen, char* author, int alen) {
+    title[0] = author[0] = '\0';
+    File f = SD.open(path.c_str(), FILE_READ);
+    if (!f) return false;
+    uint32_t sz = f.size();
+    if (sz == 0 || sz > 32768) { f.close(); return false; }
+    char* buf = (char*)ps_malloc(sz + 1);
+    if (!buf) { f.close(); return false; }
+    int n = f.read((uint8_t*)buf, sz);
+    f.close();
+    if (n <= 0) { free(buf); return false; }
+    buf[n] = '\0';
+    readerExtractTag(buf, n, "dc:title", title, tlen);
+    readerExtractTag(buf, n, "dc:creator", author, alen);
+    free(buf);
+    return (title[0] != '\0' || author[0] != '\0');
+  }
+
+  bool loadBookmetaCache(const String& fullPath, uint32_t epubSize, BookInfo& bi) {
+    File f = SD.open(bookmetaCachePath(fullPath).c_str(), FILE_READ);
+    if (!f) return false;
+    uint8_t ver = f.read();
+    uint8_t hasThumb = f.read();
+    uint32_t storedSize = 0;
+    if (f.read((uint8_t*)&storedSize, 4) != 4 ||
+        ver != BOOKMETA_VERSION || storedSize != epubSize) { f.close(); return false; }
+
+    uint16_t tl = 0, al = 0;
+    f.read((uint8_t*)&tl, 2);
+    for (uint16_t i = 0; i < tl; i++) bi.title += (char)f.read();
+    f.read((uint8_t*)&al, 2);
+    for (uint16_t i = 0; i < al; i++) bi.author += (char)f.read();
+
+    if (hasThumb) {
+      int bytes = ((READER_THUMB_W + 7) / 8) * READER_THUMB_H;
+      bi.thumb = (uint8_t*)ps_malloc(bytes);
+      if (bi.thumb && f.read(bi.thumb, bytes) != bytes) { free(bi.thumb); bi.thumb = nullptr; }
+    }
+    f.close();
+    bi.resolved = true;
+    return true;
+  }
+
+  void saveBookmetaCache(const String& fullPath, uint32_t epubSize, const BookInfo& bi) {
+    if (!SD.exists(BOOKMETA_CACHE)) SD.mkdir(BOOKMETA_CACHE);
+    String cp = bookmetaCachePath(fullPath);
+    SD.remove(cp.c_str());  // FILE_WRITE appends; ensure a clean file
+    File f = SD.open(cp.c_str(), FILE_WRITE);
+    if (!f) return;
+    f.write((uint8_t)BOOKMETA_VERSION);
+    f.write((uint8_t)(bi.thumb ? 1 : 0));
+    f.write((uint8_t*)&epubSize, 4);
+    uint16_t tl = bi.title.length(), al = bi.author.length();
+    f.write((uint8_t*)&tl, 2); f.write((const uint8_t*)bi.title.c_str(), tl);
+    f.write((uint8_t*)&al, 2); f.write((const uint8_t*)bi.author.c_str(), al);
+    if (bi.thumb) {
+      int bytes = ((READER_THUMB_W + 7) / 8) * READER_THUMB_H;
+      f.write(bi.thumb, bytes);
+    }
+    f.close();
+  }
+
+  // Resolve one file's title/author/cover.  Strategy: sidecar files first
+  // (metadata.opf + cover.jpg, the Calibre layout), EPUB internals as fallback.
+  // Results are cached to SD keyed by the EPUB's size so re-browsing is instant.
+  void resolveOneBook(int fi) {
+    BookInfo& bi = _bookInfo[fi];
+    if (bi.resolved) return;
+    bi.resolved = true;
+
+    const String& fname = _fileList[fi];
+    bool isEpub = fname.endsWith(".epub") || fname.endsWith(".EPUB");
+
+    String base = fname;
+    int dot = base.lastIndexOf('.');
+    if (dot > 0) base = base.substring(0, dot);
+
+    // .txt files: cleaned filename, no cover.
+    if (!isEpub) { bi.title = utf8ToCp437(base.c_str()); return; }
+
+    String fullPath = _currentPath + "/" + fname;
+    File ef = SD.open(fullPath.c_str(), FILE_READ);
+    uint32_t epubSize = ef ? ef.size() : 0;
+    if (ef) ef.close();
+    if (epubSize && loadBookmetaCache(fullPath, epubSize, bi)) return;
+
+    String sidecarOpf   = _currentPath + "/metadata.opf";
+    String sidecarCover = _currentPath + "/cover.jpg";
+    bool haveSidecarOpf   = SD.exists(sidecarOpf.c_str());
+    bool haveSidecarCover = SD.exists(sidecarCover.c_str());
+    if (!haveSidecarCover) {
+      String alt = _currentPath + "/cover.jpeg";
+      if (SD.exists(alt.c_str())) { sidecarCover = alt; haveSidecarCover = true; }
+    }
+
+    char title[160] = "", author[128] = "", coverEntry[160] = "";
+
+    // Crack open the EPUB only if a sidecar is missing (cover path / fallback meta).
+    char eTitle[160] = "", eAuthor[128] = "";
+    if (!haveSidecarOpf || !haveSidecarCover) {
+      EpubProcessor::getMetadata(fullPath.c_str(), eTitle, sizeof(eTitle),
+                                 eAuthor, sizeof(eAuthor), coverEntry, sizeof(coverEntry));
+    }
+    if (haveSidecarOpf) readOpfFile(sidecarOpf, title, sizeof(title), author, sizeof(author));
+    if (title[0] == '\0')  strncpy(title, eTitle, sizeof(title) - 1);
+    if (author[0] == '\0') strncpy(author, eAuthor, sizeof(author) - 1);
+
+    bi.title  = utf8ToCp437(title[0] ? title : base.c_str());
+    if (author[0]) bi.author = utf8ToCp437(author);
+
+    // ---- Cover: sidecar cover.jpg first, then the EPUB's own cover image ----
+    uint8_t* jpegBuf = nullptr;
+    uint32_t jpegSize = 0;
+    if (haveSidecarCover) {
+      File cf = SD.open(sidecarCover.c_str(), FILE_READ);
+      if (cf) {
+        jpegSize = cf.size();
+        jpegBuf = (uint8_t*)ps_malloc(jpegSize);
+        if (jpegBuf && cf.read(jpegBuf, jpegSize) != (int)jpegSize) {
+          free(jpegBuf); jpegBuf = nullptr;
+        }
+        cf.close();
+      }
+    }
+    if (!jpegBuf && coverEntry[0]) {
+      jpegBuf = EpubProcessor::extractEntryByName(fullPath.c_str(), coverEntry, &jpegSize);
+    }
+    if (jpegBuf && jpegSize >= 2 && jpegBuf[0] == 0xFF && jpegBuf[1] == 0xD8) {
+      bi.thumb = readerDecodeJpegThumb(jpegBuf, jpegSize, READER_THUMB_W, READER_THUMB_H);
+    }
+    if (jpegBuf) free(jpegBuf);
+    digitalWrite(SDCARD_CS, HIGH);  // release bus after SD/zip work
+
+    if (epubSize) saveBookmetaCache(fullPath, epubSize, bi);
+  }
+
+  // Rebuild the per-file metadata/thumbnail cache for the current folder.
+  void resolveBookInfo() {
+    freeBookInfo();
+    _bookInfo.resize(_fileList.size());
+    for (int i = 0; i < (int)_fileList.size(); i++) resolveOneBook(i);
   }
 
   // ---- Book Open/Close ----
@@ -1104,9 +1312,12 @@ private:
     } else {
       display.setTextSize(_prefs->smallTextSize());  // Tiny font for file list
       int listLineH = _prefs->smallLineH();
+      int rowH = listRowH();
+      int off = _prefs->smallHighlightOff();   // 0 on T5S3
       int startY = 14;
-      int maxVisible = (display.height() - startY - _footerHeight) / listLineH;
-      if (maxVisible < 3) maxVisible = 3;
+      int textX = READER_THUMB_W + 4;          // text starts right of the thumbnail
+      int maxVisible = (display.height() - startY - _footerHeight) / rowH;
+      if (maxVisible < 2) maxVisible = 2;
       if (maxVisible > 15) maxVisible = 15;
 
       int startIdx = max(0, min(_selectedFile - maxVisible / 2,
@@ -1116,51 +1327,64 @@ private:
       int y = startY;
       for (int i = startIdx; i < endIdx; i++) {
         bool selected = (i == _selectedFile);
-
-        if (selected) {
-          display.setColor(DisplayDriver::LIGHT);
-#if defined(LilyGo_T5S3_EPaper_Pro)
-          display.fillRect(0, y, display.width(), listLineH);
-#else
-          // setCursor adds +5 to y internally, but fillRect does not.
-          // NodePrefs::smallHighlightOff() returns the correct offset for all
-          // font combinations (built-in, large_font, custom 7pt styles).
-          display.fillRect(0, y + _prefs->smallHighlightOff(), display.width(), listLineH);
-#endif
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
-
-        // Set cursor AFTER fillRect so text draws on top of highlight
         int type = itemTypeAt(i);
-        String line = selected ? "> " : "  ";
 
-        if (type == 0) {
-          // ".." parent directory
-          line += ".. (up)";
-        } else if (type == 1) {
-          // Subdirectory
-          line += "/" + dirNameAt(i);
-        } else {
-          // File
-          int fi = fileIndexAt(i);
-          String name = _fileList[fi];
-
-          // Check for resume indicator
-          String suffix = "";
-          if (fi < (int)_fileCache.size()) {
-            if (_fileCache[fi].filename == name && _fileCache[fi].lastReadPage > 0) {
-              suffix = " *";
-            }
+        if (type == 0 || type == 1) {
+          // ".." or subdirectory — single line, vertically centered, full-width
+          // highlight.
+          if (selected) {
+            display.setColor(DisplayDriver::LIGHT);
+            display.fillRect(0, y + off, display.width(), rowH);
           }
-          line += name + suffix;
+          display.setColor(selected ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+          String line = selected ? "> " : "  ";
+          line += (type == 0) ? ".. (up)" : ("/" + dirNameAt(i));
+          int ty = y + (rowH - listLineH) / 2;
+          display.drawTextEllipsized(0, ty, display.width() - 4, line.c_str());
+        } else {
+          // Book / text file — cover thumbnail (left) + title and author.
+          int fi = fileIndexAt(i);
+          const String& name = _fileList[fi];
+
+          // Highlight only the text area so the thumbnail keeps its white
+          // backdrop (drawing a 1-bit cover onto an inverted bar would negate it).
+          if (selected) {
+            display.setColor(DisplayDriver::LIGHT);
+            display.fillRect(textX, y + off, display.width() - textX, rowH);
+          }
+
+          // Thumbnail (always black-on-white) or a placeholder box.
+          display.setColor(DisplayDriver::LIGHT);
+          if (fi < (int)_bookInfo.size() && _bookInfo[fi].thumb) {
+            display.drawXbm(1, y + off, _bookInfo[fi].thumb,
+                            READER_THUMB_W, READER_THUMB_H);
+          } else {
+            display.drawRect(1, y + off, READER_THUMB_W, READER_THUMB_H);
+          }
+
+          // Title + author (fall back to the filename when no metadata).
+          String title, author;
+          if (fi < (int)_bookInfo.size() && _bookInfo[fi].title.length()) {
+            title  = _bookInfo[fi].title;
+            author = _bookInfo[fi].author;
+          } else {
+            title = name;
+          }
+          if (fi < (int)_fileCache.size() &&
+              _fileCache[fi].filename == name && _fileCache[fi].lastReadPage > 0) {
+            title += " *";
+          }
+
+          display.setColor(selected ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+          int budget = display.width() - 4 - textX;
+          display.drawTextEllipsized(textX, y, budget, title.c_str());
+          if (author.length())
+            display.drawTextEllipsized(textX, y + listLineH, budget, author.c_str());
         }
 
-        // Pixel-aware ellipsis — small margin prevents GxEPD edge wrapping
-        display.drawTextEllipsized(0, y, display.width() - 4, line.c_str());
-        y += listLineH;
+        y += rowH;
       }
+      display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);  // Restore
     }
 
@@ -1712,6 +1936,9 @@ public:
     if (!_fileOpen) {
       _selectedFile = 0;
       _mode = FILE_LIST;
+      // Resolve covers/metadata for the current folder if not already in sync
+      // (first entry after boot indexing, which doesn't populate _bookInfo).
+      if (_bookInfo.size() != _fileList.size()) resolveBookInfo();
     } else if (_pagePositions.empty()) {
       // Layout was invalidated (orientation change) — reindex the open book
       Serial.println("TextReader: Reindexing after layout change");
@@ -1754,23 +1981,19 @@ public:
   int selectRowAtVY(int vy) {
     if (_mode != FILE_LIST) return 0;
     const int startY = 14, footerH = 14;
-    const int listLineH = _prefs ? _prefs->smallLineH() : 9;
-#if defined(LilyGo_T5S3_EPaper_Pro)
-    const int bodyTop = startY;
-#else
-    const int bodyTop = startY + (_prefs ? _prefs->smallHighlightOff() : 5);
-#endif
+    const int rowH = listRowH();
+    const int bodyTop = startY + (_prefs ? _prefs->smallHighlightOff() : 0);
     if (vy < bodyTop || vy >= 128 - footerH) return 0;
 
     int totalItems = totalListItems();
     if (totalItems == 0) return 0;
-    int maxVisible = (128 - startY - footerH) / listLineH;
-    if (maxVisible < 3) maxVisible = 3;
+    int maxVisible = (128 - startY - footerH) / rowH;
+    if (maxVisible < 2) maxVisible = 2;
     if (maxVisible > 15) maxVisible = 15;
     int startIdx = max(0, min(_selectedFile - maxVisible / 2,
                               totalItems - maxVisible));
 
-    int tappedRow = startIdx + (vy - bodyTop) / listLineH;
+    int tappedRow = startIdx + (vy - bodyTop) / rowH;
     if (tappedRow < 0 || tappedRow >= totalItems) return 0;
 
     if (tappedRow == _selectedFile) return 2;
@@ -1920,6 +2143,10 @@ public:
       }
       yield();  // Feed WDT between files
     }
+    digitalWrite(SDCARD_CS, HIGH);
+
+    // Resolve titles, authors and cover thumbnails for this folder's books.
+    resolveBookInfo();
     digitalWrite(SDCARD_CS, HIGH);
   }
 

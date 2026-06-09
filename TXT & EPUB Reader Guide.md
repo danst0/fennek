@@ -50,6 +50,39 @@ Place `.txt` or `.epub` files in a `/books/` folder on the SD card root. The rea
 
 ---
 
+## Cover Art & Metadata
+
+The file list shows a **cover thumbnail** plus the book's **title** and **author**
+for each `.epub`, instead of the bare filename.
+
+**Sources (in priority order):**
+1. **Sidecar files** next to the EPUB — `cover.jpg` (or `.jpeg`) and
+   `metadata.opf` (`<dc:title>` / `<dc:creator>`). This is the Calibre export
+   layout: `/books/<Author>/<Title>/`.
+2. **Inside the EPUB** — if a sidecar is missing, the OPF is read from the ZIP
+   for title/author, and the cover image is located via the manifest
+   (`properties="cover-image"`, or `<meta name="cover">` → manifest item).
+
+**Details:**
+- Cover JPEGs are decoded with `JPEGDEC`, center-cropped and Bayer-dithered to a
+  small 1-bit thumbnail (`READER_THUMB_W` × `READER_THUMB_H`, see
+  `BookThumbnail.h`). Only JPEG covers are rendered; PNG covers fall back to a
+  placeholder box.
+- Title/author are converted to CP437 so umlauts render correctly in the list.
+- Results are cached to `/books/.bookmeta_cache/` keyed by EPUB size, so
+  re-browsing a folder is instant. Bump `BOOKMETA_VERSION` to invalidate.
+- Resolution runs only for the folder you are browsing (on folder entry), not
+  during the boot pre-indexer, so it never sweeps the whole tree.
+- `.txt` files show a cleaned filename and a placeholder box (no cover).
+
+| Component | Role |
+|-----------|------|
+| `BookThumbnail.h` | JPEG→dithered-XBM decode + OPF tag/attribute parsing |
+| `EpubProcessor::getMetadata()` / `extractEntryByName()` | EPUB-internal title/author + cover bytes |
+| `TextReaderScreen::resolveBookInfo()` | Sidecar-first resolution, SD cache, list rendering |
+
+---
+
 ## EPUB Support
 
 ### How It Works

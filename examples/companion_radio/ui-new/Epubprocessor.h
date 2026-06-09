@@ -207,6 +207,71 @@ public:
   }
 
   // ----------------------------------------------------------
+  // Extract title + author from an EPUB and resolve the in-ZIP path of its
+  // cover image (if the OPF declares one).  Any out-buffer may be empty on
+  // return.  `coverEntry` receives the full ZIP path of the cover image,
+  // resolved relative to the OPF directory, or "" if none was found.
+  // Returns true if at least one field was populated.
+  // ----------------------------------------------------------
+  static bool getMetadata(const char* epubPath,
+                          char* title, int titleSize,
+                          char* author, int authorSize,
+                          char* coverEntry, int coverEntrySize) {
+    title[0] = author[0] = coverEntry[0] = '\0';
+
+    File epubFile = SD.open(epubPath, FILE_READ);
+    if (!epubFile) return false;
+    EpubZipReader* zip = new EpubZipReader();
+    if (!zip) { epubFile.close(); return false; }
+    if (!zip->open(epubFile)) { delete zip; epubFile.close(); return false; }
+
+    char opfPath[EPUB_XML_BUF_SIZE];
+    if (!_findOpfPath(zip, opfPath, sizeof(opfPath))) {
+      delete zip; epubFile.close(); return false;
+    }
+    int opfIdx = zip->findEntry(opfPath);
+    if (opfIdx < 0) { delete zip; epubFile.close(); return false; }
+
+    uint32_t opfSize = 0;
+    uint8_t* opf = zip->extractEntry(opfIdx, &opfSize);
+    if (!opf) { delete zip; epubFile.close(); return false; }
+
+    _extractTagContent((const char*)opf, opfSize, "dc:title", title, titleSize);
+    _extractTagContent((const char*)opf, opfSize, "dc:creator", author, authorSize);
+
+    char href[160];
+    if (_findCoverHref((const char*)opf, opfSize, href, sizeof(href))) {
+      char baseDir[EPUB_XML_BUF_SIZE];
+      _getDirectory(opfPath, baseDir, sizeof(baseDir));
+      _resolveHref(baseDir, href, coverEntry, coverEntrySize);
+    }
+
+    free(opf);
+    delete zip;
+    epubFile.close();
+    return (title[0] != '\0' || author[0] != '\0' || coverEntry[0] != '\0');
+  }
+
+  // ----------------------------------------------------------
+  // Extract a single entry's raw bytes from an EPUB by its full ZIP path.
+  // Returns a heap buffer (caller frees) or nullptr.
+  // ----------------------------------------------------------
+  static uint8_t* extractEntryByName(const char* epubPath, const char* entryPath,
+                                     uint32_t* outSize) {
+    *outSize = 0;
+    File epubFile = SD.open(epubPath, FILE_READ);
+    if (!epubFile) return nullptr;
+    EpubZipReader* zip = new EpubZipReader();
+    if (!zip) { epubFile.close(); return nullptr; }
+    if (!zip->open(epubFile)) { delete zip; epubFile.close(); return nullptr; }
+
+    uint8_t* data = zip->extractByName(entryPath, outSize);
+    delete zip;
+    epubFile.close();
+    return data;
+  }
+
+  // ----------------------------------------------------------
   // Build a cache .txt path from an .epub path.
   // e.g., "/books/mybook.epub" -> "/books/.epub_cache/mybook.txt"
   // ----------------------------------------------------------
@@ -872,6 +937,93 @@ private:
     } else {
       dirBuf[0] = '\0';
     }
+  }
+
+  // ----------------------------------------------------------
+  // Find the value of attribute `attr` on the XML tag that contains the first
+  // occurrence of `needle` (length-bounded; the buffer need not be NUL-term).
+  // ----------------------------------------------------------
+  static bool _attrOnTagWith(const char* xml, uint32_t len, const char* needle,
+                             const char* attr, char* out, int outSize) {
+    out[0] = '\0';
+    int nLen = strlen(needle);
+    if (nLen == 0 || (uint32_t)nLen > len) return false;
+
+    int hit = -1;
+    for (uint32_t i = 0; i + nLen <= len; i++) {
+      if (strncmp(&xml[i], needle, nLen) == 0) { hit = (int)i; break; }
+    }
+    if (hit < 0) return false;
+
+    int ts = hit;
+    while (ts > 0 && xml[ts] != '<') ts--;
+    int te = hit;
+    while ((uint32_t)te < len && xml[te] != '>') te++;
+
+    int aLen = strlen(attr);
+    for (int p = ts; p + aLen + 2 < te; p++) {
+      if (strncasecmp(&xml[p], attr, aLen) != 0) continue;
+      int q = p + aLen;
+      while (q < te && (xml[q] == ' ' || xml[q] == '\t')) q++;
+      if (q >= te || xml[q] != '=') continue;
+      q++;
+      while (q < te && (xml[q] == ' ' || xml[q] == '\t')) q++;
+      char quote = xml[q];
+      if (quote != '"' && quote != '\'') continue;
+      q++;
+      int o = 0;
+      while (q < te && xml[q] != quote && o < outSize - 1) out[o++] = xml[q++];
+      out[o] = '\0';
+      return out[0] != '\0';
+    }
+    return false;
+  }
+
+  // ----------------------------------------------------------
+  // Resolve the OPF-relative cover href into a full ZIP path.  EPUB3 marks the
+  // cover with properties="cover-image"; EPUB2 uses <meta name="cover"
+  // content="ID"/> pointing at a manifest <item id="ID" href="..."/>.
+  // ----------------------------------------------------------
+  static bool _findCoverHref(const char* xml, uint32_t len, char* href, int hrefSize) {
+    href[0] = '\0';
+    if (_attrOnTagWith(xml, len, "cover-image", "href", href, hrefSize)) return true;
+
+    char coverId[128];
+    if (_attrOnTagWith(xml, len, "name=\"cover\"", "content", coverId, sizeof(coverId)) ||
+        _attrOnTagWith(xml, len, "name='cover'", "content", coverId, sizeof(coverId))) {
+      char needle[160];
+      snprintf(needle, sizeof(needle), "id=\"%s\"", coverId);
+      if (_attrOnTagWith(xml, len, needle, "href", href, hrefSize)) return true;
+      snprintf(needle, sizeof(needle), "id='%s'", coverId);
+      if (_attrOnTagWith(xml, len, needle, "href", href, hrefSize)) return true;
+    }
+    return false;
+  }
+
+  // Join an OPF-relative href onto the OPF base directory, handling leading
+  // "/", "./" and "../" segments.
+  static void _resolveHref(const char* baseDir, const char* href,
+                           char* out, int outSize) {
+    if (href[0] == '/') {
+      strncpy(out, href + 1, outSize - 1);
+      out[outSize - 1] = '\0';
+      return;
+    }
+    char base[160];
+    strncpy(base, baseDir, sizeof(base) - 1);
+    base[sizeof(base) - 1] = '\0';
+    const char* h = href;
+    while (strncmp(h, "../", 3) == 0) {
+      h += 3;
+      int bl = strlen(base);
+      if (bl > 1) {
+        base[bl - 1] = '\0';            // drop trailing '/'
+        char* s = strrchr(base, '/');
+        if (s) s[1] = '\0'; else base[0] = '\0';
+      }
+    }
+    if (strncmp(h, "./", 2) == 0) h += 2;
+    snprintf(out, outSize, "%s%s", base, h);
   }
 
   // ----------------------------------------------------------
