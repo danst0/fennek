@@ -2,7 +2,7 @@
 
 The audiobook player is available on the T-Deck Pro audio variant and on all
 T-Deck Max variants. Press **P** from the home screen to open it.
-Place `.mp3`, `.m4a`, or `.wav` files in `/audiobooks/` on the SD card.
+Place `.mp3`, `.m4a`, `.wav`, or `.flac` files in `/audiobooks/` on the SD card.
 Files can be organised into subfolders (e.g. by author) — use **Enter** to
 browse into folders and **.. (up)** to go back.
 
@@ -103,6 +103,46 @@ for f in *.wav; do ffmpeg -i "$f" -acodec pcm_s16le -ar 44100 "converted/$f"; do
 Verify with ffprobe and check the output line shows `pcm_s16le, 44100 Hz`. Once
 you're happy, move the contents of `converted/` up to the album folder and
 delete the originals.
+
+### FLAC Files
+
+FLAC plays natively, but the decoder has the same depth/rate limits as WAV:
+
+- **8- or 16-bit samples only.** 24-bit / hi-res FLAC is rejected and playback
+  never starts (a typical 4-minute 24-bit track is ~45 MB at ~1.5 Mbit/s).
+- **Block size ≤ 8192 samples** and **mono or stereo.**
+- **44.1 kHz** recommended, same as MP3/WAV.
+
+**Uploading via the web file manager converts incompatible FLAC for you.**
+When you drag a FLAC into the SD File Manager page (Settings → OTA Tools →
+SD File Manager), the browser inspects its STREAMINFO header. If the device
+can't decode it (24-bit / hi-res / oversized block / multichannel), it is
+transcoded to 44.1 kHz MP3 **in your browser** before being written to the
+card — the file is renamed `.mp3`. Standard 16-bit FLACs upload untouched.
+Tick **Convert all FLAC to MP3** to force conversion of every FLAC (smaller
+files). The conversion runs entirely on the uploading device, so the T-Deck
+just receives a ready-to-play MP3.
+
+If you copy files with a card reader instead, convert hi-res FLAC manually —
+either to 16-bit FLAC (lossless) or MP3 (smaller):
+
+```bash
+# lossless: keep FLAC, drop to 16-bit / 44.1 kHz
+ffmpeg -i input.flac -sample_fmt s16 -ar 44100 -compression_level 8 output.flac
+# or smaller: FLAC -> MP3
+ffmpeg -i input.flac -ar 44100 -b:a 192k output.mp3
+```
+
+Inspect a FLAC's depth with ffprobe (`bits_per_raw_sample=24` or `sample_fmt=s32`
+means it needs converting):
+
+```bash
+ffprobe -v error -show_entries stream=sample_fmt,bits_per_raw_sample,sample_rate,channels "yourfile.flac"
+```
+
+The standalone converter at `tools/flac2mp3.html` does the same browser-side
+transcode offline (drag in FLAC → download MP3) if you prefer not to use the
+device's web interface.
 
 ### Album Art
 
