@@ -17,7 +17,7 @@ namespace settings {
 
 void begin();
 
-// --- Allgemein (Namespace "meck") -------------------------------------------
+// --- Allgemein (Namespace "fennek"; migriert einmalig vom alten "meck") ------
 uint8_t volume();
 void    setVolume(uint8_t v);          // schreibt nur bei Änderung
 

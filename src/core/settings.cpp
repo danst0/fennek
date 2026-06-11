@@ -16,13 +16,52 @@ char     s_lastApp[24] = "";
 char     s_lastTrack[192] = "";
 uint32_t s_lastPos = 0;
 
+// Einmalige Migration vom alten NVS-Namespace "meck" (Firmware hieß früher
+// Meck). Kopiert alle bekannten Keys nach "fennek" und leert das alte
+// Namespace, damit Lautstärke/Resume/Funkparameter den Umstieg überleben.
+void migrateFromMeck() {
+  if (s_prefs.isKey("vol")) return;   // "fennek" schon befüllt -> nichts zu tun
+  Preferences old;
+  if (!old.begin("meck", true)) return;
+  if (old.isKey("vol")) {
+    s_prefs.putUChar("vol", old.getUChar("vol", 255));
+    if (old.isKey("lastapp")) {
+      char b[24];
+      old.getString("lastapp", b, sizeof(b));
+      s_prefs.putString("lastapp", b);
+    }
+    if (old.isKey("trkpath")) {
+      char b[192];
+      old.getString("trkpath", b, sizeof(b));
+      s_prefs.putString("trkpath", b);
+      s_prefs.putULong("trkpos", old.getULong("trkpos", 0));
+    }
+    if (old.isKey("stdby")) s_prefs.putUChar("stdby", old.getUChar("stdby", 5));
+    if (old.isKey("mfreq")) s_prefs.putFloat("mfreq", old.getFloat("mfreq", 0));
+    if (old.isKey("mbw"))   s_prefs.putFloat("mbw",   old.getFloat("mbw", 0));
+    if (old.isKey("msf"))   s_prefs.putUChar("msf",   old.getUChar("msf", 0));
+    if (old.isKey("mcr"))   s_prefs.putUChar("mcr",   old.getUChar("mcr", 0));
+    if (old.isKey("mtx"))   s_prefs.putUChar("mtx",   old.getUChar("mtx", 0));
+    if (old.isKey("mname")) {
+      char b[32];
+      old.getString("mname", b, sizeof(b));
+      s_prefs.putString("mname", b);
+    }
+    Serial.println("[FENNEK] NVS-Migration meck -> fennek abgeschlossen");
+  }
+  old.end();
+  Preferences wipe;
+  if (wipe.begin("meck", false)) { wipe.clear(); wipe.end(); }
+}
+
 }  // namespace
 
 namespace settings {
 
 void begin() {
-  s_open = s_prefs.begin("meck", false);
+  s_open = s_prefs.begin("fennek", false);
   if (!s_open) return;
+  migrateFromMeck();
   s_volume = s_prefs.getUChar("vol", 255);
   s_standby = s_prefs.getUChar("stdby", 5);
   if (s_prefs.isKey("lastapp")) s_prefs.getString("lastapp", s_lastApp, sizeof(s_lastApp));

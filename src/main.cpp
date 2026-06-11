@@ -61,6 +61,15 @@ void setup() {
   // 4) SD + Bibliothek (ohne Karte läuft alles weiter, Apps zeigen Hinweis).
   bool sdOk = board::initSD();
   Serial.printf("[FENNEK] SD-Karte: %s\n", sdOk ? "gemountet" : "NICHT gefunden");
+  if (sdOk) {
+    // Einmalige Migration: Cache-Verzeichnis hieß früher /.meck (Meck-Ära).
+    spiLock();
+    if (SD.exists("/.meck") && !SD.exists("/.fennek")) {
+      bool ok = SD.rename("/.meck", "/.fennek");
+      Serial.printf("[FENNEK] SD-Cache-Migration /.meck -> /.fennek: %s\n", ok ? "ok" : "FEHLER");
+    }
+    spiUnlock();
+  }
   library::begin();
   int n = 0;
   if (sdOk) {

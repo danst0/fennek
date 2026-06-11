@@ -48,7 +48,7 @@ uint32_t crc32str(const char* s) {
   return ~crc;
 }
 
-// --- ID3-Cache (/.meck/id3.bin) ----------------------------------------------
+// --- ID3-Cache (/.fennek/id3.bin) ----------------------------------------------
 constexpr uint32_t kTagCacheMagic   = 0x33444D49;  // "IMD3"
 constexpr uint16_t kTagCacheVersion = 1;
 
@@ -257,7 +257,7 @@ void applyTagCache() {
   s_tagDone = 0; s_tagCursor = 0;
   spiLock();
   File f;
-  if (SD.exists("/.meck/id3.bin")) f = SD.open("/.meck/id3.bin");
+  if (SD.exists("/.fennek/id3.bin")) f = SD.open("/.fennek/id3.bin");
   if (f) {
     uint32_t magic = 0; uint16_t ver = 0; uint32_t n = 0;
     if (f.read((uint8_t*)&magic, 4) == 4 && magic == kTagCacheMagic &&
@@ -285,9 +285,9 @@ void applyTagCache() {
 // Cache komplett neu schreiben (atomar via .tmp + rename). Aufrufer hält lock().
 void writeTagCache() {
   spiLock();
-  if (!SD.exists("/.meck")) SD.mkdir("/.meck");
-  if (SD.exists("/.meck/id3.tmp")) SD.remove("/.meck/id3.tmp");
-  File f = SD.open("/.meck/id3.tmp", FILE_WRITE);
+  if (!SD.exists("/.fennek")) SD.mkdir("/.fennek");
+  if (SD.exists("/.fennek/id3.tmp")) SD.remove("/.fennek/id3.tmp");
+  File f = SD.open("/.fennek/id3.tmp", FILE_WRITE);
   if (f) {
     uint32_t n = (uint32_t)s_count;
     f.write((const uint8_t*)&kTagCacheMagic, 4);
@@ -306,8 +306,8 @@ void writeTagCache() {
       f.write((const uint8_t*)&rec, sizeof(rec));
     }
     f.close();
-    if (SD.exists("/.meck/id3.bin")) SD.remove("/.meck/id3.bin");
-    SD.rename("/.meck/id3.tmp", "/.meck/id3.bin");
+    if (SD.exists("/.fennek/id3.bin")) SD.remove("/.fennek/id3.bin");
+    SD.rename("/.fennek/id3.tmp", "/.fennek/id3.bin");
   }
   spiUnlock();
 }

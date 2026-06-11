@@ -1,7 +1,7 @@
 #pragma once
 
 // =============================================================================
-// HynTouchBoard.h -- Meck board defines for the vendored Hynitron touch driver
+// HynTouchBoard.h -- Fennek board defines for the vendored Hynitron touch driver
 // on the LilyGo T-Deck Pro MAX.
 //
 // Values are hardware facts from the T-Deck Pro MAX V0.1 schematic and the
@@ -13,7 +13,7 @@
 //   - panel GDEQ031T10, 320x240
 //
 // SDA/SCL here are informational only: the Wire bus is already initialised by
-// the board at these pins, and the Meck I2C transport (hyn_i2c.cpp) uses Wire.
+// the board at these pins, and the Fennek I2C transport (hyn_i2c.cpp) uses Wire.
 // =============================================================================
 
 #include <stdint.h>

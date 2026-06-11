@@ -152,7 +152,7 @@ uint32_t  s_indexed = 0;
 WrapState s_ixState;
 
 void idxPath(char* out, size_t n) {
-  snprintf(out, n, "/.meck/idx/%08x.idx", (unsigned)settings::crc32(s_path));
+  snprintf(out, n, "/.fennek/idx/%08x.idx", (unsigned)settings::crc32(s_path));
 }
 
 void recordPage(void* /*ctx*/, uint32_t nextOff) {
@@ -190,10 +190,10 @@ void writeIndexCache() {
   char ip[48];
   idxPath(ip, sizeof(ip));
   spiLock();
-  if (!SD.exists("/.meck")) SD.mkdir("/.meck");
-  if (!SD.exists("/.meck/idx")) SD.mkdir("/.meck/idx");
-  if (SD.exists("/.meck/idx/.tmp")) SD.remove("/.meck/idx/.tmp");
-  File f = SD.open("/.meck/idx/.tmp", FILE_WRITE);
+  if (!SD.exists("/.fennek")) SD.mkdir("/.fennek");
+  if (!SD.exists("/.fennek/idx")) SD.mkdir("/.fennek/idx");
+  if (SD.exists("/.fennek/idx/.tmp")) SD.remove("/.fennek/idx/.tmp");
+  File f = SD.open("/.fennek/idx/.tmp", FILE_WRITE);
   if (f) {
     uint16_t cols = (uint16_t)s_cols, rows = (uint16_t)s_rows;
     uint32_t count = (uint32_t)s_pages;
@@ -206,7 +206,7 @@ void writeIndexCache() {
     f.write((const uint8_t*)s_pageOff, count * 4);
     f.close();
     if (SD.exists(ip)) SD.remove(ip);
-    SD.rename("/.meck/idx/.tmp", ip);
+    SD.rename("/.fennek/idx/.tmp", ip);
   }
   spiUnlock();
 }

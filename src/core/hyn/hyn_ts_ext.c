@@ -1,5 +1,5 @@
-#if defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
-// Meck: MAX-only build guard (vendored from LilyGo T-Deck-MAX lib/HynTouch).
+#if defined(LilyGo_TDeck_Pro_Max) || defined(FENNEK_HYN_TOUCH_PRO)
+// Fennek: MAX-only build guard (vendored from LilyGo T-Deck-MAX lib/HynTouch).
 // ESP-IDF I2C/GPIO headers below must not compile on non-ESP32 targets.
 
 #include "hyn_core.h"

@@ -3,7 +3,7 @@
 //
 // Erster Open baut einen Seiten-Offset-Index (u32-Dateioffset pro Seite),
 // häppchenweise über indexStep() (UI bleibt bedienbar), und cached ihn unter
-// /.meck/idx/<crc32>.idx (invalidiert über Dateigröße/Spalten/Zeilen).
+// /.fennek/idx/<crc32>.idx (invalidiert über Dateigröße/Spalten/Zeilen).
 // Seitenabruf = seek(offset) + eine Seite wort-umbrechen.
 //
 // Indexer und Renderer nutzen DENSELBEN Umbruch-Code — die Offsets passen

@@ -1,9 +1,9 @@
-#if defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
+#if defined(LilyGo_TDeck_Pro_Max) || defined(FENNEK_HYN_TOUCH_PRO)
 // =============================================================================
-// hyn_platform.cpp -- Meck port.
+// hyn_platform.cpp -- Fennek-Port (ex Meck).
 //
 // The LilyGo factory version drove the touch reset through its own
-// ExtensionIOXL9555 class. Meck has its own XL9555 access on the board object,
+// ExtensionIOXL9555 class. Fennek has its own XL9555 access on the board object,
 // so the ExtensionIOXL9555 path is removed. Virtual XL9555 GPIOs are routed via
 // the write/read callbacks registered from main.cpp (which call
 // board.xl9555_digitalWrite / board.xl9555_digitalRead), mirroring the factory

@@ -1,11 +1,11 @@
-#if defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
+#if defined(LilyGo_TDeck_Pro_Max) || defined(FENNEK_HYN_TOUCH_PRO)
 // =============================================================================
-// hyn_i2c.cpp -- Meck port of the HynTouch I2C transport.
+// hyn_i2c.cpp -- Fennek-Port (ex Meck) of the HynTouch I2C transport.
 //
 // The LilyGo factory hyn_i2c.c drove the raw ESP-IDF I2C master on port 0 at
 // 200 kHz. On the MAX the CST328 shares the Wire bus with the XL9555, keyboard,
 // charger, gyro, codec and RTC, so this transport is rewritten to use the same
-// Arduino Wire object as the rest of Meck. The register transaction shape is
+// Arduino Wire object as the rest of Fennek. The register transaction shape is
 // unchanged from the original driver: write the address bytes with a STOP, then
 // a separate read. Wire is already begun by the board, so hyn_i2c_init is a
 // no-op here.

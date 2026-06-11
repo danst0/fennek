@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projekt
 
-**Fennek** — Multi-App-Handheld-Firmware für das **LilyGO T-Deck Pro V1.1** (ESP32-S3, 8 MB PSRAM), PlatformIO/Arduino. (Repo-/Ordnername „Meck“ stammt vom Fork-Ursprung; die Firmware heißt Fennek. Version: `FENNEK_VERSION` in `src/config.h`, Log-Präfix `[FENNEK]`. Interne Identifier wie der NVS-Namespace `meck` und der SD-Cache `/.meck` bleiben aus Kompatibilität unverändert.) Launcher-Homescreen + vier Apps: **Musik** (MP3-Player), **Hörbuch**, **Lesen** (TXT/EPUB) und **Mesh** (schlanker MeshCore-Client). Fokus: flüssige Bedienung (Touch + Tastatur) und stotterfreie Wiedergabe; Hintergrund-Audio läuft über App-Wechsel hinweg. Code-Kommentare, Serial-Ausgaben und Doku sind **deutsch**; alle Textausgaben laufen über `gui::print` (UTF-8 → CP437, Umlaute!).
+**Fennek** — Multi-App-Handheld-Firmware für das **LilyGO T-Deck Pro V1.1** (ESP32-S3, 8 MB PSRAM), PlatformIO/Arduino. (Repo-/Ordnername „Meck“ stammt vom Fork-Ursprung; die Firmware heißt Fennek. Version: `FENNEK_VERSION` in `src/config.h`, Log-Präfix `[FENNEK]`. NVS-Namespace `fennek` und SD-Cache `/.fennek` — Altbestände aus der Meck-Ära werden beim Boot automatisch migriert.) Launcher-Homescreen + vier Apps: **Musik** (MP3-Player), **Hörbuch**, **Lesen** (TXT/EPUB) und **Mesh** (schlanker MeshCore-Client). Fokus: flüssige Bedienung (Touch + Tastatur) und stotterfreie Wiedergabe; Hintergrund-Audio läuft über App-Wechsel hinweg. Code-Kommentare, Serial-Ausgaben und Doku sind **deutsch**; alle Textausgaben laufen über `gui::print` (UTF-8 → CP437, Umlaute!).
 
 - Aktiver Code in `src/` (einzige Build-Env: `mp3player`).
 - `lib/meshcore/` + `lib/ed25519/` — vendored MeshCore-Stack (Subset aus dem Archiv) für die Mesh-App.
@@ -19,7 +19,7 @@ pio run -e mp3player -t upload    # flashen (USB-C an /dev/ttyACM0, 921600 Baud)
 pio device monitor -b 115200      # serielles Boot-Log (mit Exception-Decoder)
 ```
 
-Keine Unit-Tests/Lint; Verifikation am Gerät über das Boot-Log (`[MECK] …`/`[MESH] …`-Zeilen). Die Firmware bootet und läuft vollständig **ohne SD-Karte** (Apps zeigen „Keine SD-Karte“ + „Erneut suchen“).
+Keine Unit-Tests/Lint; Verifikation am Gerät über das Boot-Log (`[FENNEK] …`/`[MESH] …`-Zeilen). Die Firmware bootet und läuft vollständig **ohne SD-Karte** (Apps zeigen „Keine SD-Karte“ + „Erneut suchen“).
 
 Debug-Flags (als `-D` ergänzen):
 - `AUDIO_DEBUG_GAP` — Stotter-Test: loggt `[GAP] … maxGap=…ms`; muss unter der I2S-DMA-Tiefe (~90 ms) bleiben.
@@ -49,7 +49,7 @@ Diese Invarianten dürfen nicht brechen:
 5. **SPI bleibt auf 4 MHz** (`SPI_BUS_HZ`) — 8 MHz korrumpiert SD-Writes.
 6. **LoRa-CS (GPIO 3) im Leerlauf deselektiert (HIGH)**; das Radio nutzt die **bestehende `g_spi`-Instanz** (übergeben im `Module`-Konstruktor; `P_LORA_SCLK` absichtlich NICHT definiert, sonst re-initialisiert `std_init` den Bus).
 7. **E-Ink-Refreshes nur bei echter Änderung** (Dirty-Flag im appmgr); Fortschritt/Statuszeile nur als `renderRegion`-Streifen.
-8. **NVS (Preferences) für Settings/Bookmarks** — interner Flash, nie der SPI-Bus. SD nur für Bulk-Caches (`/.meck/id3.bin`, `/.meck/idx/`, `/books/.epub_cache/`). Mesh-Identity/Kontakte auf SPIFFS.
+8. **NVS (Preferences) für Settings/Bookmarks** — interner Flash, nie der SPI-Bus. SD nur für Bulk-Caches (`/.fennek/id3.bin`, `/.fennek/idx/`, `/books/.epub_cache/`). Mesh-Identity/Kontakte auf SPIFFS. Einmalige Migrationen vom Meck-Erbe laufen automatisch: NVS `meck`→`fennek` (settings.cpp) und SD `/.meck`→`/.fennek` (main.cpp).
 
 ## Module (`src/`)
 
@@ -66,7 +66,7 @@ Diese Invarianten dürfen nicht brechen:
 - `services/audio.*` — pfadbasierte Abspiel-Queue (PSRAM-Staging + Commit), Owner-Token (Music/Book), Shuffle/Repeat, `seekRel` (CBR-MP3), Start-Offset, Sleep-Timer.
 - `services/library.*` — SD-Scan `/music`, Künstler/Album/Playlist-Indizes, ID3-Anwendung + Cache, `indexOfPath`, inkrementeller `tagScanStep`.
 - `services/id3.*` — minimaler ID3v1/v2-Reader (TIT2/TPE1/TALB, UTF-16/Latin-1→UTF-8, Frames werden ge-seekt, nicht gelesen).
-- `services/textdoc.*` — Streaming-Paginierung mit Seiten-Offset-Index (Cache `/.meck/idx/`); Indexer und Renderer teilen denselben Umbruch-Code (host-getestet).
+- `services/textdoc.*` — Streaming-Paginierung mit Seiten-Offset-Index (Cache `/.fennek/idx/`); Indexer und Renderer teilen denselben Umbruch-Code (host-getestet).
 - `services/epubzip.h`/`epubproc.*` — EPUB→TXT (ROM-tinfl, OPF-Spine, XHTML-Strip → reines UTF-8), inkrementell, Cache `/books/.epub_cache/`.
 - `apps/launcher.*` — Kachel-Grid, Now-Playing-/Resume-Zeile.
 - `apps/music_app.*` — Browser (Künstler/Album/Playlist, Bucket-Gruppierung) + Player (Mix/Wdh/Zzz). Tasten: W/S/Enter/Backspace, A/D, X/R/Z, P, Q=Home.

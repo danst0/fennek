@@ -1,5 +1,5 @@
-#if defined(LilyGo_TDeck_Pro_Max) || defined(MECK_HYN_TOUCH_PRO)
-// Meck: MAX-only build guard. Board include TDeckMaxBoard.h -> HynTouchBoard.h.
+#if defined(LilyGo_TDeck_Pro_Max) || defined(FENNEK_HYN_TOUCH_PRO)
+// Fennek: MAX-only build guard. Board include TDeckMaxBoard.h -> HynTouchBoard.h.
 #include "HynTouch.h"
 
 #include <driver/gpio.h>

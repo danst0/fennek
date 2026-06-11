@@ -33,7 +33,7 @@ bool trackAlbum(int i, char* out, size_t outLen);
 int indexOfPath(const char* p);
 
 // --- ID3-Tag-Scan (inkrementell) ---------------------------------------------
-// scan() wendet zuerst den Cache (/.meck/id3.bin) an; Dateien ohne Cache-Treffer
+// scan() wendet zuerst den Cache (/.fennek/id3.bin) an; Dateien ohne Cache-Treffer
 // werden danach häppchenweise über tagScanStep() geparst (Aufruf aus dem
 // appmgr-Loop), damit die UI bedienbar bleibt. Nach dem letzten Schritt werden
 // die Indizes neu sortiert und der Cache zurückgeschrieben.
