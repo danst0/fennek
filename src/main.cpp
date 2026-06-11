@@ -35,47 +35,47 @@ void setup() {
   // USB-CDC kurz Zeit zum Enumerieren geben (sonst geht das Boot-Log verloren).
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 2000) delay(10);
-  Serial.println("\n[MECK] Boot — T-Deck Pro Handheld");
+  Serial.println("\n[FENNEK] Boot — Fennek " FENNEK_VERSION " (T-Deck Pro)");
 
   // 1) Power + Busse.
   board::powerOn();
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_HZ);
   board::initBus();
-  Serial.println("[MECK] Power + Busse ok");
+  Serial.println("[FENNEK] Power + Busse ok");
 
   // 2) Display zuerst — Nutzer sieht sofort etwas.
   display::begin();
-  Serial.println("[MECK] Display init ok");
+  Serial.println("[FENNEK] Display init ok");
 
   // 3) Eingabe + Akku + Settings (alles unabhängig vom SPI-Bus).
   bool touchOk = touch::begin();
-  Serial.printf("[MECK] Touch init: %s\n", touchOk ? "ok" : "FEHLGESCHLAGEN");
+  Serial.printf("[FENNEK] Touch init: %s\n", touchOk ? "ok" : "FEHLGESCHLAGEN");
   bool kbOk = keyboard::begin();
-  Serial.printf("[MECK] Tastatur (TCA8418): %s\n", kbOk ? "ok" : "NICHT gefunden");
+  Serial.printf("[FENNEK] Tastatur (TCA8418): %s\n", kbOk ? "ok" : "NICHT gefunden");
   bool battOk = battery::begin();
-  Serial.printf("[MECK] Akku (BQ27220): %s (%u mV, %u%%)\n",
+  Serial.printf("[FENNEK] Akku (BQ27220): %s (%u mV, %u%%)\n",
                 battOk ? "ok" : "NICHT gefunden",
                 battery::milliVolts(), battery::percent());
   settings::begin();
 
   // 4) SD + Bibliothek (ohne Karte läuft alles weiter, Apps zeigen Hinweis).
   bool sdOk = board::initSD();
-  Serial.printf("[MECK] SD-Karte: %s\n", sdOk ? "gemountet" : "NICHT gefunden");
+  Serial.printf("[FENNEK] SD-Karte: %s\n", sdOk ? "gemountet" : "NICHT gefunden");
   library::begin();
   int n = 0;
   if (sdOk) {
     n = library::scan(MP3_DIR);
     if (n == 0) n = library::scan("/");   // Fallback: Root durchsuchen
   }
-  Serial.printf("[MECK] Tracks gefunden: %d\n", n);
+  Serial.printf("[FENNEK] Tracks gefunden: %d\n", n);
 
   // 5) Audio-Engine (startet den Decode-Task auf Core 0).
   audio::begin();
   if (settings::volume() != 255) audio::setVolume(settings::volume());
-  Serial.printf("[MECK] Audio-Engine gestartet (freier PSRAM: %u KB)\n",
+  Serial.printf("[FENNEK] Audio-Engine gestartet (freier PSRAM: %u KB)\n",
                 (unsigned)(ESP.getFreePsram() / 1024));
 
-  Serial.printf("[MECK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
+  Serial.printf("[FENNEK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
                 library::artistCount(), library::albumCount(),
                 library::titleCount(), library::playlistCount());
 
@@ -124,13 +124,13 @@ void setup() {
   launcher::setTile(3, "Mesh",     mesh_app::get());
   launcher::setTile(4, "Optionen", settings_app::get());
   appmgr::begin();
-  Serial.println("[MECK] Setup fertig — Launcher läuft.");
+  Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
 #ifdef MESH_SMOKE_TEST
   // TEMP: Radio-Bring-up ohne UI-Interaktion verifizieren (Serial-Log).
-  Serial.println("[MECK] MESH_SMOKE_TEST: initialisiere Mesh ...");
+  Serial.println("[FENNEK] MESH_SMOKE_TEST: initialisiere Mesh ...");
   bool meshOk = mesh_client::begin();
-  Serial.printf("[MECK] MESH_SMOKE_TEST: %s (freier Heap: %u KB)\n",
+  Serial.printf("[FENNEK] MESH_SMOKE_TEST: %s (freier Heap: %u KB)\n",
                 meshOk ? "OK" : "FEHLGESCHLAGEN",
                 (unsigned)(ESP.getFreeHeap() / 1024));
 #endif
@@ -146,7 +146,7 @@ void setup() {
     audio::queueCommit(0);
     for (int i = 0; i < 12; i++) {
       delay(2000);
-      Serial.printf("[MECK] >>> erzwinge Display-Refresh #%d <<<\n", i + 1);
+      Serial.printf("[FENNEK] >>> erzwinge Display-Refresh #%d <<<\n", i + 1);
       display::render([](Adafruit_GFX& g) {
         g.setTextSize(2); g.setCursor(10, 150); g.print("REFRESH-TEST");
       }, false);

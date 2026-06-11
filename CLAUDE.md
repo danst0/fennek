@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projekt
 
-Multi-App-Handheld-Firmware für das **LilyGO T-Deck Pro V1.1** (ESP32-S3, 8 MB PSRAM), PlatformIO/Arduino. Launcher-Homescreen + vier Apps: **Musik** (MP3-Player), **Hörbuch**, **Lesen** (TXT/EPUB) und **Mesh** (schlanker MeshCore-Client). Fokus: flüssige Bedienung (Touch + Tastatur) und stotterfreie Wiedergabe; Hintergrund-Audio läuft über App-Wechsel hinweg. Code-Kommentare, Serial-Ausgaben und Doku sind **deutsch**; alle Textausgaben laufen über `gui::print` (UTF-8 → CP437, Umlaute!).
+**Fennek** — Multi-App-Handheld-Firmware für das **LilyGO T-Deck Pro V1.1** (ESP32-S3, 8 MB PSRAM), PlatformIO/Arduino. (Repo-/Ordnername „Meck“ stammt vom Fork-Ursprung; die Firmware heißt Fennek. Version: `FENNEK_VERSION` in `src/config.h`, Log-Präfix `[FENNEK]`. Interne Identifier wie der NVS-Namespace `meck` und der SD-Cache `/.meck` bleiben aus Kompatibilität unverändert.) Launcher-Homescreen + vier Apps: **Musik** (MP3-Player), **Hörbuch**, **Lesen** (TXT/EPUB) und **Mesh** (schlanker MeshCore-Client). Fokus: flüssige Bedienung (Touch + Tastatur) und stotterfreie Wiedergabe; Hintergrund-Audio läuft über App-Wechsel hinweg. Code-Kommentare, Serial-Ausgaben und Doku sind **deutsch**; alle Textausgaben laufen über `gui::print` (UTF-8 → CP437, Umlaute!).
 
 - Aktiver Code in `src/` (einzige Build-Env: `mp3player`).
 - `lib/meshcore/` + `lib/ed25519/` — vendored MeshCore-Stack (Subset aus dem Archiv) für die Mesh-App.
