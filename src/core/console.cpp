@@ -37,6 +37,36 @@ void cmdHelp() {
   Serial.println("[CON]   chan <name> <txt> - Nachricht an Hashtag-Kanal");
   Serial.println("[CON]   msgs              - Nachrichten-Verlauf dumpen");
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
+  Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
+}
+
+// SD-Verzeichnis listen (Diagnose, nicht rekursiv).
+void cmdLs(const char* path) {
+  if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
+  spiLock();
+  File d = SD.open(path);
+  if (!d) {
+    spiUnlock();
+    Serial.printf("[CON] '%s' existiert nicht\n", path);
+    return;
+  }
+  if (!d.isDirectory()) {
+    Serial.printf("[CON] %s ist eine Datei (%u Bytes)\n", path, (unsigned)d.size());
+    d.close();
+    spiUnlock();
+    return;
+  }
+  int n = 0;
+  File f;
+  while ((f = d.openNextFile())) {
+    if (f.isDirectory()) Serial.printf("[CON]   %s/\n", f.name());
+    else                 Serial.printf("[CON]   %s  (%u Bytes)\n", f.name(), (unsigned)f.size());
+    f.close();
+    n++;
+  }
+  d.close();
+  spiUnlock();
+  Serial.printf("[CON] %d Eintrag/Einträge in %s\n", n, path);
 }
 
 // Letzte ~2 KB des SD-Nachrichten-Logs ausgeben.
@@ -123,6 +153,8 @@ void handleLine(char* line) {
   if (strcmp(line, "contacts") == 0)        { cmdContacts(); return; }
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }
+  if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
+  if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
   if (strcmp(line, "channels") == 0) {
     if (!mesh_client::ready()) { Serial.println("[CON] Mesh nicht initialisiert"); return; }
     int n = mesh_client::channelCount();
