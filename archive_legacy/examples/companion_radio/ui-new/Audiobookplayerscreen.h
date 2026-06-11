@@ -1032,6 +1032,12 @@ private:
     String fullPath = _currentPath + "/" + filename;
     File file = SD.open(fullPath.c_str(), FILE_READ);
     if (file) {
+      // The file-list size can be stale or 0; fall back to the real size (as
+      // advanceTrack() does). Without this the MP3 bitrate duration estimate
+      // never resolves, _durationSec stays 0, and the player refreshes the
+      // e-ink every second — each ~648ms refresh starves audio.loop(), causing
+      // stutter and ~1/3-speed playback.
+      if (_currentFileSize == 0) _currentFileSize = file.size();
       String lower = filename;
       lower.toLowerCase();
       if (lower.endsWith(".m4b") || lower.endsWith(".m4a")) {
@@ -1578,6 +1584,25 @@ public:
   void audioTick() {
     if (!_audio || !_isPlaying) return;
 
+    // ---- TEMP DIAG (remove after debugging) ----
+    if (!_isPaused) {
+      static uint32_t dLastTick = 0, dMaxGap = 0, dLastLog = 0;
+      uint32_t dnow = millis();
+      if (dLastTick) { uint32_t g = dnow - dLastTick; if (g > dMaxGap) dMaxGap = g; }
+      dLastTick = dnow;
+      if (dnow - dLastLog >= 2000) {
+        uint32_t filled = _audio->inBufferFilled();
+        uint32_t total  = filled + _audio->inBufferFree();
+        Serial.printf("DIAG wall=%lus aud=%us maxgap=%ums inFill=%u%% (%u/%u) run=%d br=%u cpu=%uMHz\n",
+                      (unsigned long)(dnow / 1000), _audio->getAudioCurrentTime(),
+                      dMaxGap, total ? (filled * 100 / total) : 0, filled, total,
+                      _audio->isRunning() ? 1 : 0, _audio->getBitRate(),
+                      getCpuFrequencyMhz());
+        dMaxGap = 0; dLastLog = dnow;
+      }
+    }
+    // ---- END TEMP DIAG ----
+
     // Feed the audio decode pipeline (skip when paused)
     if (!_isPaused) {
       _audio->loop();
@@ -1731,8 +1756,12 @@ public:
     // always trigger immediate refresh regardless of this interval.
     // When paused or stopped, refresh every 5s as normal.
     if (_isPlaying && !_isPaused) {
-      if (_durationSec == 0) return 1000;  // refresh quickly until duration resolves
-      return 60000;                         // then back to once-a-minute (avoids stutter)
+      // Each refresh blocks audio.loop() for ~648ms, so never refresh fast
+      // during playback. Duration normally resolves within the first second
+      // via the bitrate estimate; until then refresh every 10s (not 1s) so a
+      // stuck _durationSec can't starve audio into a permanent stutter.
+      if (_durationSec == 0) return 10000;
+      return 60000;                         // once-a-minute once duration is known
     }
     return 5000;
   }

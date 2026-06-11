@@ -1,0 +1,9 @@
+{
+  "name": "meshcore",
+  "version": "1.11.0",
+  "description": "MeshCore-Stack (vendored Subset aus archive_legacy fuer den Mesh-Client)",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src"
+  }
+}

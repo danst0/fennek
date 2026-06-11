@@ -2803,6 +2803,23 @@ void loop() {
   }
   #endif
 
+  // ---- TEMP LOOP PROFILER (remove after debugging) ----
+  static uint32_t _gTop = 0, _gAtTick = 0, _gPreUi = 0, _gPostUiBlock = 0, _gPostKbd = 0, _gPostTouch = 0;
+  uint32_t _gNow0 = millis();
+  uint32_t _gIter = _gTop ? _gNow0 - _gTop : 0;
+  if (_gIter > 800) {
+    Serial.printf("PROF iter=%lu head=%lu events=%lu uiblock=%lu kbd=%lu touch=%lu rest=%lu\n",
+                  (unsigned long)_gIter,
+                  (unsigned long)(_gAtTick - _gTop),
+                  (unsigned long)(_gPreUi - _gAtTick),
+                  (unsigned long)(_gPostUiBlock - _gPreUi),
+                  (unsigned long)(_gPostKbd - _gPostUiBlock),
+                  (unsigned long)(_gPostTouch - _gPostKbd),
+                  (unsigned long)(_gNow0 - _gPostTouch));
+  }
+  _gTop = _gNow0;
+  // ---- END ----
+
   #ifdef MECK_OTA_UPDATE
   bool meshPaused = otaRadioPaused;
   #ifdef MECK_RADIO_TOGGLES
@@ -2817,7 +2834,8 @@ void loop() {
   }
   #endif
 
-  the_mesh.loop();
+  { uint32_t _mt = millis(); the_mesh.loop(); uint32_t _md = millis() - _mt;
+    if (_md > 300) Serial.printf("SLOW mesh.loop=%lums\n", (unsigned long)_md); }
 
   #ifdef LILYGO_TECHO_CARD
   if (_techoC2Debug > 0) {
@@ -2853,14 +2871,19 @@ void loop() {
       static unsigned long lastFsCheck = 0;
       if (millis() - lastFsCheck >= 1000) {
         lastFsCheck = millis();
+        uint32_t _et = millis();
         fsss->ensureBackgroundFileServer(WiFi.status() == WL_CONNECTED);
+        uint32_t _ed = millis() - _et;
+        if (_ed > 300) Serial.printf("SLOW ensureBgFileServer=%lums\n", (unsigned long)_ed);
       }
-      fsss->pollOTAServer();
+      { uint32_t _pt = millis(); fsss->pollOTAServer(); uint32_t _pd = millis() - _pt;
+        if (_pd > 300) Serial.printf("SLOW pollOTAServer=%lums\n", (unsigned long)_pd); }
     }
   }
   #endif
 
-  sensors.loop();
+  { uint32_t _st = millis(); sensors.loop(); uint32_t _sd = millis() - _st;
+    if (_sd > 300) Serial.printf("SLOW sensors.loop=%lums\n", (unsigned long)_sd); }
 
   // Satellite-count diagnostic (MAX): every 10s while GPS is on, print the
   // reported satellite count, fix state and NMEA rate so the multi-constellation
@@ -2963,6 +2986,9 @@ void loop() {
       if (abPlayer->isAudioActive()) {
         cpuPower.setBoost();
       }
+      // ---- TEMP LOOP PROFILER (remove after debugging) ----
+      _gAtTick = millis();
+      // ---- END ----
     }
   }
   #endif
@@ -3445,6 +3471,7 @@ void loop() {
     }
   }
   #endif
+  _gPreUi = millis();  // TEMP LOOP PROFILER checkpoint (remove after debugging)
 #ifdef DISPLAY_CLASS
   // Skip UITask rendering when in compose mode to prevent flickering
   #if defined(LilyGo_TDeck_Pro)
@@ -3564,18 +3591,31 @@ void loop() {
   #endif
   #endif
 #endif
-  rtc_clock.tick();
-  // Periodic AGC reset - re-assert boosted RX gain to prevent sensitivity drift
+  _gPostUiBlock = millis();  // TEMP PROFILER checkpoint (remove after debugging)
+  { uint32_t _t = millis(); rtc_clock.tick(); uint32_t _d = millis() - _t;
+    if (_d > 300) Serial.printf("SLOW rtc.tick=%lums\n", (unsigned long)_d); }
+  // Periodic AGC reset - re-assert boosted RX gain to prevent sensitivity drift.
+  // Skipped while audio is playing: setRxBoostedGainMode() blocks ~2s on this
+  // SX1262 (BUSY-pin SPI timeout), starving the cooperative audio.loop() and
+  // causing severe playback stutter. The boosted gain is persisted to retention
+  // memory (persist=true), so pausing re-assertion during playback is safe.
+  bool _audioBusy = false;
+  {
+    AudiobookPlayerScreen* _ap = (AudiobookPlayerScreen*)ui_task.getAudiobookScreen();
+    if (_ap && _ap->isAudioActive()) _audioBusy = true;
+  }
   #ifdef MECK_OTA_UPDATE
   if (!otaRadioPaused)
   #endif
-  if ((millis() - lastAGCReset) >= AGC_RESET_INTERVAL_MS) {
-    radio_reset_agc();
+  if (!_audioBusy && (millis() - lastAGCReset) >= AGC_RESET_INTERVAL_MS) {
+    uint32_t _at = millis(); radio_reset_agc(); uint32_t _ad = millis() - _at;
+    if (_ad > 300) Serial.printf("SLOW radio_reset_agc=%lums\n", (unsigned long)_ad);
     lastAGCReset = millis();
   }
   // Handle T-Deck Pro keyboard input
   #if defined(LilyGo_TDeck_Pro)
-    handleKeyboardInput();
+    { uint32_t _t = millis(); handleKeyboardInput(); uint32_t _d = millis() - _t;
+      if (_d > 300) Serial.printf("SLOW handleKbd=%lums\n", (unsigned long)_d); }
 
     // Deferred Enter processing for contacts screen long-press detection.
     // Enter is captured in handleKeyboardInput() but action is deferred so
@@ -3633,6 +3673,7 @@ void loop() {
     }
   #endif
 
+  _gPostKbd = millis();  // TEMP PROFILER checkpoint (remove after debugging)
   // ---------------------------------------------------------------------------
   // Touch Input — tap/swipe/long-press state machine (T5S3 + T-Deck Pro)
   // Gestures:
@@ -3663,7 +3704,8 @@ void loop() {
     if (!touchBlocked)
     {
       int16_t tx, ty;
-      bool gotPoint = readTouch(&tx, &ty);
+      uint32_t _tt = millis(); bool gotPoint = readTouch(&tx, &ty);
+      { uint32_t _td = millis() - _tt; if (_td > 300) Serial.printf("SLOW readTouch=%lums irq=%d\n", (unsigned long)_td, gotPoint); }
       unsigned long now = millis();
 
       if (gotPoint) {
@@ -3910,6 +3952,7 @@ void loop() {
   }
 #endif
   #endif // MECK_TOUCH_ENABLED
+  _gPostTouch = millis();  // TEMP PROFILER checkpoint (remove after debugging)
 
   // ---------------------------------------------------------------------------
   // CardKB external keyboard polling (via QWIIC)

@@ -1955,6 +1955,9 @@ bool UITask::isButtonPressed() const {
 }
 
 void UITask::loop() {
+  // TEMP PROFILER (remove after debugging): time whole UITask::loop on any exit
+  struct _UlG { uint32_t t; ~_UlG(){ uint32_t d = millis() - t;
+    if (d > 300) Serial.printf("SLOW UITask::loop=%lums\n", (unsigned long)d); } } _ulg{ millis() };
   char c = 0;
 #if defined(PIN_USER_BTN)
   int ev = user_btn.check();
