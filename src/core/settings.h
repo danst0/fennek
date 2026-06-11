@@ -43,6 +43,11 @@ void    clearBookBookmark(uint32_t key);
 bool    readPos(uint32_t key, uint32_t* page);
 void    setReadPos(uint32_t key, uint32_t page);
 
+// Zuletzt geöffnetes Buch (kompletter Pfad, "" = keins). Der Reader springt
+// beim ersten Betreten nach dem Boot direkt hinein (Seite via readPos).
+void    lastBook(char* out, size_t n);
+void    setLastBook(const char* path);
+
 // --- Mesh-Funkparameter --------------------------------------------------------
 // Defaults = "EU/UK Narrow" (Standard in Deutschland/NRW, Stand 2026):
 // 869,618 MHz, BW 62,5 kHz, SF 8, CR 4/8, 22 dBm. Änderungen werden von

@@ -208,6 +208,28 @@ void setReadPos(uint32_t key, uint32_t page) {
   s_ebook.putULong(k, page);
 }
 
+namespace {
+char s_lastBook[256] = "";        // Calibre-Pfade sind lang
+bool s_lastBookLoaded = false;
+}
+
+void lastBook(char* out, size_t n) {
+  if (!s_lastBookLoaded && ebookEnsure()) {
+    s_lastBookLoaded = true;
+    if (s_ebook.isKey("bookpath")) s_ebook.getString("bookpath", s_lastBook, sizeof(s_lastBook));
+  }
+  strncpy(out, s_lastBook, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setLastBook(const char* path) {
+  if (!ebookEnsure() || strcmp(path, s_lastBook) == 0) return;
+  strncpy(s_lastBook, path, sizeof(s_lastBook) - 1);
+  s_lastBook[sizeof(s_lastBook) - 1] = '\0';
+  s_lastBookLoaded = true;
+  s_ebook.putString("bookpath", s_lastBook);
+}
+
 // --- Mesh-Funkparameter ----------------------------------------------------------
 namespace {
 
@@ -259,6 +281,85 @@ void setMeshName(const char* name) {
   strncpy(s_meshName, name, sizeof(s_meshName) - 1);
   s_meshName[sizeof(s_meshName) - 1] = '\0';
   s_prefs.putString("mname", s_meshName);
+}
+
+// --- Spiele: Beststände + Schach-Spielstand ------------------------------------
+namespace {
+
+bool     s_gamesLoaded = false;
+uint32_t s_best2048 = 0;
+uint16_t s_minesWins = 0, s_minesBest = 0;
+uint16_t s_chessWins = 0;
+uint16_t s_tttWins = 0, s_tttDraws = 0;
+
+void gamesEnsure() {
+  if (s_gamesLoaded || !s_open) return;
+  s_gamesLoaded = true;
+  s_best2048  = s_prefs.getULong("g2kbest", 0);
+  s_minesWins = s_prefs.getUShort("mswins", 0);
+  s_minesBest = s_prefs.getUShort("msbest", 0);
+  s_chessWins = s_prefs.getUShort("chwins", 0);
+  s_tttWins   = s_prefs.getUShort("tttw", 0);
+  s_tttDraws  = s_prefs.getUShort("tttd", 0);
+}
+
+}  // namespace
+
+uint32_t best2048() { gamesEnsure(); return s_best2048; }
+
+void setBest2048(uint32_t score) {
+  gamesEnsure();
+  if (!s_open || score <= s_best2048) return;
+  s_best2048 = score;
+  s_prefs.putULong("g2kbest", score);
+}
+
+uint16_t minesWins()    { gamesEnsure(); return s_minesWins; }
+uint16_t minesBestSec() { gamesEnsure(); return s_minesBest; }
+
+void setMinesResult(bool won, uint16_t sec) {
+  gamesEnsure();
+  if (!s_open || !won) return;   // Niederlagen werden nicht gezählt
+  s_minesWins++;
+  s_prefs.putUShort("mswins", s_minesWins);
+  if (s_minesBest == 0 || sec < s_minesBest) {
+    s_minesBest = sec;
+    s_prefs.putUShort("msbest", sec);
+  }
+}
+
+uint16_t chessWins() { gamesEnsure(); return s_chessWins; }
+
+void addChessWin() {
+  gamesEnsure();
+  if (!s_open) return;
+  s_chessWins++;
+  s_prefs.putUShort("chwins", s_chessWins);
+}
+
+bool chessGame(void* buf, size_t n) {
+  if (!s_open || !s_prefs.isKey("chgame")) return false;
+  if (s_prefs.getBytesLength("chgame") != n) return false;   // Formatwechsel
+  return s_prefs.getBytes("chgame", buf, n) == n;
+}
+
+void setChessGame(const void* buf, size_t n) {
+  if (!s_open) return;
+  if (n == 0) {
+    if (s_prefs.isKey("chgame")) s_prefs.remove("chgame");
+    return;
+  }
+  s_prefs.putBytes("chgame", buf, n);
+}
+
+uint16_t tttWins()  { gamesEnsure(); return s_tttWins; }
+uint16_t tttDraws() { gamesEnsure(); return s_tttDraws; }
+
+void addTttResult(bool win, bool draw) {
+  gamesEnsure();
+  if (!s_open) return;
+  if (win)  { s_tttWins++;  s_prefs.putUShort("tttw", s_tttWins); }
+  if (draw) { s_tttDraws++; s_prefs.putUShort("tttd", s_tttDraws); }
 }
 
 uint32_t crc32(const char* s) {

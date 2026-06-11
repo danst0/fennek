@@ -178,6 +178,7 @@ void openBook(int idx) {
   if (idx < 0 || idx >= s_fileCount) return;
   BookFile& b = s_files[idx];
   s_posKey = settings::crc32(b.path);
+  settings::setLastBook(b.path);
 
   if (b.isEpub) {
     epubproc::buildCachePath(b.path, s_txtPath, sizeof(s_txtPath));
@@ -196,6 +197,23 @@ void openBook(int idx) {
     strncpy(s_txtPath, b.path, sizeof(s_txtPath) - 1);
     s_txtPath[sizeof(s_txtPath) - 1] = '\0';
     openTxt();
+  }
+}
+
+// Beim ersten Betreten nach dem Boot direkt ins zuletzt gelesene Buch springen
+// (die Seite kommt in enterRead() aus der NVS-Leseposition).
+void autoOpenLastBook() {
+  char last[kPathLen];
+  settings::lastBook(last, sizeof(last));
+  if (!last[0]) return;
+  for (int i = 0; i < s_fileCount; i++) {
+    if (strcmp(s_files[i].path, last) == 0) {
+      s_sel = i;
+      s_off = (i >= VISIBLE) ? i - VISIBLE + 1 : 0;
+      Serial.printf("[READER] Resume: %s\n", last);
+      openBook(i);
+      return;
+    }
   }
 }
 
@@ -361,7 +379,10 @@ class ReaderApp : public App {
   const char* name() const override { return "Lesen"; }
 
   void onEnter() override {
-    if (s_fileCount < 0 && board::sdReady()) scanFiles();
+    if (s_fileCount < 0 && board::sdReady()) {
+      scanFiles();
+      autoOpenLastBook();
+    }
   }
 
   void onLeave() override {
