@@ -28,6 +28,12 @@ constexpr int BAR_Y    = LIST_Y + VISIBLE * ROW_H + 4;  // 268
 const Rect kBack    {6,       BAR_Y, 110, 44};
 const Rect kToPlayer{W - 116, BAR_Y, 110, 44};
 
+// Kompakte Leiste für scrollbare Track-Listen (mit ▲/▼-Buttons)
+const Rect kBackSm  {6,   BAR_Y, 76, 44};
+const Rect kScrollUp{90,  BAR_Y, 44, 44};
+const Rect kScrollDn{142, BAR_Y, 44, 44};
+const Rect kPlayerSm{194, BAR_Y, 40, 44};
+
 // Kein-SD-Screen
 const Rect kRetrySD {20, 150, W - 40, 48};
 
@@ -62,6 +68,7 @@ uint32_t s_lastShownSec = 999999;  // zuletzt angezeigte Position
 int      s_progCount    = 0;       // Region-Refreshes -> periodisch voll
 int      s_plOpenCount  = 0;       // # Tracks der gerade geöffneten Playlist
 int      s_sel          = 0;       // Tastatur-Auswahl-Cursor in der Liste
+int      s_off          = 0;       // Scroll-Offset (nur Track-Listen)
 
 int      s_scratch[MAX_TRACKS];    // Queue-Aufbau (kein Stack-Druck)
 
@@ -71,6 +78,9 @@ const char* kMenu[3] = {"Künstler", "Album", "Playlist"};
 
 void markDirty() { appmgr::markDirty(); }
 Frame& top() { return s_stack[s_depth]; }
+
+// Track-Ebenen haben feste Abspielreihenfolge -> scrollbare Liste statt Buckets.
+bool isTrackList(Level lv) { return lv == L_ALBUM_TRACKS || lv == L_PLAYLIST_TRACKS; }
 
 // --- Datenzugriff je Level --------------------------------------------------
 int levelCount(Level lv, int ctx) {
@@ -152,6 +162,7 @@ void pushFrame(Level lv, int ctx) {
   s_depth++;
   top() = Frame{lv, ctx, 0, cnt};
   s_sel = 0;
+  s_off = 0;
   markDirty();
 }
 void pushBucket(Level lv, int ctx, int lo, int hi) {
@@ -159,10 +170,11 @@ void pushBucket(Level lv, int ctx, int lo, int hi) {
   s_depth++;
   top() = Frame{lv, ctx, lo, hi};
   s_sel = 0;
+  s_off = 0;
   markDirty();
 }
 void goBack() {
-  if (s_depth > 0) { s_depth--; s_sel = 0; markDirty(); }
+  if (s_depth > 0) { s_depth--; s_sel = 0; s_off = 0; markDirty(); }
 }
 
 // Anzahl sichtbarer Zeilen des aktuellen Frames (Leaf-Items oder Buckets).
@@ -245,13 +257,15 @@ void drawListArea(Adafruit_GFX& g) {
   Frame& f = top();
   int M = f.hi - f.lo;
   int curFlat = currentFlat();
+  bool trackList = isTrackList(f.level);
 
   if (M <= 0) {
     gui::printAt(g, 10, 80, "(leer)", 2);
-  } else if (M <= VISIBLE) {
-    // Leaf-Liste: Items einzeln
-    for (int r = 0; r < M; r++) {
-      int idx = f.lo + r;
+  } else if (trackList || M <= VISIBLE) {
+    // Leaf-Liste: Items einzeln; Track-Listen mit Scroll-Fenster
+    int off = trackList ? s_off : 0;
+    for (int r = 0; r < VISIBLE && off + r < M; r++) {
+      int idx = f.lo + off + r;
       char lbl[64];
       itemLabel(f.level, f.ctx, idx, lbl, sizeof(lbl));
       bool cur = (curFlat >= 0 && itemFlat(f.level, f.ctx, idx) == curFlat);
@@ -271,11 +285,23 @@ void drawListArea(Adafruit_GFX& g) {
   }
 
   // Tastatur-Cursor: Doppelrahmen um die ausgewählte Zeile.
-  int rows = visibleRows();
-  if (rows > 0 && s_sel >= 0 && s_sel < rows) {
-    int y = LIST_Y + s_sel * ROW_H;
+  // Track-Listen: s_sel ist absoluter Index; Cursor kann nach Touch-Scroll
+  // außerhalb des Fensters liegen (dann nicht zeichnen, wie im Reader).
+  int row = trackList ? (s_sel - s_off) : s_sel;
+  int rows = trackList ? ((M - s_off < VISIBLE) ? M - s_off : VISIBLE) : visibleRows();
+  if (rows > 0 && row >= 0 && row < rows) {
+    int y = LIST_Y + row * ROW_H;
     g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+  }
+
+  // Scrollbar am rechten Rand (nur scrollbare Track-Listen).
+  if (trackList && M > VISIBLE) {
+    g.drawFastVLine(W - 3, LIST_Y, VISIBLE * ROW_H, GxEPD_BLACK);
+    int th = VISIBLE * ROW_H * VISIBLE / M;
+    if (th < 14) th = 14;
+    int ty = LIST_Y + (VISIBLE * ROW_H - th) * s_off / (M - VISIBLE);
+    g.fillRect(W - 5, ty, 5, th, GxEPD_BLACK);
   }
 }
 
@@ -311,11 +337,19 @@ void drawBrowse(Adafruit_GFX& g) {
 
   drawListArea(g);
 
-  // Untere Leiste
+  // Untere Leiste: kompakt mit ▲/▼ bei scrollbaren Track-Listen
   audio::Status st = audio::status();
-  if (s_depth > 0) gui::drawButton(g, kBack, "Zurück", false);
-  if (st.pos >= 0 && st.owner == audio::Owner::Music)
-    gui::drawButton(g, kToPlayer, "Player", false);
+  Frame& f = top();
+  bool playerBtn = (st.pos >= 0 && st.owner == audio::Owner::Music);
+  if (isTrackList(f.level) && f.hi - f.lo > VISIBLE) {
+    gui::drawButton(g, kBackSm, "Zurück", false);
+    gui::drawButton(g, kScrollUp, "\x1e", false);
+    gui::drawButton(g, kScrollDn, "\x1f", false);
+    if (playerBtn) gui::drawButton(g, kPlayerSm, "\x10", false);
+  } else {
+    if (s_depth > 0) gui::drawButton(g, kBack, "Zurück", false);
+    if (playerBtn) gui::drawButton(g, kToPlayer, "Player", false);
+  }
 }
 
 // --- Zeichnen: Player -------------------------------------------------------
@@ -403,9 +437,30 @@ void drawProgStrip(Adafruit_GFX& g) {
 void onBrowseTouch(int x, int y) {
   Frame& f = top();
   audio::Status st = audio::status();
-  if (s_depth > 0 && kBack.hit(x, y)) { goBack(); return; }
-  if (st.pos >= 0 && st.owner == audio::Owner::Music && kToPlayer.hit(x, y)) {
+  int M = f.hi - f.lo;
+  // Bei scrollbaren Track-Listen gilt die kompakte Leiste -> andere Hit-Rects.
+  bool scrollBar = isTrackList(f.level) && M > VISIBLE;
+  const Rect& back = scrollBar ? kBackSm : kBack;
+  const Rect& toPl = scrollBar ? kPlayerSm : kToPlayer;
+  if (s_depth > 0 && back.hit(x, y)) { goBack(); return; }
+  if (st.pos >= 0 && st.owner == audio::Owner::Music && toPl.hit(x, y)) {
     s_screen = PLAYER; markDirty(); return;
+  }
+  if (scrollBar && kScrollUp.hit(x, y)) {
+    if (s_off > 0) {
+      s_off -= VISIBLE;
+      if (s_off < 0) s_off = 0;
+      if (!appmgr::isDirty()) display::renderRegion(drawListArea, LIST_Y, VISIBLE * ROW_H);
+    }
+    return;
+  }
+  if (scrollBar && kScrollDn.hit(x, y)) {
+    if (s_off + VISIBLE < M) {
+      s_off += VISIBLE;
+      if (s_off > M - VISIBLE) s_off = M - VISIBLE;
+      if (!appmgr::isDirty()) display::renderRegion(drawListArea, LIST_Y, VISIBLE * ROW_H);
+    }
+    return;
   }
   if (!board::sdReady()) {
     if (kRetrySD.hit(x, y)) retrySD();
@@ -414,10 +469,12 @@ void onBrowseTouch(int x, int y) {
 
   if (y < LIST_Y || y >= LIST_Y + VISIBLE * ROW_H) return;
   int row = (y - LIST_Y) / ROW_H;
-  int M = f.hi - f.lo;
   if (M <= 0) return;
 
-  if (M <= VISIBLE) {
+  if (isTrackList(f.level)) {
+    int idx = f.lo + s_off + row;    // Scroll-Offset einrechnen!
+    if (idx < f.hi) selectItem(f.level, f.ctx, idx);
+  } else if (M <= VISIBLE) {
     if (row < M) selectItem(f.level, f.ctx, f.lo + row);
   } else {
     int K = bucketCount(M);
@@ -452,6 +509,21 @@ void onPlayerTouch(int x, int y) {
 
 // Cursor bewegen: nur den Listenbereich partiell neu zeichnen (schnell).
 void moveSel(int delta) {
+  Frame& f = top();
+  if (isTrackList(f.level)) {
+    // Scrollbare Liste: Cursor über die volle Länge, Fenster folgt.
+    int M = f.hi - f.lo;
+    if (M <= 0) return;
+    int ns = s_sel + delta;
+    if (ns < 0) ns = M - 1;          // Wrap-Around
+    if (ns >= M) ns = 0;
+    if (ns == s_sel) return;
+    s_sel = ns;
+    if (s_sel < s_off) s_off = s_sel;
+    if (s_sel >= s_off + VISIBLE) s_off = s_sel - VISIBLE + 1;
+    if (!appmgr::isDirty()) display::renderRegion(drawListArea, LIST_Y, VISIBLE * ROW_H);
+    return;
+  }
   int rows = visibleRows();
   if (rows <= 0) return;
   int ns = s_sel + delta;
@@ -467,7 +539,7 @@ void activateSel() {
   Frame& f = top();
   int M = f.hi - f.lo;
   if (M <= 0) return;
-  if (M <= VISIBLE) {
+  if (isTrackList(f.level) || M <= VISIBLE) {
     if (s_sel < M) selectItem(f.level, f.ctx, f.lo + s_sel);
   } else {
     int K = bucketCount(M);
