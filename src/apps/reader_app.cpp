@@ -74,73 +74,87 @@ int cmpFile(const void* a, const void* b) {
   return strcasecmp(((const BookFile*)a)->name, ((const BookFile*)b)->name);
 }
 
-// Ein Verzeichnis scannen, Unterordner danach rekursiv (Calibre legt Bücher
-// unter Autor/Titel/ ab). spiLock nur pro Verzeichnis halten, nicht über den
-// ganzen Scan — Audio braucht den Bus zum Nachladen.
-void scanDir(const char* dirPath, int depth) {
-  if (!s_files || s_fileCount >= kMaxBooks) return;
+// --- Bücher-Scan: häppchenweise (Calibre legt Bücher unter Autor/Titel/ ab) ----
+// Der Scan läuft NICHT blockierend: onEnter füllt nur den Verzeichnis-Stack,
+// tick() arbeitet pro Aufruf wenige Verzeichnisse ab (spiLock nur pro
+// Verzeichnis). Wichtig, weil appmgr::begin() die letzte App schon im Boot
+// wiederherstellt — ein synchroner Scan hier hielt das ganze Setup an.
+void autoOpenLastBook();   // unten definiert (braucht openBook)
 
-  // Calibre-Titelordner können deutlich länger als kNameLen sein.
-  constexpr int kMaxSub = 256;
-  constexpr int kSubLen = 160;
-  char (*subs)[kSubLen] = nullptr;
-  int nSub = 0;
+constexpr int kMaxStack = 256;
+char (*s_dirStack)[kPathLen] = nullptr;
+int   s_dirStackN = 0;
+bool  s_scanning  = false;
+bool  s_autoOpen  = false;   // nach Scan-Ende letztes Buch öffnen (1x pro Boot)
 
-  spiLock();
-  File d = SD.open(dirPath);
-  if (!d || !d.isDirectory()) {
-    if (d) d.close();
-    spiUnlock();
-    return;
-  }
-  File f;
-  while ((f = d.openNextFile()) && s_fileCount < kMaxBooks) {
-    const char* nm = f.name();
-    if (nm[0] == '.') { f.close(); continue; }
-    if (f.isDirectory()) {
-      if (depth < kScanDepth && nSub < kMaxSub) {
-        if (!subs) {
-          subs = (char(*)[kSubLen])heap_caps_malloc(kMaxSub * kSubLen, MALLOC_CAP_SPIRAM);
-          if (!subs) subs = (char(*)[kSubLen])malloc(kMaxSub * kSubLen);
-        }
-        if (subs) {
-          strncpy(subs[nSub], nm, kSubLen - 1);
-          subs[nSub][kSubLen - 1] = '\0';
-          nSub++;
-        }
-      }
-    } else if (hasExt(nm, ".txt") || hasExt(nm, ".epub")) {
-      BookFile& b = s_files[s_fileCount];
-      strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
-      snprintf(b.path, kPathLen, "%s/%s", dirPath, nm);
-      b.isEpub = hasExt(nm, ".epub");
-      s_fileCount++;
-    }
-    f.close();
-  }
-  d.close();
-  spiUnlock();
-
-  for (int i = 0; i < nSub && s_fileCount < kMaxBooks; i++) {
-    char sub[kPathLen];
-    snprintf(sub, sizeof(sub), "%s/%s", dirPath, subs[i]);
-    scanDir(sub, depth + 1);
-  }
-  free(subs);
+// Tiefe relativ zu /books ("/books" = Tiefe 0).
+int dirDepth(const char* p) {
+  int n = 0;
+  for (; *p; p++) if (*p == '/') n++;
+  return n - 1;
 }
 
-void scanFiles() {
+void scanStart(bool autoOpen) {
   if (!s_files) {
     s_files = (BookFile*)heap_caps_malloc(sizeof(BookFile) * kMaxBooks, MALLOC_CAP_SPIRAM);
     if (!s_files) s_files = (BookFile*)malloc(sizeof(BookFile) * kMaxBooks);
   }
+  if (!s_dirStack) {
+    s_dirStack = (char(*)[kPathLen])heap_caps_malloc(kMaxStack * kPathLen, MALLOC_CAP_SPIRAM);
+    if (!s_dirStack) s_dirStack = (char(*)[kPathLen])malloc(kMaxStack * kPathLen);
+  }
   s_fileCount = 0;
-  if (!s_files || !board::sdReady()) return;
+  s_sel = 0; s_off = 0;
+  s_scanning = false;
+  s_autoOpen = false;
+  if (!s_files || !s_dirStack || !board::sdReady()) return;
+  strncpy(s_dirStack[0], kBookDir, kPathLen - 1);
+  s_dirStack[0][kPathLen - 1] = '\0';
+  s_dirStackN = 1;
+  s_scanning = true;
+  s_autoOpen = autoOpen;
+}
 
-  scanDir(kBookDir, 0);
-
+void scanFinish() {
+  s_scanning = false;
   qsort(s_files, s_fileCount, sizeof(BookFile), cmpFile);
   s_sel = 0; s_off = 0;
+  markDirty();
+  if (s_autoOpen) { s_autoOpen = false; autoOpenLastBook(); }
+}
+
+// Ein Verzeichnis vom Stack abarbeiten (LIFO = Tiefensuche, hält den Stack klein).
+void scanStep() {
+  if (!s_scanning) return;
+  if (s_dirStackN == 0 || s_fileCount >= kMaxBooks) { scanFinish(); return; }
+
+  char dir[kPathLen];
+  strncpy(dir, s_dirStack[--s_dirStackN], kPathLen - 1);
+  dir[kPathLen - 1] = '\0';
+  int depth = dirDepth(dir);
+
+  spiLock();
+  File d = SD.open(dir);
+  if (d && d.isDirectory()) {
+    File f;
+    while ((f = d.openNextFile()) && s_fileCount < kMaxBooks) {
+      const char* nm = f.name();
+      if (nm[0] == '.') { f.close(); continue; }
+      if (f.isDirectory()) {
+        if (depth < kScanDepth && s_dirStackN < kMaxStack)
+          snprintf(s_dirStack[s_dirStackN++], kPathLen, "%s/%s", dir, nm);
+      } else if (hasExt(nm, ".txt") || hasExt(nm, ".epub")) {
+        BookFile& b = s_files[s_fileCount];
+        strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
+        snprintf(b.path, kPathLen, "%s/%s", dir, nm);
+        b.isEpub = hasExt(nm, ".epub");
+        s_fileCount++;
+      }
+      f.close();
+    }
+  }
+  if (d) d.close();
+  spiUnlock();
 }
 
 // Aktuelle Seite in den Puffer laden.
@@ -245,6 +259,11 @@ void drawList(Adafruit_GFX& g) {
     gui::drawButton(g, kRetrySD, "Erneut suchen", false);
     return;
   }
+  if (s_scanning) {
+    gui::printAt(g, 10, 80, "Suche Bücher ...", 2);
+    gui::drawButton(g, kBack, "Home", false);
+    return;
+  }
   if (s_fileCount <= 0) {
     gui::printAt(g, 10, 80, "Keine Bücher", 2);
     gui::printAt(g, 10, 110, ".txt/.epub nach /books legen.", 1);
@@ -320,7 +339,7 @@ void drawRead(Adafruit_GFX& g) {
 
 // --- Interaktion ------------------------------------------------------------------
 void retrySD() {
-  if (board::initSD()) scanFiles();
+  if (board::initSD()) scanStart(false);
   markDirty();
 }
 
@@ -337,6 +356,7 @@ void moveSel(int delta) {
 
 void onListTouch(int x, int y) {
   if (kBack.hit(x, y)) { appmgr::goHome(); return; }
+  if (s_scanning) return;
   if (!board::sdReady() || s_fileCount <= 0) {
     if (kRetrySD.hit(x, y)) retrySD();
     return;
@@ -379,13 +399,12 @@ class ReaderApp : public App {
   const char* name() const override { return "Lesen"; }
 
   void onEnter() override {
-    if (s_fileCount < 0 && board::sdReady()) {
-      scanFiles();
-      autoOpenLastBook();
-    }
+    // Nur Stack füllen — der Scan selbst läuft häppchenweise in tick().
+    if (s_fileCount < 0 && board::sdReady()) scanStart(true);
   }
 
   void onLeave() override {
+    s_autoOpen = false;   // Nutzer ist weg — nicht später ins Buch springen
     if (s_screen == READ) settings::setReadPos(s_posKey, (uint32_t)s_page);
     if (s_screen == CONVERTING) { epubproc::convertCancel(); s_screen = LIST; }
   }
@@ -425,6 +444,11 @@ class ReaderApp : public App {
   }
 
   void tick() override {
+    // Bücher-Scan häppchenweise (ein paar Verzeichnisse pro Tick).
+    if (s_scanning) {
+      for (int i = 0; i < 4 && s_scanning; i++) scanStep();
+      return;
+    }
     // Konvertierung/Indexierung häppchenweise; Fortschritt alle ~2 s zeichnen.
     if (s_screen == CONVERTING) {
       epubproc::convertStep();
@@ -472,7 +496,8 @@ namespace reader_app {
 App* get() { return &s_app; }
 
 void debugScan() {
-  scanFiles();
+  scanStart(false);
+  while (s_scanning) scanStep();
   Serial.printf("[READER] %d Buch/Bücher unter %s:\n", s_fileCount, kBookDir);
   for (int i = 0; i < s_fileCount; i++)
     Serial.printf("[READER]   %s\n", s_files[i].path);
