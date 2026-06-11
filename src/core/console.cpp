@@ -4,6 +4,7 @@
 #include "core/board.h"
 #include "core/settings.h"
 #include "apps/mesh_client.h"
+#include "apps/reader_app.h"
 
 #include <Arduino.h>
 #include <SD.h>
@@ -38,6 +39,7 @@ void cmdHelp() {
   Serial.println("[CON]   msgs              - Nachrichten-Verlauf dumpen");
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
+  Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
 }
 
 // SD-Verzeichnis listen (Diagnose, nicht rekursiv).
@@ -155,6 +157,7 @@ void handleLine(char* line) {
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
+  if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
   if (strcmp(line, "channels") == 0) {
     if (!mesh_client::ready()) { Serial.println("[CON] Mesh nicht initialisiert"); return; }
     int n = mesh_client::channelCount();

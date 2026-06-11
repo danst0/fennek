@@ -19,9 +19,10 @@ namespace {
 using gui::Rect;
 
 constexpr const char* kBookDir = "/books";
-constexpr int kMaxBooks = 128;
-constexpr int kNameLen  = 64;
-constexpr int kPathLen  = 192;
+constexpr int kMaxBooks  = 512;
+constexpr int kNameLen   = 64;
+constexpr int kPathLen   = 256;
+constexpr int kScanDepth = 2;   // Calibre-Layout: /books/Autor/Titel/Buch.epub
 
 // --- Layout: Liste ------------------------------------------------------------
 constexpr int W = EINK_W;
@@ -73,6 +74,61 @@ int cmpFile(const void* a, const void* b) {
   return strcasecmp(((const BookFile*)a)->name, ((const BookFile*)b)->name);
 }
 
+// Ein Verzeichnis scannen, Unterordner danach rekursiv (Calibre legt Bücher
+// unter Autor/Titel/ ab). spiLock nur pro Verzeichnis halten, nicht über den
+// ganzen Scan — Audio braucht den Bus zum Nachladen.
+void scanDir(const char* dirPath, int depth) {
+  if (!s_files || s_fileCount >= kMaxBooks) return;
+
+  // Calibre-Titelordner können deutlich länger als kNameLen sein.
+  constexpr int kMaxSub = 256;
+  constexpr int kSubLen = 160;
+  char (*subs)[kSubLen] = nullptr;
+  int nSub = 0;
+
+  spiLock();
+  File d = SD.open(dirPath);
+  if (!d || !d.isDirectory()) {
+    if (d) d.close();
+    spiUnlock();
+    return;
+  }
+  File f;
+  while ((f = d.openNextFile()) && s_fileCount < kMaxBooks) {
+    const char* nm = f.name();
+    if (nm[0] == '.') { f.close(); continue; }
+    if (f.isDirectory()) {
+      if (depth < kScanDepth && nSub < kMaxSub) {
+        if (!subs) {
+          subs = (char(*)[kSubLen])heap_caps_malloc(kMaxSub * kSubLen, MALLOC_CAP_SPIRAM);
+          if (!subs) subs = (char(*)[kSubLen])malloc(kMaxSub * kSubLen);
+        }
+        if (subs) {
+          strncpy(subs[nSub], nm, kSubLen - 1);
+          subs[nSub][kSubLen - 1] = '\0';
+          nSub++;
+        }
+      }
+    } else if (hasExt(nm, ".txt") || hasExt(nm, ".epub")) {
+      BookFile& b = s_files[s_fileCount];
+      strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
+      snprintf(b.path, kPathLen, "%s/%s", dirPath, nm);
+      b.isEpub = hasExt(nm, ".epub");
+      s_fileCount++;
+    }
+    f.close();
+  }
+  d.close();
+  spiUnlock();
+
+  for (int i = 0; i < nSub && s_fileCount < kMaxBooks; i++) {
+    char sub[kPathLen];
+    snprintf(sub, sizeof(sub), "%s/%s", dirPath, subs[i]);
+    scanDir(sub, depth + 1);
+  }
+  free(subs);
+}
+
 void scanFiles() {
   if (!s_files) {
     s_files = (BookFile*)heap_caps_malloc(sizeof(BookFile) * kMaxBooks, MALLOC_CAP_SPIRAM);
@@ -81,25 +137,7 @@ void scanFiles() {
   s_fileCount = 0;
   if (!s_files || !board::sdReady()) return;
 
-  spiLock();
-  File d = SD.open(kBookDir);
-  if (d && d.isDirectory()) {
-    File f;
-    while ((f = d.openNextFile()) && s_fileCount < kMaxBooks) {
-      const char* nm = f.name();
-      if (!f.isDirectory() && nm[0] != '.' &&
-          (hasExt(nm, ".txt") || hasExt(nm, ".epub"))) {
-        BookFile& b = s_files[s_fileCount];
-        strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
-        snprintf(b.path, kPathLen, "%s/%s", kBookDir, nm);
-        b.isEpub = hasExt(nm, ".epub");
-        s_fileCount++;
-      }
-      f.close();
-    }
-  }
-  if (d) d.close();
-  spiUnlock();
+  scanDir(kBookDir, 0);
 
   qsort(s_files, s_fileCount, sizeof(BookFile), cmpFile);
   s_sel = 0; s_off = 0;
@@ -411,5 +449,12 @@ ReaderApp s_app;
 namespace reader_app {
 
 App* get() { return &s_app; }
+
+void debugScan() {
+  scanFiles();
+  Serial.printf("[READER] %d Buch/Bücher unter %s:\n", s_fileCount, kBookDir);
+  for (int i = 0; i < s_fileCount; i++)
+    Serial.printf("[READER]   %s\n", s_files[i].path);
+}
 
 }  // namespace reader_app

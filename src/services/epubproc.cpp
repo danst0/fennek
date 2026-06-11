@@ -2,6 +2,7 @@
 #include "epubzip.h"
 #include "core/board.h"
 #include "core/gui.h"
+#include "core/settings.h"
 
 #include <Arduino.h>
 #include <SD.h>
@@ -466,32 +467,24 @@ void cleanup(bool removeTxt) {
 namespace epubproc {
 
 void buildCachePath(const char* epubPath, char* cachePath, int cachePathSize) {
+  // Zentraler Cache unter /books/.epub_cache — keine Cache-Ordner in die
+  // Calibre-Struktur (Autor/Titel/) streuen. CRC des Pfads macht den Namen
+  // auch bei gleichen Dateinamen in verschiedenen Ordnern eindeutig.
   const char* lastSlash = strrchr(epubPath, '/');
   const char* filename = lastSlash ? lastSlash + 1 : epubPath;
 
-  char dir[128];
-  if (lastSlash) {
-    int dirLen = lastSlash - epubPath;
-    if (dirLen >= (int)sizeof(dir)) dirLen = sizeof(dir) - 1;
-    strncpy(dir, epubPath, dirLen);
-    dir[dirLen] = '\0';
-  } else {
-    strcpy(dir, "/books");
-  }
-
-  char cacheDir[160];
-  snprintf(cacheDir, sizeof(cacheDir), "%s/.epub_cache", dir);
-  spiLock();
-  if (!SD.exists(cacheDir)) SD.mkdir(cacheDir);
-  spiUnlock();
-
-  char baseName[128];
+  char baseName[80];
   strncpy(baseName, filename, sizeof(baseName) - 1);
   baseName[sizeof(baseName) - 1] = '\0';
   char* dot = strrchr(baseName, '.');
   if (dot) *dot = '\0';
 
-  snprintf(cachePath, cachePathSize, "%s/%s.txt", cacheDir, baseName);
+  spiLock();
+  if (!SD.exists("/books/.epub_cache")) SD.mkdir("/books/.epub_cache");
+  spiUnlock();
+
+  snprintf(cachePath, cachePathSize, "/books/.epub_cache/%08x_%s.txt",
+           (unsigned)settings::crc32(epubPath), baseName);
 }
 
 bool convertBegin(const char* epubPath, const char* txtPath) {

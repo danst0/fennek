@@ -138,7 +138,7 @@ void wrapFlush(WrapState& st, const WrapCfg& cfg, uint32_t endOff) {
 }
 
 // --- Dokument-Zustand -----------------------------------------------------------
-char      s_path[192] = "";
+char      s_path[256] = "";   // Calibre-Pfade (/books/Autor/Titel/…) sind lang
 int       s_cols = 38, s_rows = 27;
 uint32_t  s_fsize = 0;
 uint32_t* s_pageOff = nullptr;   // PSRAM
