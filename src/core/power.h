@@ -21,9 +21,13 @@ void begin();
 // Inaktivitäts-Timer zurück.
 void noteActivity();
 
-// Einmal pro appmgr::loop() aufrufen: Langdruck-Erkennung + Idle-Timeout.
-// Löst bei Bedarf enterStandby() aus.
+// Einmal pro appmgr::loop() aufrufen: Knopf (kurz = Tastensperre, lang =
+// Standby) + Idle-Timeout. Löst bei Bedarf enterStandby() aus.
 void poll();
+
+// Tastensperre aktiv? Solange true ignoriert der appmgr Touch + Tastatur;
+// nur der Knopf reagiert (kurz = entsperren, lang = Standby).
+bool locked();
 
 // Sofort in Deep-Sleep-Standby gehen (Audio/Radio/Peripherie aus, Wake-Quelle
 // = Knopf). Kehrt nicht zurück (Aufwachen ist ein Reboot).

@@ -39,12 +39,27 @@ uint8_t audioGlyph() {
   return st.paused ? 2 : 1;
 }
 
+// Kleines Schloss-Symbol (Tastensperre) in der Statuszeile.
+void drawLock(Adafruit_GFX& g, int x, int y) {
+  g.drawCircle(x + 5, y + 4, 4, GxEPD_BLACK);   // Bügel
+  g.drawCircle(x + 5, y + 4, 3, GxEPD_BLACK);
+  g.fillRoundRect(x, y + 4, 11, 9, 2, GxEPD_BLACK);  // Körper
+  g.fillCircle(x + 5, y + 8, 1, GxEPD_WHITE);    // Schlüsselloch
+}
+
 void drawStatusBar(Adafruit_GFX& g) {
   g.fillRect(0, 0, EINK_W, appmgr::STATUS_H, GxEPD_WHITE);
   g.setTextColor(GxEPD_BLACK);
   g.setTextSize(1);
   g.setCursor(6, 7);
   gui::print(g, s_cur ? s_cur->name() : "");
+
+  // Tastensperre: Schloss + "Gesperrt" (mittig, vor Audio/Akku).
+  if (power::locked()) {
+    drawLock(g, 92, 4);
+    g.setCursor(108, 7);
+    gui::print(g, "Gesperrt");
+  }
 
   // Audio-Indikator Mitte/rechts: CP437 0x0E = Doppelnote.
   uint8_t a = audioGlyph();
@@ -124,9 +139,11 @@ void markDirty() { s_dirty = true; }
 bool isDirty()   { return s_dirty; }
 
 void loop() {
-  // 1) Eingaben: Touch + Tastatur.
+  // 1) Eingaben: Touch + Tastatur. Bei Tastensperre werden Events zwar
+  //    abgeholt (Puffer leeren), aber nicht an die App weitergereicht.
+  const bool locked = power::locked();
   int16_t tx, ty;
-  if (touch::poll(tx, ty) && millis() >= s_settleUntil) {
+  if (touch::poll(tx, ty) && !locked && millis() >= s_settleUntil) {
     power::noteActivity();
     Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->name() : "-");
     if (ty < STATUS_H) {
@@ -139,7 +156,7 @@ void loop() {
     }
   }
   char k = keyboard::poll();
-  if (k && s_cur) {
+  if (k && !locked && s_cur) {
     power::noteActivity();
     InputEvent e;
     e.type = InputEvent::KEY;
@@ -190,6 +207,14 @@ void loop() {
       s_lastAudioGlyph = a;
       display::renderRegion(drawStatusBar, 0, STATUS_H);
     }
+  }
+
+  // 5b) Tastensperre-Wechsel sofort in der Statuszeile spiegeln.
+  static int s_lockShown = -1;
+  int lk = power::locked() ? 1 : 0;
+  if (lk != s_lockShown) {
+    s_lockShown = lk;
+    if (!s_dirty) display::renderRegion(drawStatusBar, 0, STATUS_H);
   }
 
   // 6) Koaleszierter Voll-Redraw.

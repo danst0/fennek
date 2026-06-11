@@ -24,10 +24,12 @@ namespace {
 constexpr int      BTN_PRESSED_LEVEL = LOW;
 constexpr auto     WAKE_LEVEL        = ESP_EXT1_WAKEUP_ANY_LOW;
 constexpr uint32_t LONGPRESS_MS      = 2000;   // Halten für manuellen Standby
+constexpr uint32_t SHORTPRESS_MIN_MS = 40;     // Entprellung des Kurzklicks
 
 uint32_t s_lastActivity = 0;
 uint32_t s_btnDownAt    = 0;     // 0 = Knopf nicht gedrückt
 bool     s_armed        = false; // Langdruck dieses Drucks schon ausgelöst?
+bool     s_locked       = false; // Tastensperre aktiv?
 
 bool btnPressed() { return digitalRead(PIN_USER_BTN) == BTN_PRESSED_LEVEL; }
 
@@ -108,6 +110,8 @@ void begin() {
 
 void noteActivity() { s_lastActivity = millis(); }
 
+bool locked() { return s_locked; }
+
 void enterStandby() {
   Serial.println("[FENNEK] Standby — gehe in Deep Sleep ...");
 
@@ -136,7 +140,7 @@ void enterStandby() {
 void poll() {
   uint32_t now = millis();
 
-  // --- Langdruck-Erkennung ---------------------------------------------------
+  // --- Knopf: kurz = Tastensperre, lang = Standby ----------------------------
   if (btnPressed()) {
     if (s_btnDownAt == 0) {       // Flanke HIGH->LOW
       s_btnDownAt = now;
@@ -144,10 +148,16 @@ void poll() {
       noteActivity();             // Knopfdruck zählt als Aktivität
     } else if (!s_armed && now - s_btnDownAt >= LONGPRESS_MS) {
       s_armed = true;             // nur einmal pro Druck
-      enterStandby();             // kehrt nicht zurück
+      enterStandby();             // Langdruck → kehrt nicht zurück
     }
-  } else {
+  } else if (s_btnDownAt != 0) {  // Flanke LOW->HIGH (losgelassen)
+    uint32_t dur = now - s_btnDownAt;
     s_btnDownAt = 0;
+    if (!s_armed && dur >= SHORTPRESS_MIN_MS && dur < LONGPRESS_MS) {
+      s_locked = !s_locked;       // Kurzklick → Tastensperre umschalten
+      noteActivity();
+    }
+    s_armed = false;
   }
 
   // --- Auto-Standby nach Inaktivität ----------------------------------------
