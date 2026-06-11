@@ -11,6 +11,7 @@ bool        s_open = false;
 
 // Gecachte Werte: Vergleich vor jedem Write (NVS nur bei echter Änderung).
 uint8_t  s_volume = 255;        // 255 = noch nicht geladen
+uint8_t  s_standby = 5;         // Auto-Standby-Minuten (0 = aus)
 char     s_lastApp[24] = "";
 char     s_lastTrack[192] = "";
 uint32_t s_lastPos = 0;
@@ -23,6 +24,7 @@ void begin() {
   s_open = s_prefs.begin("meck", false);
   if (!s_open) return;
   s_volume = s_prefs.getUChar("vol", 255);
+  s_standby = s_prefs.getUChar("stdby", 5);
   if (s_prefs.isKey("lastapp")) s_prefs.getString("lastapp", s_lastApp, sizeof(s_lastApp));
   if (s_prefs.isKey("trkpath")) s_prefs.getString("trkpath", s_lastTrack, sizeof(s_lastTrack));
   s_lastPos = s_prefs.getULong("trkpos", 0);
@@ -34,6 +36,14 @@ void setVolume(uint8_t v) {
   if (!s_open || v == s_volume) return;
   s_volume = v;
   s_prefs.putUChar("vol", v);
+}
+
+uint8_t standbyMinutes() { return s_standby; }
+
+void setStandbyMinutes(uint8_t m) {
+  if (!s_open || m == s_standby) return;
+  s_standby = m;
+  s_prefs.putUChar("stdby", m);
 }
 
 void lastApp(char* out, size_t n) {

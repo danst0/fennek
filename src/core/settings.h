@@ -24,6 +24,10 @@ void    setVolume(uint8_t v);          // schreibt nur bei Änderung
 void    lastApp(char* out, size_t n);  // Name der zuletzt aktiven App ("" = keine)
 void    setLastApp(const char* name);
 
+// Auto-Standby nach Inaktivität (Minuten; 0 = aus). Default 5.
+uint8_t standbyMinutes();
+void    setStandbyMinutes(uint8_t m);  // schreibt nur bei Änderung
+
 // --- Musik: zuletzt gespielter Track (für Resume) ----------------------------
 // Pfad + Position; leerer Pfad = nichts gespeichert.
 void    lastTrack(char* pathOut, size_t n, uint32_t* posSec);

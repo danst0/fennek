@@ -18,19 +18,24 @@ constexpr int W = EINK_W;
 constexpr int TOP      = appmgr::CONTENT_Y;
 constexpr int HEADER_Y = TOP + 2;
 constexpr int HEADER_H = TOP + 26;
-// 9 Zeilen + Home-Button müssen unter die Statuszeile passen:
-// LIST_Y=54 + 9*24 = 270, Button ab 276.
-constexpr int ROW_H    = 24;
+// 10 Zeilen + Home-Button müssen unter die Statuszeile passen:
+// LIST_Y=54 + 10*22 = 274, Button ab 276.
+constexpr int ROW_H    = 22;
 constexpr int LIST_Y   = HEADER_H + 4;
 
 const Rect kHome {6, 276, 110, 38};
 
 // --- Zeilen ---------------------------------------------------------------------
 enum RowId {
-  ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME, ROW_INFO,
+  ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
+  ROW_STANDBY, ROW_INFO,
   ROW_VERSION,
   ROW_COUNT
 };
+
+// Auto-Standby-Stufen (Minuten; 0 = Aus).
+const uint8_t kStandbySteps[] = {0, 2, 5, 10, 30};
+constexpr int kNumStandby = 5;
 
 int  s_sel = 0;
 bool s_editName = false;
@@ -77,6 +82,15 @@ float nextBw(float bw, int dir) {
 
 // Wert der Zeile ändern (dir = -1/+1).
 void changeRow(int row, int dir) {
+  if (row == ROW_STANDBY) {
+    uint8_t cur = settings::standbyMinutes();
+    int idx = 0;
+    for (int i = 0; i < kNumStandby; i++) if (kStandbySteps[i] == cur) idx = i;
+    idx = (idx + dir + kNumStandby) % kNumStandby;
+    settings::setStandbyMinutes(kStandbySteps[idx]);
+    markDirty();
+    return;
+  }
   settings::MeshParams p = settings::meshParams();
   switch (row) {
     case ROW_PRESET: {
@@ -128,12 +142,18 @@ void rowLabel(int row, char* lbl, size_t n) {
       else            snprintf(lbl, n, "Name: %s", nm);
       break;
     }
+    case ROW_STANDBY: {
+      uint8_t m = settings::standbyMinutes();
+      if (m == 0) snprintf(lbl, n, "Standby: Aus");
+      else        snprintf(lbl, n, "Standby: %u min", m);
+      break;
+    }
     case ROW_INFO:
       snprintf(lbl, n, "Akku: %u mV (%u%%%s)", battery::milliVolts(),
                battery::percent(), battery::charging() ? ", lädt" : "");
       break;
     case ROW_VERSION:
-      snprintf(lbl, n, "Firmware: Meck %s", MECK_VERSION);
+      snprintf(lbl, n, "Firmware: Fennek %s", FENNEK_VERSION);
       break;
   }
 }

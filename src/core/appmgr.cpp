@@ -4,6 +4,7 @@
 #include "core/display.h"
 #include "core/gui.h"
 #include "core/keyboard.h"
+#include "core/power.h"
 #include "core/settings.h"
 #include "core/touch.h"
 #include "services/audio.h"
@@ -89,6 +90,7 @@ void add(App* a) {
 }
 
 void begin() {
+  power::begin();
   s_cur = (s_count > 0) ? s_apps[0] : nullptr;
   if (s_cur) s_cur->onEnter();
 
@@ -125,6 +127,7 @@ void loop() {
   // 1) Eingaben: Touch + Tastatur.
   int16_t tx, ty;
   if (touch::poll(tx, ty) && millis() >= s_settleUntil) {
+    power::noteActivity();
     Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->name() : "-");
     if (ty < STATUS_H) {
       if (s_cur != s_apps[0]) goHome();
@@ -137,11 +140,16 @@ void loop() {
   }
   char k = keyboard::poll();
   if (k && s_cur) {
+    power::noteActivity();
     InputEvent e;
     e.type = InputEvent::KEY;
     e.x = e.y = 0; e.key = k;
     s_cur->handleInput(e);
   }
+
+  // 1b) Ausschaltknopf (Langdruck = Standby) + Auto-Standby nach Inaktivität.
+  //     Sicherer Punkt: noch kein E-Ink-Refresh angestoßen.
+  power::poll();
 
   // 2) Hintergrund-Arbeit aller Apps (Mesh-Loop, Bookmark-Writes, ...).
   for (int i = 0; i < s_count; i++) s_apps[i]->background();

@@ -29,6 +29,10 @@ void initBus();
 bool initSD();
 bool sdReady();
 
+// Peripherie-Versorgung (PIN_PERF_POWERON: Keyboard/Touch/Sensoren) schalten.
+// Vor Deep-Sleep ausschalten spart Strom; powerOn() schaltet sie wieder ein.
+void perfPower(bool on);
+
 // DAC-Versorgung (PCM5102A) schalten.
 void dacPower(bool on);
 

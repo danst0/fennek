@@ -66,6 +66,10 @@ bool initSD() {
 
 bool sdReady() { return s_sdReady; }
 
+void perfPower(bool on) {
+  digitalWrite(PIN_PERF_POWERON, on ? HIGH : LOW);
+}
+
 void dacPower(bool on) {
   digitalWrite(PIN_DAC_EN, on ? HIGH : LOW);
 }
