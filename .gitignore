@@ -16,3 +16,7 @@ cmake-*
 compile_commands.json
 .venv/
 venv/
+
+# Python-Artefakte (z. B. tools/)
+__pycache__/
+*.pyc
