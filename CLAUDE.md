@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Fennek** — Multi-App-Handheld-Firmware für das **LilyGO T-Deck Pro V1.1** (ESP32-S3, 8 MB PSRAM), PlatformIO/Arduino. (Eigenständiges Projekt `fennek` (Remote `danst0/fennek`); entstand in Anlehnung an den Meck-Fork `pelgraine/Meck`. Version: `FENNEK_VERSION` in `src/config.h`, Log-Präfix `[FENNEK]`. NVS-Namespace `fennek` und SD-Cache `/.fennek` — Altbestände aus der Meck-Ära werden beim Boot automatisch migriert.) Launcher-Homescreen + vier Apps: **Musik** (MP3-Player), **Hörbuch**, **Lesen** (TXT/EPUB) und **Mesh** (schlanker MeshCore-Client). Fokus: flüssige Bedienung (Touch + Tastatur) und stotterfreie Wiedergabe; Hintergrund-Audio läuft über App-Wechsel hinweg. Code-Kommentare, Serial-Ausgaben und Doku sind **deutsch**; alle Textausgaben laufen über `gui::print` (UTF-8 → CP437, Umlaute!).
 
-- Aktiver Code in `src/` (einzige Build-Env: `mp3player`).
+- Aktiver Code in `src/` (einzige Build-Env: `fennek`).
 - `lib/meshcore/` + `lib/ed25519/` — vendored MeshCore-Stack (Subset des alten Meck-Codes) für die Mesh-App.
 - Die alte MeshCore-/Meck-Firmware (vormals `archive_legacy/`) liegt in der **Git-Historie** — Referenz für hardware-verifizierte Pin-/Init-Sequenzen und Quellbasis der Vendor-Kopien (`git show <commit>:archive_legacy/...`).
 - `boards/` — enthält nur noch `t-deck_pro.json` (Partition `default_16MB.csv`: 6,5-MB-App-Slots, 3,4 MB SPIFFS, 20 KB NVS).
@@ -14,8 +14,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Flash
 
 ```bash
-pio run -e mp3player              # bauen
-pio run -e mp3player -t upload    # flashen (USB-C an /dev/ttyACM0, 921600 Baud)
+pio run -e fennek              # bauen
+pio run -e fennek -t upload    # flashen (USB-C an /dev/ttyACM0, 921600 Baud)
 pio device monitor -b 115200      # serielles Boot-Log (mit Exception-Decoder)
 ```
 
