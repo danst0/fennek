@@ -47,11 +47,13 @@ Default ist das in Deutschland übliche **EU/UK-Narrow**-Preset.
 - `src/` — aktive Firmware (`core/` Treiber & Framework, `services/` Audio/
   Bibliothek/Text, `apps/` die fünf Apps)
 - `lib/meshcore/`, `lib/ed25519/` — vendored MeshCore-Stack (Subset)
-- `archive_legacy/` — die frühere Meck-Firmware, nur noch Referenz
 - `CLAUDE.md` — Architektur, Invarianten, Verifikationsstand
 
 ## Historie
 
-Fennek entstand aus dem Meck-Fork (MeshCore-Companion für T-Deck), wurde aber
-ab v1.0.0 als eigenständige Multi-App-Firmware neu aufgebaut. Der alte Code
-liegt unverändert unter `archive_legacy/`.
+Fennek entstand in Anlehnung an den **Meck**-Fork
+([pelgraine/Meck](https://github.com/pelgraine/Meck), MeshCore-Companion für das
+T-Deck), wurde aber ab v1.0.0 als eigenständige Multi-App-Firmware neu aufgebaut
+und ist seither ein eigenes Projekt. Der frühere Meck-Code (vormals unter
+`archive_legacy/`) liegt in der Git-Historie und ist von dort jederzeit
+wiederherstellbar.
