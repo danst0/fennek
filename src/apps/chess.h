@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // chess.h — Schach-Screen (UI zu chess_core.h), gehostet von games_app.
 //

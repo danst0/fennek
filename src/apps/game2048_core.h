@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // game2048_core.h — 2048-Spiellogik, Arduino-frei (host-testbar).
 //

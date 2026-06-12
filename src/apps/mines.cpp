@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // mines.cpp — Minensucher-UI (siehe mines.h). Logik in mines_core.h
 // (host-getestet). 10×11-Feld à 24 px; Touch deckt auf, 'f' togglet den

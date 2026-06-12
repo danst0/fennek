@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // mesh_app.h — Mesh-UI (Public-Channel, Direktnachrichten, Kontakte).
 //

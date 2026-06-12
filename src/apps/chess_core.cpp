@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // chess_core.cpp — Implementierung (siehe chess_core.h). Arduino-frei.
 // =============================================================================

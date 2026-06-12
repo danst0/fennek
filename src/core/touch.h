@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // touch.h — kapazitiver Touch (CST328) über den vendored Hynitron-Treiber.
 //

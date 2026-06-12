@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // ttt.h — Tic-Tac-Toe-Screen (UI zu ttt_core.h), gehostet von games_app.
 // =============================================================================

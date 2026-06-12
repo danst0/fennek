@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // main.cpp — LilyGO T-Deck Pro: Multi-App-Handheld (Launcher + Apps).
 //

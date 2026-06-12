@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "settings_app.h"
 #include "mesh_client.h"
 #include "config.h"
@@ -371,7 +374,7 @@ class SettingsApp : public App {
 
     gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
     g.setTextSize(1);
-    g.setCursor(FOOT_X, 280);
+    g.setCursor(FOOT_X, 278);
     if (s_edit >= 0)              gui::print(g, i18n::tr(Str::HintEnterSave));
     else if (s_sel == ROW_NAME)   gui::print(g, i18n::tr(Str::HintNameEdit));
     else if (rowEditable(s_sel))  gui::print(g, i18n::tr(Str::HintEdit));
@@ -379,10 +382,12 @@ class SettingsApp : public App {
     char info[32];
     snprintf(info, sizeof(info), i18n::tr(Str::FmtBattery), battery::percent(),
              battery::charging() ? "+" : "", battery::milliVolts());
-    g.setCursor(FOOT_X, 294);
+    g.setCursor(FOOT_X, 290);
     gui::print(g, info);
-    g.setCursor(FOOT_X, 308);
+    g.setCursor(FOOT_X, 302);
     gui::print(g, "Fennek " FENNEK_VERSION);
+    g.setCursor(FOOT_X, 314);
+    gui::print(g, "(c) Dr. Daniel Dumke");
   }
 };
 

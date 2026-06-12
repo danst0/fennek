@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // files_app.h — App „Dateien": Web-Dateiverwaltung der SD-Karte über WLAN.
 //

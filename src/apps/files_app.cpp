@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "files_app.h"
 #include "core/gui.h"
 #include "core/i18n.h"

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "webfm.h"
 #include "webfm_html.h"
 #include "core/board.h"

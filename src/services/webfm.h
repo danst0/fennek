@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // webfm.h — Web-Dateiverwaltung: WLAN (Station) + HTTP-Server für die SD.
 //

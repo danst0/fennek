@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // board.h — Power-Sequenz, geteilter SPI-Bus und SD-Karte.
 //

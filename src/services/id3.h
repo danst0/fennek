@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // id3.h — minimaler ID3-Tag-Reader (Titel/Künstler/Album).
 //
