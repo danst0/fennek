@@ -6,31 +6,45 @@ namespace {
 // Tabellen aus der X-Macro-Liste: Index = (uint16_t)Str, Eintrag 0 = Str::None.
 const char* const kDE[] = {
   "",
-#define X(id, de, it, sv) de,
+#define X(id, de, it, sv, en, es) de,
   FENNEK_STRS(X)
 #undef X
 };
 const char* const kIT[] = {
   "",
-#define X(id, de, it, sv) it,
+#define X(id, de, it, sv, en, es) it,
   FENNEK_STRS(X)
 #undef X
 };
 const char* const kSV[] = {
   "",
-#define X(id, de, it, sv) sv,
+#define X(id, de, it, sv, en, es) sv,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kEN[] = {
+  "",
+#define X(id, de, it, sv, en, es) en,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kES[] = {
+  "",
+#define X(id, de, it, sv, en, es) es,
   FENNEK_STRS(X)
 #undef X
 };
 static_assert(sizeof(kDE) / sizeof(kDE[0]) == i18n::STR_COUNT, "DE-Tabelle unvollständig");
 static_assert(sizeof(kIT) / sizeof(kIT[0]) == i18n::STR_COUNT, "IT-Tabelle unvollständig");
 static_assert(sizeof(kSV) / sizeof(kSV[0]) == i18n::STR_COUNT, "SV-Tabelle unvollständig");
+static_assert(sizeof(kEN) / sizeof(kEN[0]) == i18n::STR_COUNT, "EN-Tabelle unvollständig");
+static_assert(sizeof(kES) / sizeof(kES[0]) == i18n::STR_COUNT, "ES-Tabelle unvollständig");
 
-const char* const* const kTables[] = { kDE, kIT, kSV };
+const char* const* const kTables[] = { kDE, kIT, kSV, kEN, kES };
 static_assert(sizeof(kTables) / sizeof(kTables[0]) == (uint8_t)i18n::Lang::COUNT,
               "kTables passt nicht zu Lang::COUNT");
 
-const char* const kLangNames[] = { "Deutsch", "Italiano", "Svenska" };
+const char* const kLangNames[] = { "Deutsch", "Italiano", "Svenska", "English", "Español" };
 
 }  // namespace
 

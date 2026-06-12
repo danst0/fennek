@@ -566,26 +566,30 @@ bool convertStep() {
   }
 
   int i = s_cv.chapterPos++;
+  uint32_t rawSize = 0;
+  uint8_t* rawData = nullptr;
   spiLock();
-  int entryIdx = s_cv.zip->findEntry(s_cv.chapterPaths[i]);
-  if (entryIdx >= 0) {
-    uint32_t rawSize = 0;
-    uint8_t* rawData = s_cv.zip->extractEntry(entryIdx, &rawSize);
-    if (rawData && rawSize > 0) {
-      uint32_t textLen = 0;
-      uint8_t* plainText = stripXhtml(rawData, rawSize, &textLen);
-      free(rawData);
-      if (plainText && textLen > 0) {
-        s_cv.outFile.write(plainText, textLen);
-        s_cv.outFile.print("\n\n");
-        s_cv.written++;
-      }
-      if (plainText) free(plainText);
-    } else if (rawData) {
-      free(rawData);
-    }
-  }
+  int entryIdx = s_cv.zip->findEntry(s_cv.chapterPaths[i]);   // RAM-only
+  if (entryIdx >= 0) rawData = s_cv.zip->extractEntry(entryIdx, &rawSize);
   spiUnlock();
+
+  if (rawData && rawSize > 0) {
+    // XHTML-Strippen ist reine RAM/CPU-Arbeit — bewusst OHNE spiLock, damit
+    // der Audio-Task währenddessen dekodieren kann (Kapitel können groß sein).
+    uint32_t textLen = 0;
+    uint8_t* plainText = stripXhtml(rawData, rawSize, &textLen);
+    free(rawData);
+    rawData = nullptr;
+    if (plainText && textLen > 0) {
+      spiLock();
+      s_cv.outFile.write(plainText, textLen);
+      s_cv.outFile.print("\n\n");
+      spiUnlock();
+      s_cv.written++;
+    }
+    if (plainText) free(plainText);
+  }
+  if (rawData) free(rawData);
   return true;
 }
 

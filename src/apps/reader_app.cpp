@@ -75,18 +75,41 @@ int cmpFile(const void* a, const void* b) {
   return strcasecmp(((const BookFile*)a)->name, ((const BookFile*)b)->name);
 }
 
-// --- Bücher-Scan: häppchenweise (Calibre legt Bücher unter Autor/Titel/ ab) ----
-// Der Scan läuft NICHT blockierend: onEnter füllt nur den Verzeichnis-Stack,
-// tick() arbeitet pro Aufruf wenige Verzeichnisse ab (spiLock nur pro
-// Verzeichnis). Wichtig, weil appmgr::begin() die letzte App schon im Boot
-// wiederherstellt — ein synchroner Scan hier hielt das ganze Setup an.
-void autoOpenLastBook();   // unten definiert (braucht openBook)
+// --- Bücher-Scan: häppchenweise + SD-Cache (Calibre: /books/Autor/Titel/) ----
+// Drei Lehren vom Gerät (Calibre-Bibliothek, ~100 Autoren / 107 Root-Einträge):
+// 1. openNextFile() öffnet jeden Eintrag (fopen inkl. FAT-Pfadauflösung) —
+//    der Komplett-Scan dauerte >4 Minuten. getNextFileName() macht nur
+//    readdir und liefert Name + Dir-Flag, das genügt hier.
+// 2. spiLock über ein ganzes Verzeichnis blockiert den Audio-Task sekundenlang
+//    (er braucht den Mutex für JEDEN Decode-Schritt, das I2S-DMA überbrückt
+//    nur ~90 ms => Hintergrund-Musik stotterte). Deshalb max. kScanChunk
+//    Einträge pro Lock; das offene Verzeichnis überlebt in s_scanDir
+//    zwischen den Häppchen.
+// 3. Das Ergebnis liegt als /.fennek/books.bin auf der SD und wird beim
+//    nächsten Boot von dort geladen. Neu gescannt wird nur ohne Cache, per
+//    'R' in der Liste oder über "Erneut suchen".
+constexpr int kMaxStack  = 256;
+constexpr int kScanChunk = 6;
+constexpr const char* kBookCache    = "/.fennek/books.bin";
+constexpr const char* kBookCacheTmp = "/.fennek/books.tmp";
+constexpr uint32_t kBookCacheMagic = 0x534B424Du;  // "MBKS"
+constexpr uint16_t kBookCacheVer   = 1;
 
-constexpr int kMaxStack = 256;
 char (*s_dirStack)[kPathLen] = nullptr;
 int   s_dirStackN = 0;
 bool  s_scanning  = false;
-bool  s_autoOpen  = false;   // nach Scan-Ende letztes Buch öffnen (1x pro Boot)
+File  s_scanDir;                 // offenes Verzeichnis, überlebt scanStep-Aufrufe
+bool  s_scanDirOpen   = false;
+int   s_scanDirDepth  = 0;
+bool  s_bootOpenTried = false;   // Auto-Open des letzten Buchs: 1x pro Boot
+
+bool ensureFiles() {
+  if (!s_files) {
+    s_files = (BookFile*)heap_caps_malloc(sizeof(BookFile) * kMaxBooks, MALLOC_CAP_SPIRAM);
+    if (!s_files) s_files = (BookFile*)malloc(sizeof(BookFile) * kMaxBooks);
+  }
+  return s_files != nullptr;
+}
 
 // Tiefe relativ zu /books ("/books" = Tiefe 0).
 int dirDepth(const char* p) {
@@ -95,11 +118,89 @@ int dirDepth(const char* p) {
   return n - 1;
 }
 
-void scanStart(bool autoOpen) {
-  if (!s_files) {
-    s_files = (BookFile*)heap_caps_malloc(sizeof(BookFile) * kMaxBooks, MALLOC_CAP_SPIRAM);
-    if (!s_files) s_files = (BookFile*)malloc(sizeof(BookFile) * kMaxBooks);
+// Cursor in der Liste aufs zuletzt gelesene Buch stellen (kosmetisch).
+void selectLastBook() {
+  char last[kPathLen];
+  settings::lastBook(last, sizeof(last));
+  if (!last[0]) return;
+  for (int i = 0; i < s_fileCount; i++) {
+    if (strcmp(s_files[i].path, last) == 0) {
+      s_sel = i;
+      s_off = (i >= VISIBLE) ? i - VISIBLE + 1 : 0;
+      return;
+    }
   }
+}
+
+bool loadBookCache() {
+  if (!board::sdReady() || !ensureFiles()) return false;
+  uint32_t magic = 0, count = 0;
+  uint16_t ver = 0, rec = 0;
+  spiLock();
+  File f = SD.open(kBookCache);
+  bool ok = f &&
+            f.read((uint8_t*)&magic, 4) == 4 && magic == kBookCacheMagic &&
+            f.read((uint8_t*)&ver, 2) == 2 && ver == kBookCacheVer &&
+            f.read((uint8_t*)&rec, 2) == 2 && rec == (uint16_t)sizeof(BookFile) &&
+            f.read((uint8_t*)&count, 4) == 4 && count <= (uint32_t)kMaxBooks;
+  spiUnlock();
+  // Einträge in Häppchen lesen (Lock-Zeit kurz halten, s. o.).
+  int n = 0;
+  while (ok && n < (int)count) {
+    int want = (int)count - n;
+    if (want > 16) want = 16;
+    spiLock();
+    ok = f.read((uint8_t*)&s_files[n], want * sizeof(BookFile)) ==
+         (int)(want * sizeof(BookFile));
+    spiUnlock();
+    n += want;
+  }
+  if (f) { spiLock(); f.close(); spiUnlock(); }
+  if (!ok) return false;
+  s_fileCount = (int)count;
+  s_sel = 0; s_off = 0;
+  selectLastBook();
+  Serial.printf("[READER] Bücher-Cache geladen: %d Einträge\n", s_fileCount);
+  return true;
+}
+
+void writeBookCache() {
+  if (!board::sdReady() || s_fileCount < 0) return;
+  spiLock();
+  if (!SD.exists("/.fennek")) SD.mkdir("/.fennek");
+  if (SD.exists(kBookCacheTmp)) SD.remove(kBookCacheTmp);
+  File f = SD.open(kBookCacheTmp, FILE_WRITE);
+  bool ok = (bool)f;
+  if (ok) {
+    uint16_t rec = (uint16_t)sizeof(BookFile);
+    uint32_t count = (uint32_t)s_fileCount;
+    f.write((const uint8_t*)&kBookCacheMagic, 4);
+    f.write((const uint8_t*)&kBookCacheVer, 2);
+    f.write((const uint8_t*)&rec, 2);
+    ok = f.write((const uint8_t*)&count, 4) == 4;
+  }
+  spiUnlock();
+  for (int i = 0; ok && i < s_fileCount; i += 16) {
+    size_t n = (size_t)((s_fileCount - i > 16) ? 16 : s_fileCount - i);
+    spiLock();
+    ok = f.write((const uint8_t*)&s_files[i], n * sizeof(BookFile)) ==
+         n * sizeof(BookFile);
+    spiUnlock();
+  }
+  spiLock();
+  if (f) f.close();
+  if (ok) {
+    if (SD.exists(kBookCache)) SD.remove(kBookCache);
+    ok = SD.rename(kBookCacheTmp, kBookCache);
+  } else if (f) {
+    SD.remove(kBookCacheTmp);
+  }
+  spiUnlock();
+  Serial.printf("[READER] Bücher-Cache %s (%d Einträge)\n",
+                ok ? "geschrieben" : "FEHLER", s_fileCount);
+}
+
+void scanStart() {
   if (!s_dirStack) {
     s_dirStack = (char(*)[kPathLen])heap_caps_malloc(kMaxStack * kPathLen, MALLOC_CAP_SPIRAM);
     if (!s_dirStack) s_dirStack = (char(*)[kPathLen])malloc(kMaxStack * kPathLen);
@@ -107,54 +208,80 @@ void scanStart(bool autoOpen) {
   s_fileCount = 0;
   s_sel = 0; s_off = 0;
   s_scanning = false;
-  s_autoOpen = false;
-  if (!s_files || !s_dirStack || !board::sdReady()) return;
+  if (s_scanDirOpen) {             // Rest eines abgebrochenen Laufs aufräumen
+    spiLock(); s_scanDir.close(); spiUnlock();
+    s_scanDirOpen = false;
+  }
+  if (!ensureFiles() || !s_dirStack || !board::sdReady()) return;
   strncpy(s_dirStack[0], kBookDir, kPathLen - 1);
   s_dirStack[0][kPathLen - 1] = '\0';
   s_dirStackN = 1;
   s_scanning = true;
-  s_autoOpen = autoOpen;
 }
 
 void scanFinish() {
   s_scanning = false;
   qsort(s_files, s_fileCount, sizeof(BookFile), cmpFile);
   s_sel = 0; s_off = 0;
-  markDirty();
-  if (s_autoOpen) { s_autoOpen = false; autoOpenLastBook(); }
+  selectLastBook();
+  writeBookCache();
+  if (s_screen == LIST) markDirty();
 }
 
-// Ein Verzeichnis vom Stack abarbeiten (LIFO = Tiefensuche, hält den Stack klein).
+// Ein Häppchen: max. kScanChunk Verzeichniseinträge unter einem spiLock.
+// Stack-Abbau LIFO = Tiefensuche, hält den Stack klein.
 void scanStep() {
   if (!s_scanning) return;
-  if (s_dirStackN == 0 || s_fileCount >= kMaxBooks) { scanFinish(); return; }
-
-  char dir[kPathLen];
-  strncpy(dir, s_dirStack[--s_dirStackN], kPathLen - 1);
-  dir[kPathLen - 1] = '\0';
-  int depth = dirDepth(dir);
+  if (s_fileCount >= kMaxBooks) {
+    if (s_scanDirOpen) {
+      spiLock(); s_scanDir.close(); spiUnlock();
+      s_scanDirOpen = false;
+    }
+    scanFinish();
+    return;
+  }
+  if (!s_scanDirOpen && s_dirStackN == 0) { scanFinish(); return; }
 
   spiLock();
-  File d = SD.open(dir);
-  if (d && d.isDirectory()) {
-    File f;
-    while ((f = d.openNextFile()) && s_fileCount < kMaxBooks) {
-      const char* nm = f.name();
-      if (nm[0] == '.') { f.close(); continue; }
-      if (f.isDirectory()) {
-        if (depth < kScanDepth && s_dirStackN < kMaxStack)
-          snprintf(s_dirStack[s_dirStackN++], kPathLen, "%s/%s", dir, nm);
-      } else if (hasExt(nm, ".txt") || hasExt(nm, ".epub")) {
-        BookFile& b = s_files[s_fileCount];
-        strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
-        snprintf(b.path, kPathLen, "%s/%s", dir, nm);
-        b.isEpub = hasExt(nm, ".epub");
-        s_fileCount++;
+  if (!s_scanDirOpen) {
+    char dir[kPathLen];
+    strncpy(dir, s_dirStack[--s_dirStackN], kPathLen - 1);
+    dir[kPathLen - 1] = '\0';
+    s_scanDir = SD.open(dir);
+    if (!s_scanDir || !s_scanDir.isDirectory()) {
+      if (s_scanDir) s_scanDir.close();
+      spiUnlock();
+      return;
+    }
+    s_scanDirOpen  = true;
+    s_scanDirDepth = dirDepth(dir);
+  }
+  for (int i = 0; i < kScanChunk && s_fileCount < kMaxBooks; i++) {
+    bool isDir = false;
+    String entry = s_scanDir.getNextFileName(&isDir);   // readdir, kein fopen
+    if (entry.length() == 0) {
+      s_scanDir.close();
+      s_scanDirOpen = false;
+      break;
+    }
+    const char* full = entry.c_str();
+    const char* nm = strrchr(full, '/');
+    nm = nm ? nm + 1 : full;
+    if (nm[0] == '.') continue;
+    if (isDir) {
+      if (s_scanDirDepth < kScanDepth && s_dirStackN < kMaxStack) {
+        strncpy(s_dirStack[s_dirStackN], full, kPathLen - 1);
+        s_dirStack[s_dirStackN][kPathLen - 1] = '\0';
+        s_dirStackN++;
       }
-      f.close();
+    } else if (hasExt(nm, ".txt") || hasExt(nm, ".epub")) {
+      BookFile& b = s_files[s_fileCount];
+      strncpy(b.name, nm, kNameLen - 1); b.name[kNameLen - 1] = '\0';
+      strncpy(b.path, full, kPathLen - 1); b.path[kPathLen - 1] = '\0';
+      b.isEpub = hasExt(nm, ".epub");
+      s_fileCount++;
     }
   }
-  if (d) d.close();
   spiUnlock();
 }
 
@@ -189,19 +316,17 @@ void openTxt() {
   else { s_screen = INDEXING; markDirty(); }
 }
 
-void openBook(int idx) {
-  if (idx < 0 || idx >= s_fileCount) return;
-  BookFile& b = s_files[idx];
-  s_posKey = settings::crc32(b.path);
-  settings::setLastBook(b.path);
+void openBookPath(const char* path) {
+  s_posKey = settings::crc32(path);
+  settings::setLastBook(path);
 
-  if (b.isEpub) {
-    epubproc::buildCachePath(b.path, s_txtPath, sizeof(s_txtPath));
+  if (hasExt(path, ".epub")) {
+    epubproc::buildCachePath(path, s_txtPath, sizeof(s_txtPath));
     spiLock();
     bool cached = SD.exists(s_txtPath);
     spiUnlock();
     if (cached) { openTxt(); return; }
-    if (epubproc::convertBegin(b.path, s_txtPath)) {
+    if (epubproc::convertBegin(path, s_txtPath)) {
       if (epubproc::convertDone()) { openTxt(); return; }
       s_screen = CONVERTING;
       markDirty();
@@ -209,27 +334,32 @@ void openBook(int idx) {
       markDirty();   // Fehler -> Liste bleibt, Log im Serial
     }
   } else {
-    strncpy(s_txtPath, b.path, sizeof(s_txtPath) - 1);
+    strncpy(s_txtPath, path, sizeof(s_txtPath) - 1);
     s_txtPath[sizeof(s_txtPath) - 1] = '\0';
     openTxt();
   }
 }
 
+void openBook(int idx) {
+  if (idx < 0 || idx >= s_fileCount) return;
+  openBookPath(s_files[idx].path);
+}
+
 // Beim ersten Betreten nach dem Boot direkt ins zuletzt gelesene Buch springen
-// (die Seite kommt in enterRead() aus der NVS-Leseposition).
-void autoOpenLastBook() {
+// (die Seite kommt in enterRead() aus der NVS-Leseposition). Bewusst OHNE
+// auf Scan oder Cache zu warten — der Pfad steht im NVS, und der Erst-Scan
+// einer großen Bibliothek dauert sonst Minuten, bevor das Buch aufgeht.
+bool autoOpenLastBook() {
   char last[kPathLen];
   settings::lastBook(last, sizeof(last));
-  if (!last[0]) return;
-  for (int i = 0; i < s_fileCount; i++) {
-    if (strcmp(s_files[i].path, last) == 0) {
-      s_sel = i;
-      s_off = (i >= VISIBLE) ? i - VISIBLE + 1 : 0;
-      Serial.printf("[READER] Resume: %s\n", last);
-      openBook(i);
-      return;
-    }
-  }
+  if (!last[0]) return false;
+  spiLock();
+  bool exists = SD.exists(last);
+  spiUnlock();
+  if (!exists) return false;
+  Serial.printf("[READER] Resume: %s\n", last);
+  openBookPath(last);
+  return s_screen != LIST;
 }
 
 void turnPage(int delta) {
@@ -262,6 +392,9 @@ void drawList(Adafruit_GFX& g) {
   }
   if (s_scanning) {
     gui::printAt(g, 10, 80, i18n::tr(i18n::Str::ReaderSearch), 2);
+    char found[32];
+    snprintf(found, sizeof(found), i18n::tr(i18n::Str::FmtReaderFound), s_fileCount);
+    gui::printAt(g, 10, 110, found, 1);
     gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
     return;
   }
@@ -271,6 +404,11 @@ void drawList(Adafruit_GFX& g) {
     gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
+
+  // Hinweis rechts in der Kopfzeile: Liste kommt aus dem Cache, 'R' scannt neu.
+  g.setTextSize(1);
+  g.setCursor(W - 96, HEADER_Y + 5);
+  gui::print(g, i18n::tr(i18n::Str::ReaderRescan));
 
   for (int r = 0; r < VISIBLE && s_off + r < s_fileCount; r++) {
     int i = s_off + r;
@@ -340,7 +478,7 @@ void drawRead(Adafruit_GFX& g) {
 
 // --- Interaktion ------------------------------------------------------------------
 void retrySD() {
-  if (board::initSD()) scanStart(false);
+  if (board::initSD()) scanStart();
   markDirty();
 }
 
@@ -378,6 +516,7 @@ void onListKey(char k) {
     case 'w': case 'W': moveSel(-1); break;
     case 's': case 'S': moveSel(+1); break;
     case '\r':          if (s_fileCount > 0) openBook(s_sel); break;
+    case 'r': case 'R': if (!s_scanning) { scanStart(); markDirty(); } break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;
     default: break;
@@ -401,12 +540,21 @@ class ReaderApp : public App {
   const char* name() const override { return i18n::tr(i18n::Str::AppReader); }
 
   void onEnter() override {
-    // Nur Stack füllen — der Scan selbst läuft häppchenweise in tick().
-    if (s_fileCount < 0 && board::sdReady()) scanStart(true);
+    if (!board::sdReady()) return;
+    // Liste bereitstellen: einmal pro Boot aus dem SD-Cache; ohne Cache
+    // startet der häppchenweise Scan (tick()) — blockiert hier nichts.
+    if (s_fileCount < 0 && !s_scanning) {
+      if (!loadBookCache()) scanStart();
+    }
+    // Beim ersten Betreten nach dem Boot sofort ins letzte Buch — unabhängig
+    // davon, ob Cache/Scan die Liste schon geliefert haben.
+    if (!s_bootOpenTried) {
+      s_bootOpenTried = true;
+      autoOpenLastBook();
+    }
   }
 
   void onLeave() override {
-    s_autoOpen = false;   // Nutzer ist weg — nicht später ins Buch springen
     if (s_screen == READ) settings::setReadPos(s_posKey, (uint32_t)s_page);
     if (s_screen == CONVERTING) { epubproc::convertCancel(); s_screen = LIST; }
   }
@@ -446,21 +594,26 @@ class ReaderApp : public App {
   }
 
   void tick() override {
-    // Bücher-Scan häppchenweise (ein paar Verzeichnisse pro Tick).
-    if (s_scanning) {
-      for (int i = 0; i < 4 && s_scanning; i++) scanStep();
-      return;
-    }
-    // Konvertierung/Indexierung häppchenweise; Fortschritt alle ~2 s zeichnen.
+    // Konvertierung/Indexierung zuerst (eigene Screens, Fortschritt ~2 s);
+    // ein evtl. laufender Scan pausiert solange (Bus nicht doppelt belasten).
     if (s_screen == CONVERTING) {
       epubproc::convertStep();
       if (epubproc::convertDone())        { openTxt(); return; }
       else if (epubproc::convertFailed()) { s_screen = LIST; markDirty(); return; }
       refreshProgress(epubproc::convertPercent());
-    } else if (s_screen == INDEXING) {
+      return;
+    }
+    if (s_screen == INDEXING) {
       textdoc::indexStep(16384);
       if (textdoc::indexReady()) { enterRead(); return; }
       refreshProgress(textdoc::indexPercent());
+      return;
+    }
+    // Bücher-Scan häppchenweise — läuft auch unterm Lesen (READ) im
+    // Hintergrund weiter; Fortschritt nur im Listen-Screen zeichnen.
+    if (s_scanning) {
+      for (int i = 0; i < 4 && s_scanning; i++) scanStep();
+      if (s_screen == LIST && s_scanning) refreshProgress(s_fileCount);
     }
   }
 
@@ -498,9 +651,11 @@ namespace reader_app {
 App* get() { return &s_app; }
 
 void debugScan() {
-  scanStart(false);
-  while (s_scanning) scanStep();
-  Serial.printf("[READER] %d Buch/Bücher unter %s:\n", s_fileCount, kBookDir);
+  uint32_t t0 = millis();
+  scanStart();
+  while (s_scanning) scanStep();   // schreibt am Ende auch den SD-Cache neu
+  Serial.printf("[READER] %d Buch/Bücher unter %s (%lu ms):\n",
+                s_fileCount, kBookDir, (unsigned long)(millis() - t0));
   for (int i = 0; i < s_fileCount; i++)
     Serial.printf("[READER]   %s\n", s_files[i].path);
 }

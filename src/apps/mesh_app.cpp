@@ -203,7 +203,7 @@ void drawError(Adafruit_GFX& g) {
   drawHeaderBar(g, "Mesh");
   gui::printAt(g, 10, 90, i18n::tr(i18n::Str::MeshNoRadio), 2);
   gui::printAt(g, 10, 124, i18n::tr(i18n::Str::MeshInitFail), 1);
-  gui::printAt(g, 10, 138, "Details im Serial-Log.", 1);
+  gui::printAt(g, 10, 138, i18n::tr(i18n::Str::MeshSeeLog), 1);
   gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 

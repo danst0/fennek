@@ -126,13 +126,13 @@ void updateResult() {
   chess::Result r = chess::result(s_pos);
   if (r == chess::MATE) {
     s_result = (s_pos.stm > 0) ? 2 : 1;   // Seite am Zug ist matt
-    s_resultText = (s_result == 1) ? i18n::tr(i18n::Str::ChessMateW) : i18n::tr(i18n::Str::ChessMateB));
+    s_resultText = (s_result == 1) ? i18n::tr(i18n::Str::ChessMateW) : i18n::tr(i18n::Str::ChessMateB);
   } else if (r == chess::STALEMATE) {
     s_result = 3;
-    s_resultText = i18n::tr(i18n::Str::ChessStale));
+    s_resultText = i18n::tr(i18n::Str::ChessStale);
   } else if (r == chess::DRAW50) {
     s_result = 3;
-    s_resultText = i18n::tr(i18n::Str::ChessDraw50));
+    s_resultText = i18n::tr(i18n::Str::ChessDraw50);
   } else if (s_nHist > 0) {
     int rep = 0;
     uint32_t h = s_hist[s_nHist - 1];
@@ -140,7 +140,7 @@ void updateResult() {
       if (s_hist[i] == h) rep++;
     if (rep >= 3) {
       s_result = 3;
-      s_resultText = i18n::tr(i18n::Str::ChessDrawRep));
+      s_resultText = i18n::tr(i18n::Str::ChessDrawRep);
     }
   }
   if (s_result) {
