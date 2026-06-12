@@ -29,6 +29,23 @@
 #include "apps/mesh_app.h"
 #include "apps/mesh_client.h"
 #include "apps/settings_app.h"
+#include "apps/games_app.h"
+
+#ifdef GAMES_SMOKE_TEST
+namespace {
+// Synthetische Eingabe an die aktive App + ein Loop-Durchlauf (rendert dirty).
+void gamesSmokeKey(char k) {
+  InputEvent e; e.type = InputEvent::KEY; e.x = e.y = 0; e.key = k;
+  appmgr::current()->handleInput(e);
+  appmgr::loop();
+}
+void gamesSmokeTap(int16_t x, int16_t y) {
+  InputEvent e; e.type = InputEvent::TAP; e.x = x; e.y = y; e.key = 0;
+  appmgr::current()->handleInput(e);
+  appmgr::loop();
+}
+}  // namespace
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -127,13 +144,54 @@ void setup() {
   appmgr::add(reader_app::get());
   appmgr::add(mesh_app::get());
   appmgr::add(settings_app::get());
+  appmgr::add(games_app::get());
   launcher::setTile(0, "Musik",    music_app::get());
   launcher::setTile(1, "Hörbuch",  book_app::get());
   launcher::setTile(2, "Lesen",    reader_app::get());
   launcher::setTile(3, "Mesh",     mesh_app::get());
   launcher::setTile(4, "Optionen", settings_app::get());
+  launcher::setTile(5, "Spiele",   games_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
+
+#ifdef GAMES_SMOKE_TEST
+  // TEMP: alle vier Spiele einmal durchklicken (Draw-Pfade + Schach-KI-Task).
+  Serial.println("[GAME] SMOKE: Start");
+  appmgr::launch(games_app::get());
+  appmgr::loop();                  // Spiele-Menü rendern
+  gamesSmokeKey('\r');             // 2048 öffnen (Auswahl 0)
+  gamesSmokeKey('a');
+  gamesSmokeKey('s');
+  gamesSmokeKey('d');
+  gamesSmokeKey('w');
+  gamesSmokeKey('\b');             // zurück ins Menü
+  gamesSmokeKey('s');              // -> Minensucher
+  gamesSmokeKey('\r');
+  gamesSmokeTap(120, 170);         // mittlere Zelle aufdecken (Flood-Fill)
+  gamesSmokeKey('f');              // Flaggen-Modus an
+  gamesSmokeTap(12, 64);           // Zelle 0 flaggen
+  gamesSmokeKey('f');
+  gamesSmokeKey('\b');
+  gamesSmokeKey('s');              // -> Schach
+  gamesSmokeKey('\r');             // Setup-Dialog
+  gamesSmokeKey('s');              // Zeile "Farbe"
+  gamesSmokeKey('d');              // -> Schwarz (Fennek = Weiß beginnt)
+  gamesSmokeKey('s');
+  gamesSmokeKey('s');              // auf "Start"
+  gamesSmokeKey('\r');             // Partie startet, KI denkt
+  {
+    uint32_t t0 = millis();
+    while (millis() - t0 < 20000) { appmgr::loop(); delay(10); }
+  }
+  gamesSmokeKey('\b');             // zurück (sichert Partie ins NVS)
+  gamesSmokeKey('s');              // -> Tic-Tac-Toe
+  gamesSmokeKey('\r');
+  gamesSmokeTap(48, 100);          // Zelle 0 setzen, Fennek antwortet
+  Serial.printf("[GAME] SMOKE: fertig — freier Heap %u KB\n",
+                (unsigned)(ESP.getFreeHeap() / 1024));
+  appmgr::goHome();
+  appmgr::loop();
+#endif
 
 #ifdef MESH_SMOKE_TEST
   // TEMP: Radio-Bring-up ohne UI-Interaktion verifizieren (Serial-Log).
