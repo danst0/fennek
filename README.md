@@ -26,6 +26,22 @@ gebaut um die zentrale Eigenheit der Hardware herum, dass E-Ink, SD-Karte und
 LoRa sich **einen** SPI-Bus teilen, und trotzdem stotterfreie Audio-Wiedergabe
 liefert.
 
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (App-Auswahl)</sub></td>
+    <td align="center"><img src="docs/screenshots/music.png" width="240" alt="Musik-Player"><br><sub>Musik – Wiedergabe</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Spiele – Tic-Tac-Toe</sub></td>
+    <td align="center"><img src="docs/screenshots/sleep.png" width="240" alt="Standby"><br><sub>Standby (schlafender Fennek)</sub></td>
+  </tr>
+</table>
+
+<sub>Pixelgenau aus dem echten Zeichencode gerendert (240×320 E-Ink) via
+<code>tools/screenshots.sh</code> — siehe <a href="tools/README.md">tools/</a>.</sub>
+
 ## ✨ Apps
 
 | App | Funktionen |
