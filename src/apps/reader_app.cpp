@@ -4,6 +4,7 @@
 #include "core/display.h"
 #include "core/gui.h"
 #include "core/settings.h"
+#include "core/i18n.h"
 #include "services/epubproc.h"
 #include "services/textdoc.h"
 
@@ -250,24 +251,24 @@ void leaveRead() {
 
 // --- Zeichnen --------------------------------------------------------------------
 void drawList(Adafruit_GFX& g) {
-  gui::printAt(g, 6, HEADER_Y, "Bücher", 2);
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::ReaderBooks), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
 
   if (!board::sdReady()) {
-    gui::printAt(g, 10, 80, "Keine SD-Karte", 2);
-    gui::printAt(g, 10, 110, "Karte einlegen, dann:", 1);
-    gui::drawButton(g, kRetrySD, "Erneut suchen", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::NoSdCard), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::InsertCard), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
   if (s_scanning) {
-    gui::printAt(g, 10, 80, "Suche Bücher ...", 2);
-    gui::drawButton(g, kBack, "Home", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::ReaderSearch), 2);
+    gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
     return;
   }
   if (s_fileCount <= 0) {
-    gui::printAt(g, 10, 80, "Keine Bücher", 2);
-    gui::printAt(g, 10, 110, ".txt/.epub nach /books legen.", 1);
-    gui::drawButton(g, kRetrySD, "Erneut suchen", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::ReaderNone), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::ReaderHint), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
 
@@ -286,13 +287,13 @@ void drawList(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBack, "Home", false);
-  if (s_off > 0)                      gui::drawButton(g, kUp,   "Hoch", false);
-  if (s_off + VISIBLE < s_fileCount)  gui::drawButton(g, kDown, "Runter", false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  if (s_off > 0)                      gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
+  if (s_off + VISIBLE < s_fileCount)  gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }
 
 void drawProgress(Adafruit_GFX& g, const char* what, int percent) {
-  gui::printAt(g, 6, HEADER_Y, "Lesen", 2);
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppReader), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
   gui::printAt(g, 10, 90, what, 2);
   int barX = 10, barY = 130, barW = W - 20, barH = 16;
@@ -302,7 +303,7 @@ void drawProgress(Adafruit_GFX& g, const char* what, int percent) {
   char pct[8];
   snprintf(pct, sizeof(pct), "%d%%", percent);
   gui::printAt(g, 10, 156, pct, 1);
-  gui::drawButton(g, kCancel, "Abbrechen", false);
+  gui::drawButton(g, kCancel, i18n::tr(i18n::Str::BtnCancel), false);
 }
 
 void drawRead(Adafruit_GFX& g) {
@@ -396,7 +397,8 @@ void onReadKey(char k) {
 // --- App-Klasse ---------------------------------------------------------------------
 class ReaderApp : public App {
  public:
-  const char* name() const override { return "Lesen"; }
+  const char* id()   const override { return "Lesen"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppReader); }
 
   void onEnter() override {
     // Nur Stack füllen — der Scan selbst läuft häppchenweise in tick().

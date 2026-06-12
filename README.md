@@ -35,7 +35,11 @@ liefert.
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Spiele – Tic-Tac-Toe</sub></td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="240" alt="Einstellungen"><br><sub>Einstellungen (Funk &amp; System)</sub></td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/screenshots/sleep.png" width="240" alt="Standby"><br><sub>Standby (schlafender Fennek)</sub></td>
+    <td></td>
   </tr>
 </table>
 

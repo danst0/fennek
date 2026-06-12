@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "apps/game2048.h"
 #include "apps/mines.h"
 #include "apps/chess.h"
@@ -25,16 +26,16 @@ int    s_sel = 0;
 constexpr int kEntries = 4;
 
 struct Entry {
-  const char* label;
+  i18n::Str   label;
   Screen      sc;
   void (*menuLine)(char*, size_t);
 };
 
 const Entry kMenu[kEntries] = {
-  {"2048",        G2048,  game2048_ui::menuLine},
-  {"Minensucher", GMINES, mines_ui::menuLine},
-  {"Schach",      GCHESS, chess_ui::menuLine},
-  {"Tic-Tac-Toe", GTTT,   ttt_ui::menuLine},
+  {i18n::Str::Game2048,  G2048,  game2048_ui::menuLine},
+  {i18n::Str::GameMines, GMINES, mines_ui::menuLine},
+  {i18n::Str::GameChess, GCHESS, chess_ui::menuLine},
+  {i18n::Str::GameTtt,   GTTT,   ttt_ui::menuLine},
 };
 
 // 4 Buttons à 56 px (y 56..304) unter der Überschrift.
@@ -55,7 +56,7 @@ void openGame(int i) {
     case GTTT:   ttt_ui::enter();      break;
     default: break;
   }
-  Serial.printf("[GAME] öffne %s\n", kMenu[i].label);
+  Serial.printf("[GAME] öffne %s\n", i18n::tr(kMenu[i].label));
   appmgr::markDirty();
 }
 
@@ -77,14 +78,14 @@ void menuInput(const InputEvent& e) {
 
 void menuDraw(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
-  gui::printAt(g, 10, 30, "Spiele", 2);
+  gui::printAt(g, 10, 30, i18n::tr(i18n::Str::AppGames), 2);
 
   for (int i = 0; i < kEntries; i++) {
     const Rect& r = kBtn[i];
     g.drawRoundRect(r.x, r.y, r.w, r.h, 6, GxEPD_BLACK);
     if (i == s_sel)
       g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 5, GxEPD_BLACK);
-    gui::printAt(g, r.x + 14, r.y + 10, kMenu[i].label, 2);
+    gui::printAt(g, r.x + 14, r.y + 10, i18n::tr(kMenu[i].label), 2);
     char sub[48];
     kMenu[i].menuLine(sub, sizeof(sub));
     gui::printAt(g, r.x + 14, r.y + 36, sub, 1);
@@ -93,13 +94,15 @@ void menuDraw(Adafruit_GFX& g) {
 
 class GamesApp : public App {
  public:
+  const char* id() const override { return "Spiele"; }
+
   const char* name() const override {
     switch (s_screen) {
       case G2048:  return "2048";
-      case GMINES: return "Minensucher";
-      case GCHESS: return "Schach";
-      case GTTT:   return "Tic-Tac-Toe";
-      default:     return "Spiele";
+      case GMINES: return i18n::tr(i18n::Str::GameMines);
+      case GCHESS: return i18n::tr(i18n::Str::GameChess);
+      case GTTT:   return i18n::tr(i18n::Str::GameTtt);
+      default:     return i18n::tr(i18n::Str::AppGames);
     }
   }
 

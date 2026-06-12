@@ -12,6 +12,7 @@
 #include "config.h"
 #include "core/appmgr.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/settings.h"
 #include "apps/games_app.h"
 #include "apps/game2048_core.h"
@@ -137,11 +138,11 @@ void draw(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "Punkte: %lu", (unsigned long)s_score);
+  snprintf(buf, sizeof(buf), i18n::tr(i18n::Str::FmtPoints), (unsigned long)s_score);
   gui::printAt(g, 6, kHeaderY, buf, 2);
   uint32_t best = settings::best2048();
   if (s_score > best) best = s_score;
-  snprintf(buf, sizeof(buf), "Best: %lu", (unsigned long)best);
+  snprintf(buf, sizeof(buf), i18n::tr(i18n::Str::FmtBest), (unsigned long)best);
   g.setTextSize(1);
   uint16_t tw, th;
   gui::textBounds(g, buf, &tw, &th);
@@ -152,21 +153,21 @@ void draw(Adafruit_GFX& g) {
 
   g.setTextSize(1);
   g.setCursor(6, 300);
-  gui::print(g, "WASD schiebt · N=Neu · Backspace=Menü");
+  gui::print(g, i18n::tr(i18n::Str::Hint2048));
 
   if (s_winOverlay) {
-    drawOverlay(g, "2048 erreicht!", "Weiterspielen: Enter");
+    drawOverlay(g, i18n::tr(i18n::Str::Won2048), i18n::tr(i18n::Str::ContinueEnter));
   } else if (s_over) {
     char l2[40];
-    snprintf(l2, sizeof(l2), "Punkte: %lu · N = neues Spiel", (unsigned long)s_score);
-    drawOverlay(g, "Vorbei!", l2);
+    snprintf(l2, sizeof(l2), i18n::tr(i18n::Str::Fmt2048Over), (unsigned long)s_score);
+    drawOverlay(g, i18n::tr(i18n::Str::GameOver), l2);
   }
 }
 
 void menuLine(char* out, size_t n) {
   uint32_t best = settings::best2048();
-  if (best) snprintf(out, n, "Best: %lu", (unsigned long)best);
-  else      snprintf(out, n, "Noch kein Spiel");
+  if (best) snprintf(out, n, i18n::tr(i18n::Str::FmtBest), (unsigned long)best);
+  else      snprintf(out, n, "%s", i18n::tr(i18n::Str::NoGameYet));
 }
 
 }  // namespace game2048_ui

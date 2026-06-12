@@ -16,6 +16,10 @@
 class App {
  public:
   virtual ~App() {}
+  // Stabiler Identifier für NVS-Persistenz/Logs (sprachunabhängig; aus
+  // Kompatibilität die ursprünglichen deutschen Namen — nie ändern!).
+  virtual const char* id() const = 0;
+  // Anzeigename für die Statuszeile (lokalisiert via i18n::tr()).
   virtual const char* name() const = 0;
   virtual void onEnter() {}      // wird Vordergrund; Full-Redraw folgt
   virtual void onLeave() {}      // geht in Hintergrund; Zustand sichern

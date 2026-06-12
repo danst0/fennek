@@ -4,6 +4,7 @@
 #include "core/battery.h"
 #include "core/gui.h"
 #include "core/settings.h"
+#include "core/i18n.h"
 
 #include <Arduino.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
@@ -14,22 +15,25 @@ namespace {
 using gui::Rect;
 
 // --- Layout -------------------------------------------------------------------
+// Kein eigener Titel — die Statuszeile zeigt bereits "Einstellungen".
+// Zwei Sektionen (Funk/System), darunter Home-Button + Info-Fußzeilen.
 constexpr int W = EINK_W;
-constexpr int TOP      = appmgr::CONTENT_Y;
-constexpr int HEADER_Y = TOP + 2;
-constexpr int HEADER_H = TOP + 26;
-// 10 Zeilen + Home-Button müssen unter die Statuszeile passen:
-// LIST_Y=54 + 10*22 = 274, Button ab 276.
-constexpr int ROW_H    = 22;
-constexpr int LIST_Y   = HEADER_H + 4;
+constexpr int TOP       = appmgr::CONTENT_Y;              // 24
+constexpr int SEC_H     = 15;                             // Sektions-Überschrift
+constexpr int ROW_H     = 24;
+constexpr int NUM_FUNK  = 7;                              // ROW_PRESET..ROW_NAME
+constexpr int FUNK_Y    = TOP + SEC_H;                    // 39
+constexpr int SYS_HDR_Y = FUNK_Y + NUM_FUNK * ROW_H;      // 207
+constexpr int SYS_Y     = SYS_HDR_Y + SEC_H;              // 222 (+2*24 = 270)
+constexpr int VAL_RIGHT = W - 22;                         // Wert rechtsbündig, Platz für ►
 
-const Rect kHome {6, 276, 110, 38};
+const Rect kHome {6, 274, 110, 40};
+constexpr int FOOT_X = 120;                               // Textspalte rechts vom Button
 
 // --- Zeilen ---------------------------------------------------------------------
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
-  ROW_STANDBY, ROW_INFO,
-  ROW_VERSION,
+  ROW_LANG, ROW_STANDBY,
   ROW_COUNT
 };
 
@@ -82,6 +86,13 @@ float nextBw(float bw, int dir) {
 
 // Wert der Zeile ändern (dir = -1/+1).
 void changeRow(int row, int dir) {
+  if (row == ROW_LANG) {
+    int n = (int)i18n::Lang::COUNT;
+    int l = ((int)i18n::lang() + dir + n) % n;
+    i18n::setLang((i18n::Lang)l);
+    markDirty();
+    return;
+  }
   if (row == ROW_STANDBY) {
     uint8_t cur = settings::standbyMinutes();
     int idx = 0;
@@ -122,39 +133,113 @@ void changeRow(int row, int dir) {
   apply(p);
 }
 
-void rowLabel(int row, char* lbl, size_t n) {
+const char* rowName(int row) {
+  using i18n::Str;
+  switch (row) {
+    case ROW_PRESET:  return "Preset";       // LoRa-Jargon, nicht übersetzt
+    case ROW_FREQ:    return i18n::tr(Str::LblFreq);
+    case ROW_BW:      return i18n::tr(Str::LblBandwidth);
+    case ROW_SF:      return "Spreading";    // LoRa-Jargon
+    case ROW_CR:      return i18n::tr(Str::LblCodingRate);
+    case ROW_TX:      return i18n::tr(Str::LblTxPower);
+    case ROW_NAME:    return i18n::tr(Str::LblName);
+    case ROW_LANG:    return i18n::tr(Str::SettingsLang);
+    case ROW_STANDBY: return i18n::tr(Str::LblStandby);
+  }
+  return "";
+}
+
+void rowValue(int row, char* v, size_t n) {
+  v[0] = '\0';
   settings::MeshParams p = settings::meshParams();
   switch (row) {
     case ROW_PRESET: {
       int m = matchPreset(p);
-      snprintf(lbl, n, "Preset: %s", m >= 0 ? kPresets[m].name : "Manuell");
+      snprintf(v, n, "%s", m >= 0 ? kPresets[m].name
+                                  : i18n::tr(i18n::Str::SettingsManual));
       break;
     }
-    case ROW_FREQ: snprintf(lbl, n, "Frequenz: %.3f MHz", (double)p.freqMhz); break;
-    case ROW_BW:   snprintf(lbl, n, "Bandbreite: %.1f kHz", (double)p.bwKhz); break;
-    case ROW_SF:   snprintf(lbl, n, "Spreading: SF%u", p.sf); break;
-    case ROW_CR:   snprintf(lbl, n, "Coding-Rate: 4/%u", p.cr); break;
-    case ROW_TX:   snprintf(lbl, n, "Sendeleistung: %u dBm", p.txDbm); break;
-    case ROW_NAME: {
-      char nm[32];
-      settings::meshName(nm, sizeof(nm));
-      if (s_editName) snprintf(lbl, n, "Name: %s_", s_nameBuf);
-      else            snprintf(lbl, n, "Name: %s", nm);
+    case ROW_FREQ: snprintf(v, n, "%.3f MHz", (double)p.freqMhz); break;
+    case ROW_BW:   snprintf(v, n, "%.1f kHz", (double)p.bwKhz); break;
+    case ROW_SF:   snprintf(v, n, "SF%u", p.sf); break;
+    case ROW_CR:   snprintf(v, n, "4/%u", p.cr); break;
+    case ROW_TX:   snprintf(v, n, "%u dBm", p.txDbm); break;
+    case ROW_NAME:
+      if (s_editName) snprintf(v, n, "%s_", s_nameBuf);
+      else            settings::meshName(v, n);
       break;
-    }
+    case ROW_LANG:
+      snprintf(v, n, "%s", i18n::langName(i18n::lang()));
+      break;
     case ROW_STANDBY: {
       uint8_t m = settings::standbyMinutes();
-      if (m == 0) snprintf(lbl, n, "Standby: Aus");
-      else        snprintf(lbl, n, "Standby: %u min", m);
+      if (m == 0) snprintf(v, n, "%s", i18n::tr(i18n::Str::StandbyOff));
+      else        snprintf(v, n, "%u min", m);
       break;
     }
-    case ROW_INFO:
-      snprintf(lbl, n, "Akku: %u mV (%u%%%s)", battery::milliVolts(),
-               battery::percent(), battery::charging() ? ", lädt" : "");
-      break;
-    case ROW_VERSION:
-      snprintf(lbl, n, "Firmware: Fennek %s", FENNEK_VERSION);
-      break;
+  }
+}
+
+int rowY(int row) {
+  return (row < NUM_FUNK) ? FUNK_Y + row * ROW_H
+                          : SYS_Y + (row - NUM_FUNK) * ROW_H;
+}
+
+// Welche Zeile liegt unter (x,y)? -1 = keine.
+int hitRow(int y) {
+  if (y >= FUNK_Y && y < FUNK_Y + NUM_FUNK * ROW_H) return (y - FUNK_Y) / ROW_H;
+  if (y >= SYS_Y && y < SYS_Y + (ROW_COUNT - NUM_FUNK) * ROW_H)
+    return NUM_FUNK + (y - SYS_Y) / ROW_H;
+  return -1;
+}
+
+void sectionHeader(Adafruit_GFX& g, int y, const char* title) {
+  g.setTextSize(1);
+  g.setCursor(8, y + 3);
+  gui::print(g, title);
+  g.drawFastHLine(0, y + SEC_H - 1, W, GxEPD_BLACK);
+}
+
+// Zeile: Label klein links, Wert groß rechtsbündig; ausgewählte Zeile mit
+// Doppelrahmen + ◄/►-Pfeilen als Hinweis auf die Tap-Hälften bzw. A/D.
+void drawRow(Adafruit_GFX& g, int row) {
+  const int y = rowY(row);
+
+  g.setTextSize(1);
+  uint16_t lw, lh;
+  gui::textBounds(g, rowName(row), &lw, &lh);
+  g.setCursor(10, y + 8);
+  gui::print(g, rowName(row));
+
+  char v[40];
+  rowValue(row, v, sizeof(v));
+  g.setTextSize(2);
+  uint16_t vw, vh;
+  gui::textBounds(g, v, &vw, &vh);
+  int vx = VAL_RIGHT - (int)vw;
+  int vy = y + 5;
+  if (vx < 10 + (int)lw + 8) {           // zu lang (z. B. langer Name): klein rendern
+    g.setTextSize(1);
+    gui::textBounds(g, v, &vw, &vh);
+    vx = VAL_RIGHT - (int)vw;
+    if (vx < 10 + (int)lw + 8) vx = 10 + (int)lw + 8;
+    vy = y + 8;
+  }
+  g.setCursor(vx, vy);
+  gui::print(g, v);
+
+  g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
+
+  if (row == s_sel) {
+    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
+    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+    if (row != ROW_NAME) {               // Name wird per Enter/Tap editiert
+      g.setTextSize(1);
+      g.setCursor(vx - 15, y + 8);
+      g.write((uint8_t)0x11);            // ◄
+      g.setCursor(W - 13, y + 8);
+      g.write((uint8_t)0x10);            // ►
+    }
   }
 }
 
@@ -213,18 +298,19 @@ void onTouch(int x, int y) {
     appmgr::goHome();
     return;
   }
-  if (y < LIST_Y || y >= LIST_Y + ROW_COUNT * ROW_H) return;
-  int row = (y - LIST_Y) / ROW_H;
-  s_sel = row;
+  int row = hitRow(y);
+  if (row < 0) return;
+  // Erster Tap wählt nur aus (verhindert versehentliches Verstellen),
+  // Tap auf die ausgewählte Zeile ändert: linke Hälfte -, rechte +.
+  if (row != s_sel) { s_sel = row; markDirty(); return; }
   if (row == ROW_NAME) { startEditName(); return; }
-  if (row == ROW_INFO) { markDirty(); return; }
-  // Linke Hälfte = runter, rechte Hälfte = rauf.
   changeRow(row, (x >= W / 2) ? +1 : -1);
 }
 
 class SettingsApp : public App {
  public:
-  const char* name() const override { return "Einstellungen"; }
+  const char* id()   const override { return "Einstellungen"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppSettings); }
 
   void onLeave() override {
     if (s_editName) finishEditName(true);
@@ -236,26 +322,28 @@ class SettingsApp : public App {
   }
 
   void draw(Adafruit_GFX& g) override {
+    using i18n::Str;
     g.setTextColor(GxEPD_BLACK);
-    gui::printAt(g, 6, HEADER_Y, "Einstellungen", 2);
-    g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
 
-    for (int r = 0; r < ROW_COUNT; r++) {
-      char lbl[64];
-      rowLabel(r, lbl, sizeof(lbl));
-      gui::drawRowText(g, LIST_Y + r * ROW_H, ROW_H, lbl, false);
-    }
-    // Cursor
-    int y = LIST_Y + s_sel * ROW_H;
-    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
-    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+    sectionHeader(g, TOP, i18n::tr(Str::SecRadio));
+    for (int r = 0; r < NUM_FUNK; r++) drawRow(g, r);
 
-    gui::drawButton(g, kHome, "Home", false);
+    sectionHeader(g, SYS_HDR_Y, i18n::tr(Str::SecSystem));
+    for (int r = NUM_FUNK; r < ROW_COUNT; r++) drawRow(g, r);
+
+    gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
     g.setTextSize(1);
-    g.setCursor(124, 284);
-    gui::print(g, s_editName ? "Enter speichert" : "A/D bzw. Tap ändert");
-    g.setCursor(124, 298);
-    gui::print(g, "Wirkt sofort aufs Funkmodul");
+    g.setCursor(FOOT_X, 280);
+    if (s_editName)               gui::print(g, i18n::tr(Str::HintEnterSave));
+    else if (s_sel == ROW_NAME)   gui::print(g, i18n::tr(Str::HintNameEdit));
+    else                          gui::print(g, i18n::tr(Str::HintChange));
+    char info[32];
+    snprintf(info, sizeof(info), i18n::tr(Str::FmtBattery), battery::percent(),
+             battery::charging() ? "+" : "", battery::milliVolts());
+    g.setCursor(FOOT_X, 294);
+    gui::print(g, info);
+    g.setCursor(FOOT_X, 308);
+    gui::print(g, "Fennek " FENNEK_VERSION);
   }
 };
 

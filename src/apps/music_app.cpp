@@ -3,6 +3,7 @@
 #include "core/board.h"
 #include "core/display.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "services/audio.h"
 #include "services/library.h"
 
@@ -74,7 +75,7 @@ int      s_scratch[MAX_TRACKS];    // Queue-Aufbau (kein Stack-Druck)
 
 constexpr uint32_t kProgressMs = 3000;
 
-const char* kMenu[3] = {"Künstler", "Album", "Playlist"};
+const i18n::Str kMenu[3] = {i18n::Str::MusicArtists, i18n::Str::MusicAlbum, i18n::Str::MusicPlaylist};
 
 void markDirty() { appmgr::markDirty(); }
 Frame& top() { return s_stack[s_depth]; }
@@ -99,7 +100,7 @@ int levelCount(Level lv, int ctx) {
 
 void itemLabel(Level lv, int ctx, int i, char* out, size_t n) {
   switch (lv) {
-    case L_MENU:            strncpy(out, kMenu[i], n - 1); out[n - 1] = '\0'; break;
+    case L_MENU:            strncpy(out, i18n::tr(kMenu[i]), n - 1); out[n - 1] = '\0'; break;
     case L_ARTISTS:         library::artistName(i, out, n); break;
     case L_ARTIST_ALBUMS:   library::albumLabel(library::artistAlbumRun(ctx, i), false, out, n); break;
     case L_ALL_ALBUMS:      library::albumLabel(library::albumRunByName(i), true, out, n); break;
@@ -122,13 +123,13 @@ int itemFlat(Level lv, int ctx, int i) {
 
 void titleFor(Frame& f, char* out, size_t n) {
   switch (f.level) {
-    case L_MENU:            strncpy(out, "Musik", n - 1); out[n - 1] = '\0'; break;
-    case L_ARTISTS:         strncpy(out, "Künstler", n - 1); out[n - 1] = '\0'; break;
+    case L_MENU:            strncpy(out, i18n::tr(i18n::Str::AppMusic), n - 1); out[n - 1] = '\0'; break;
+    case L_ARTISTS:         strncpy(out, i18n::tr(i18n::Str::MusicArtists), n - 1); out[n - 1] = '\0'; break;
     case L_ARTIST_ALBUMS:   library::artistName(f.ctx, out, n); break;
-    case L_ALL_ALBUMS:      strncpy(out, "Alben", n - 1); out[n - 1] = '\0'; break;
+    case L_ALL_ALBUMS:      strncpy(out, i18n::tr(i18n::Str::MusicAlbums), n - 1); out[n - 1] = '\0'; break;
     case L_ALBUM_TRACKS:    library::albumLabel(f.ctx, false, out, n); break;
-    case L_TITLES:          strncpy(out, "Titel", n - 1); out[n - 1] = '\0'; break;
-    case L_PLAYLISTS:       strncpy(out, "Playlists", n - 1); out[n - 1] = '\0'; break;
+    case L_TITLES:          strncpy(out, i18n::tr(i18n::Str::MusicTitles), n - 1); out[n - 1] = '\0'; break;
+    case L_PLAYLISTS:       strncpy(out, i18n::tr(i18n::Str::MusicPlaylists), n - 1); out[n - 1] = '\0'; break;
     case L_PLAYLIST_TRACKS: library::playlistName(f.ctx, out, n); break;
   }
 }
@@ -260,7 +261,7 @@ void drawListArea(Adafruit_GFX& g) {
   bool trackList = isTrackList(f.level);
 
   if (M <= 0) {
-    gui::printAt(g, 10, 80, "(leer)", 2);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::EmptyList), 2);
   } else if (trackList || M <= VISIBLE) {
     // Leaf-Liste: Items einzeln; Track-Listen mit Scroll-Fenster
     int off = trackList ? s_off : 0;
@@ -315,7 +316,7 @@ void drawHeader(Adafruit_GFX& g) {
   if (library::tagScanPending()) {
     int d, t; library::tagScanProgress(&d, &t);
     char s[24];
-    snprintf(s, sizeof(s), "Tags %d/%d", d, t);
+    snprintf(s, sizeof(s), i18n::tr(i18n::Str::FmtTagScan), d, t);
     g.setTextSize(1);
     uint16_t bw, bh;
     gui::textBounds(g, s, &bw, &bh);
@@ -329,9 +330,9 @@ void drawBrowse(Adafruit_GFX& g) {
   drawHeader(g);
 
   if (!board::sdReady()) {
-    gui::printAt(g, 10, 80, "Keine SD-Karte", 2);
-    gui::printAt(g, 10, 110, "Karte einlegen, dann:", 1);
-    gui::drawButton(g, kRetrySD, "Erneut suchen", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::NoSdCard), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::InsertCard), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
 
@@ -342,13 +343,13 @@ void drawBrowse(Adafruit_GFX& g) {
   Frame& f = top();
   bool playerBtn = (st.pos >= 0 && st.owner == audio::Owner::Music);
   if (isTrackList(f.level) && f.hi - f.lo > VISIBLE) {
-    gui::drawButton(g, kBackSm, "Zurück", false);
+    gui::drawButton(g, kBackSm, i18n::tr(i18n::Str::BtnBackShort), false);
     gui::drawButton(g, kScrollUp, "\x1e", false);
     gui::drawButton(g, kScrollDn, "\x1f", false);
     if (playerBtn) gui::drawButton(g, kPlayerSm, "\x10", false);
   } else {
-    if (s_depth > 0) gui::drawButton(g, kBack, "Zurück", false);
-    if (playerBtn) gui::drawButton(g, kToPlayer, "Player", false);
+    if (s_depth > 0) gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
+    if (playerBtn) gui::drawButton(g, kToPlayer, i18n::tr(i18n::Str::BtnPlayer), false);
   }
 }
 
@@ -376,7 +377,7 @@ void drawTimeAndBar(Adafruit_GFX& g, const audio::Status& st) {
 void drawPlayer(Adafruit_GFX& g) {
   audio::Status st = audio::status();
   g.setTextColor(GxEPD_BLACK);
-  gui::printAt(g, 6, HEADER_Y, "Wiedergabe", 2);
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::MusicPlayback), 2);
   if (st.sleepMin > 0) {
     char sl[16];
     snprintf(sl, sizeof(sl), "Zzz %um", (unsigned)st.sleepMin);
@@ -420,10 +421,10 @@ void drawPlayer(Adafruit_GFX& g) {
   g.setCursor((W - (int)bw) / 2, kBtnVolDn.y + (kBtnVolDn.h - (int)bh) / 2);
   g.print(vol);
 
-  gui::drawButton(g, kBtnList, "Liste", false);
-  gui::drawButton(g, kBtnShuf, "Mix", st.shuffle);
-  const char* rep = (st.repeat == audio::Repeat::One) ? "Wdh 1"
-                  : (st.repeat == audio::Repeat::All) ? "Wdh A" : "Wdh";
+  gui::drawButton(g, kBtnList, i18n::tr(i18n::Str::BtnList), false);
+  gui::drawButton(g, kBtnShuf, i18n::tr(i18n::Str::BtnShuffle), st.shuffle);
+  const char* rep = (st.repeat == audio::Repeat::One) ? i18n::tr(i18n::Str::RepOne)
+                  : (st.repeat == audio::Repeat::All) ? i18n::tr(i18n::Str::RepAll) : i18n::tr(i18n::Str::RepOff);
   gui::drawButton(g, kBtnRep, rep, st.repeat != audio::Repeat::Off);
 }
 
@@ -592,7 +593,8 @@ void onPlayerKey(char k) {
 // --- App-Klasse ---------------------------------------------------------------
 class MusicApp : public App {
  public:
-  const char* name() const override { return "Musik"; }
+  const char* id()   const override { return "Musik"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppMusic); }
 
   void onEnter() override {
     // Beim ersten Betreten (oder nach SD-Wechsel) auf dem Hauptmenü starten.

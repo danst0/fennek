@@ -7,12 +7,14 @@
 #pragma once
 
 #include "core/appmgr.h"
+#include "core/i18n.h"
 
 namespace launcher {
 
 App* get();
 
 // Kachel idx (0..5) belegen. app == nullptr -> deaktivierter Platzhalter.
-void setTile(int idx, const char* label, App* app);
+// Label als String-ID, damit Kacheln bei Sprachwechsel sofort umschalten.
+void setTile(int idx, i18n::Str label, App* app);
 
 }  // namespace launcher

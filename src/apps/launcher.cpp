@@ -2,6 +2,7 @@
 #include "config.h"
 #include "core/gui.h"
 #include "core/settings.h"
+#include "core/i18n.h"
 #include "services/audio.h"
 #include "services/library.h"
 
@@ -24,8 +25,8 @@ constexpr int kRowGap = 88;                        // 30, 118, 206 -> Ende 284
 constexpr int kHintY = 296;                        // Now-Playing-/Resume-Zeile
 
 struct Tile {
-  const char* label;
-  App*        app;
+  i18n::Str label;   // String-ID, beim Zeichnen aufgelöst (Sprachwechsel!)
+  App*      app;
 };
 Tile s_tiles[kTiles] = {};
 int  s_cursor = 0;   // Tastatur-Cursor (Kachel-Index)
@@ -37,14 +38,15 @@ Rect tileRect(int i) {
 
 class LauncherApp : public App {
  public:
-  const char* name() const override { return "Start"; }
+  const char* id()   const override { return "Start"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppLauncher); }
 
   void handleInput(const InputEvent& e) override {
     if (e.type == InputEvent::TAP) {
       // Hinweis-Zeile: Now-Playing -> Musik-App; Resume-Angebot -> abspielen.
       if (e.y >= kHintY - 8) { onHintActivate(); return; }
       for (int i = 0; i < kTiles; i++) {
-        if (s_tiles[i].label && tileRect(i).hit(e.x, e.y)) {
+        if (s_tiles[i].label != i18n::Str::None && tileRect(i).hit(e.x, e.y)) {
           if (s_tiles[i].app) appmgr::launch(s_tiles[i].app);
           return;
         }
@@ -58,7 +60,7 @@ class LauncherApp : public App {
       case 'a': case 'A': moveCursor(-1); break;
       case 'd': case 'D': moveCursor(+1); break;
       case '\r':
-        if (s_tiles[s_cursor].label && s_tiles[s_cursor].app)
+        if (s_tiles[s_cursor].label != i18n::Str::None && s_tiles[s_cursor].app)
           appmgr::launch(s_tiles[s_cursor].app);
         break;
       case ' ': onHintActivate(); break;
@@ -77,22 +79,23 @@ class LauncherApp : public App {
   void draw(Adafruit_GFX& g) override {
     g.setTextColor(GxEPD_BLACK);
     for (int i = 0; i < kTiles; i++) {
-      if (!s_tiles[i].label) continue;
+      if (s_tiles[i].label == i18n::Str::None) continue;
       Rect r = tileRect(i);
       g.drawRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
       if (i == s_cursor)
         g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 7, GxEPD_BLACK);
       g.setTextSize(2);
       uint16_t bw, bh;
-      gui::textBounds(g, s_tiles[i].label, &bw, &bh);
+      const char* label = i18n::tr(s_tiles[i].label);
+      gui::textBounds(g, label, &bw, &bh);
       int ty = s_tiles[i].app ? r.y + (r.h - (int)bh) / 2 : r.y + r.h / 2 - 16;
       g.setCursor(r.x + (r.w - (int)bw) / 2, ty);
-      gui::print(g, s_tiles[i].label);
+      gui::print(g, label);
       if (!s_tiles[i].app) {
         g.setTextSize(1);
-        gui::textBounds(g, "(bald)", &bw, &bh);
+        gui::textBounds(g, i18n::tr(i18n::Str::TileSoon), &bw, &bh);
         g.setCursor(r.x + (r.w - (int)bw) / 2, r.y + r.h / 2 + 8);
-        gui::print(g, "(bald)");
+        gui::print(g, i18n::tr(i18n::Str::TileSoon));
       }
     }
 
@@ -119,7 +122,7 @@ class LauncherApp : public App {
       if (p[0] && library::indexOfPath(p) >= 0) {
         const char* base = strrchr(p, '/');
         char line[80];
-        snprintf(line, sizeof(line), "Fortsetzen: %s", base ? base + 1 : p);
+        snprintf(line, sizeof(line), i18n::tr(i18n::Str::FmtResume), base ? base + 1 : p);
         gui::print(g, line);
       }
     }
@@ -130,8 +133,8 @@ class LauncherApp : public App {
 
   void moveCursor(int delta) {
     int n = s_cursor + delta;
-    while (n >= 0 && n < kTiles && !s_tiles[n].label) n += (delta > 0 ? 1 : -1);
-    if (n < 0 || n >= kTiles || !s_tiles[n].label) return;
+    while (n >= 0 && n < kTiles && s_tiles[n].label == i18n::Str::None) n += (delta > 0 ? 1 : -1);
+    if (n < 0 || n >= kTiles || s_tiles[n].label == i18n::Str::None) return;
     if (n != s_cursor) { s_cursor = n; appmgr::markDirty(); }
   }
 
@@ -162,7 +165,7 @@ namespace launcher {
 
 App* get() { return &s_app; }
 
-void setTile(int idx, const char* label, App* app) {
+void setTile(int idx, i18n::Str label, App* app) {
   if (idx < 0 || idx >= kTiles) return;
   s_tiles[idx] = Tile{label, app};
 }

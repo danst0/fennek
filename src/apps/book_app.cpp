@@ -4,6 +4,7 @@
 #include "core/display.h"
 #include "core/gui.h"
 #include "core/settings.h"
+#include "core/i18n.h"
 #include "services/audio.h"
 
 #include <Arduino.h>
@@ -216,20 +217,20 @@ void openBook(int idx) {
 
 // --- Zeichnen -------------------------------------------------------------------
 void drawList(Adafruit_GFX& g) {
-  gui::printAt(g, 6, HEADER_Y, "Hörbücher", 2);
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::BookHeader), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
 
   if (!board::sdReady()) {
-    gui::printAt(g, 10, 80, "Keine SD-Karte", 2);
-    gui::printAt(g, 10, 110, "Karte einlegen, dann:", 1);
-    gui::drawButton(g, kRetrySD, "Erneut suchen", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::NoSdCard), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::InsertCard), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
   if (s_bookCount <= 0) {
-    gui::printAt(g, 10, 80, "Keine Hörbücher", 2);
-    gui::printAt(g, 10, 110, "Ordner /audiobooks anlegen,", 1);
-    gui::printAt(g, 10, 124, "pro Buch ein Unterordner.", 1);
-    gui::drawButton(g, kRetrySD, "Erneut suchen", false);
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::BookNone), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::BookHint1), 1);
+    gui::printAt(g, 10, 124, i18n::tr(i18n::Str::BookHint2), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
     return;
   }
 
@@ -250,9 +251,9 @@ void drawList(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBack, "Home", false);
-  if (s_off > 0)                       gui::drawButton(g, kUp,   "Hoch", false);
-  if (s_off + VISIBLE < s_bookCount)   gui::drawButton(g, kDown, "Runter", false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  if (s_off > 0)                       gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
+  if (s_off + VISIBLE < s_bookCount)   gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }
 
 void drawTimeAndBar(Adafruit_GFX& g, const audio::Status& st) {
@@ -282,7 +283,7 @@ void drawProgStrip(Adafruit_GFX& g) {
 
 void drawPlayer(Adafruit_GFX& g) {
   audio::Status st = audio::status();
-  gui::printAt(g, 6, HEADER_Y, "Hörbuch", 2);
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppBook), 2);
   if (st.sleepMin > 0) {
     char sl[16];
     snprintf(sl, sizeof(sl), "Zzz %um", (unsigned)st.sleepMin);
@@ -301,7 +302,7 @@ void drawPlayer(Adafruit_GFX& g) {
   char ch[80] = "(gestoppt)";
   if (mine && st.pos < s_chapCount) {
     const char* base = strrchr(s_chap[st.pos], '/');
-    snprintf(ch, sizeof(ch), "Kapitel %d/%d  %s", st.pos + 1, s_chapCount,
+    snprintf(ch, sizeof(ch), i18n::tr(i18n::Str::FmtChapter), st.pos + 1, s_chapCount,
              base ? base + 1 : "");
   }
   gui::printAt(g, 6, HEADER_H + 32, ch, 1);
@@ -314,7 +315,7 @@ void drawPlayer(Adafruit_GFX& g) {
   gui::drawButton(g, kBtnPrevCh, "|<", false);
   gui::drawButton(g, kBtnSleep, "Zzz", st.sleepMin > 0);
   gui::drawButton(g, kBtnNextCh, ">|", false);
-  gui::drawButton(g, kBtnList, "Bücherliste", false);
+  gui::drawButton(g, kBtnList, i18n::tr(i18n::Str::BtnBookList), false);
 }
 
 // --- Interaktion ------------------------------------------------------------------
@@ -417,7 +418,8 @@ void onPlayerKey(char k) {
 // --- App-Klasse ---------------------------------------------------------------------
 class BookApp : public App {
  public:
-  const char* name() const override { return "Hörbuch"; }
+  const char* id()   const override { return "Hörbuch"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppBook); }
 
   void onEnter() override {
     if (s_bookCount < 0 && board::sdReady()) scanBooks();

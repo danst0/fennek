@@ -3,6 +3,7 @@
 #include "core/board.h"
 #include "core/display.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/settings.h"
 #include "core/sleep_img.h"
 #include "services/audio.h"
@@ -45,8 +46,13 @@ void drawSleepScreen(Adafruit_GFX& g) {
   g.fillRect(0, bannerY, kSleepImgW, kSleepImgH - bannerY, GxEPD_BLACK);
   g.drawFastHLine(0, bannerY, kSleepImgW, GxEPD_WHITE);
   g.setTextColor(GxEPD_WHITE);
-  gui::printAt(g, 120 - 53, bannerY + 6,  "Fennek", 3);
-  gui::printAt(g, 120 - 81, bannerY + 31, "Knopf drücken zum Aufwecken", 1);
+  gui::printAt(g, 120 - 53, bannerY + 6, "Fennek", 3);
+  // Aufweck-Hinweis dynamisch zentrieren (Textbreite ist sprachabhängig).
+  const char* hint = i18n::tr(i18n::Str::SleepWakeHint);
+  g.setTextSize(1);
+  uint16_t hw, hh;
+  gui::textBounds(g, hint, &hw, &hh);
+  gui::printAt(g, (kSleepImgW - (int)hw) / 2, bannerY + 31, hint, 1);
   g.setTextColor(GxEPD_BLACK);
 }
 

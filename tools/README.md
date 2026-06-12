@@ -18,11 +18,11 @@ bash tools/screenshots.sh 3      # andere Skalierung
 
 Bestandteile:
 
-- `screenshot.cpp` — rendert Launcher, Musik-Player, Tic-Tac-Toe und Standby.
-  Die Zeichen-Bodies sind 1:1 aus den Quellen gespiegelt (Launcher
-  `apps/launcher.cpp`, TTT `apps/ttt.cpp`, Player `apps/music_app.cpp`, Standby
-  `core/power.cpp`), weil die echten `draw()` in anonymen Namespaces bzw. hinter
-  Geräte-Zustand liegen. Gemeinsame Helfer (`core/gui.cpp`, das Bitmap
+- `screenshot.cpp` — rendert Launcher, Musik-Player, Tic-Tac-Toe, Einstellungen
+  und Standby. Die Zeichen-Bodies sind 1:1 aus den Quellen gespiegelt (Launcher
+  `apps/launcher.cpp`, TTT `apps/ttt.cpp`, Player `apps/music_app.cpp`,
+  Einstellungen `apps/settings_app.cpp`, Standby `core/power.cpp`), weil die
+  echten `draw()` in anonymen Namespaces bzw. hinter Geräte-Zustand liegen. Gemeinsame Helfer (`core/gui.cpp`, das Bitmap
   `core/sleep_img.h`) und der Adafruit-GFX-Code werden direkt verlinkt.
 - `hostshim/` — minimaler Arduino-/Print-/pgmspace-Shim, damit Adafruit-GFX am
   PC kompiliert (`GxEPD2_BW.h` liefert nur die Farbkonstanten).
