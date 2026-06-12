@@ -4,6 +4,7 @@
 #include "core/display.h"
 #include "core/gui.h"
 #include "core/settings.h"
+#include "core/sleep_img.h"
 #include "services/audio.h"
 
 #include <Arduino.h>
@@ -33,70 +34,20 @@ bool     s_locked       = false; // Tastensperre aktiv?
 
 bool btnPressed() { return digitalRead(PIN_USER_BTN) == BTN_PRESSED_LEVEL; }
 
-// Standby-Bild: ein schlafender Fennek (Wüstenfuchs, Namensgeber der Firmware)
-// mit den charakteristischen großen Ohren, geschlossenen Augen und „Zzz".
-// Reine Adafruit-GFX-Primitive (monochrom), volle 240x320-Fläche.
+// Standby-Bild: ein schlafender Fennek (KI-generiert, siehe sleep_img.h) als
+// vollflächige 1-Bit-Bitmap, darunter ein Banner mit Titel + Aufweck-Hinweis.
 void drawSleepScreen(Adafruit_GFX& g) {
   g.fillScreen(GxEPD_WHITE);
+  g.drawBitmap(0, 0, kSleepImg, kSleepImgW, kSleepImgH, GxEPD_BLACK);
+
+  // Banner unten: schwarzes Band mit weißem Text (Bild ist dort dunkel).
+  const int bannerY = 278;
+  g.fillRect(0, bannerY, kSleepImgW, kSleepImgH - bannerY, GxEPD_BLACK);
+  g.drawFastHLine(0, bannerY, kSleepImgW, GxEPD_WHITE);
+  g.setTextColor(GxEPD_WHITE);
+  gui::printAt(g, 120 - 53, bannerY + 6,  "Fennek", 3);
+  gui::printAt(g, 120 - 81, bannerY + 31, "Knopf drücken zum Aufwecken", 1);
   g.setTextColor(GxEPD_BLACK);
-
-  const int cx = 120;   // Mittelachse
-  const int hy = 168;   // Kopfmitte
-  const int hr = 52;    // Kopfradius
-
-  // Große Ohren (Fennek-Markenzeichen) — hinter dem Kopf, mit hellem Innenohr.
-  g.fillTriangle(cx-10, hy-36, cx-72, hy-28, cx-58, hy-116, GxEPD_BLACK);
-  g.fillTriangle(cx+10, hy-36, cx+72, hy-28, cx+58, hy-116, GxEPD_BLACK);
-  g.fillTriangle(cx-22, hy-40, cx-56, hy-32, cx-52, hy-96,  GxEPD_WHITE);
-  g.fillTriangle(cx+22, hy-40, cx+56, hy-32, cx+52, hy-96,  GxEPD_WHITE);
-
-  // Kopf (heller Körper, dunkle Kontur).
-  g.fillCircle(cx, hy, hr,   GxEPD_WHITE);
-  g.drawCircle(cx, hy, hr,   GxEPD_BLACK);
-  g.drawCircle(cx, hy, hr-1, GxEPD_BLACK);
-
-  // Wangenfell (kleine Zacken links/rechts).
-  for (int i = -1; i <= 1; i++) {
-    int yy = hy + i*14;
-    g.fillTriangle(cx-hr+2, yy-7, cx-hr+2, yy+7, cx-hr-12, yy, GxEPD_BLACK);
-    g.fillTriangle(cx+hr-2, yy-7, cx+hr-2, yy+7, cx+hr+12, yy, GxEPD_BLACK);
-  }
-
-  // Schnauze angedeutet.
-  g.drawLine(cx-38, hy+4, cx, hy+50, GxEPD_BLACK);
-  g.drawLine(cx+38, hy+4, cx, hy+50, GxEPD_BLACK);
-
-  // Geschlossene, schlafende Augen (kleine „v"-Bögen, 2 px dick).
-  int ey = hy - 4, ex = 22;
-  for (int d = 0; d < 2; d++) {
-    g.drawLine(cx-ex-9, ey, cx-ex, ey+5, GxEPD_BLACK);
-    g.drawLine(cx-ex, ey+5, cx-ex+9, ey, GxEPD_BLACK);
-    g.drawLine(cx+ex-9, ey, cx+ex, ey+5, GxEPD_BLACK);
-    g.drawLine(cx+ex, ey+5, cx+ex+9, ey, GxEPD_BLACK);
-    ey++;
-  }
-
-  // Nase + Mund.
-  int ny = hy + 26;
-  g.fillTriangle(cx-7, ny-5, cx+7, ny-5, cx, ny+6, GxEPD_BLACK);
-  g.drawLine(cx, ny+6,  cx, ny+12,    GxEPD_BLACK);
-  g.drawLine(cx, ny+12, cx-8, ny+15,  GxEPD_BLACK);
-  g.drawLine(cx, ny+12, cx+8, ny+15,  GxEPD_BLACK);
-
-  // Schnurrhaare.
-  g.drawLine(cx-12, ny+2, cx-50, ny-4, GxEPD_BLACK);
-  g.drawLine(cx-12, ny+5, cx-50, ny+8, GxEPD_BLACK);
-  g.drawLine(cx+12, ny+2, cx+50, ny-4, GxEPD_BLACK);
-  g.drawLine(cx+12, ny+5, cx+50, ny+8, GxEPD_BLACK);
-
-  // „Zzz" oben rechts.
-  gui::printAt(g, cx+46, hy-86,  "z", 1);
-  gui::printAt(g, cx+56, hy-104, "Z", 2);
-  gui::printAt(g, cx+74, hy-126, "Z", 3);
-
-  // Titel + Aufweck-Hinweis.
-  gui::printAt(g, cx-53, hy+92,  "Fennek", 3);
-  gui::printAt(g, 16,    hy+138, "Knopf drücken zum Aufwecken", 1);
 }
 
 }  // namespace
