@@ -47,6 +47,54 @@ constexpr const char* kLogPath = "/meshcore/messages.log";
 constexpr const char* kLogOld  = "/meshcore/messages.old";
 constexpr uint32_t    kLogRotateBytes = 256 * 1024;
 
+// Optionale, vom Nutzer vorgegebene MeshCore-Identität von der SD-Karte.
+// Format (Textdatei): Zeile 1 = Private Key (128 Hex-Zeichen / 64 Byte),
+// Zeile 2 = Public Key (64 Hex-Zeichen / 32 Byte). Ist die Datei vorhanden und
+// gültig, hat sie Vorrang vor der SPIFFS-Identität und wird dorthin übernommen.
+constexpr const char* kIdentityPath = "/meshcore/identity.hex";
+
+// Hex-String -> Bytes; liefert die Anzahl geschriebener Bytes oder -1 bei
+// ungültigem Zeichen. Bewusst lokal (keine Lib-Abhängigkeit, nur beim Init).
+int hexToBytes(uint8_t* out, int maxLen, const char* hex) {
+  auto nib = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  };
+  int n = 0;
+  for (int i = 0; hex[i] && hex[i + 1] && n < maxLen; i += 2) {
+    int hi = nib(hex[i]), lo = nib(hex[i + 1]);
+    if (hi < 0 || lo < 0) return -1;
+    out[n++] = (uint8_t)((hi << 4) | lo);
+  }
+  return n;
+}
+
+// Liest die beiden Hex-Zeilen aus /meshcore/identity.hex. Der AUFRUFER hält
+// spiLock (MeshClient::begin läuft komplett unter dem Lock aus
+// mesh_client::begin) — hier selbst spiLock() zu nehmen wäre ein Self-Deadlock
+// auf dem nicht-rekursiven Mutex (vgl. logToSd/pushMsg-Kommentar).
+// true nur, wenn beide Zeilen lang genug sind.
+bool readIdentityFile(char* prvOut, size_t prvLen, char* pubOut, size_t pubLen) {
+  if (!board::sdReady()) return false;
+  bool ok = false;
+  if (SD.exists(kIdentityPath)) {
+    File f = SD.open(kIdentityPath);
+    if (f) {
+      String l1 = f.readStringUntil('\n');
+      String l2 = f.readStringUntil('\n');
+      f.close();
+      l1.trim();  // entfernt auch ein evtl. \r (CRLF)
+      l2.trim();
+      strncpy(prvOut, l1.c_str(), prvLen - 1); prvOut[prvLen - 1] = '\0';
+      strncpy(pubOut, l2.c_str(), pubLen - 1); pubOut[pubLen - 1] = '\0';
+      ok = (strlen(prvOut) >= 128 && strlen(pubOut) >= 64);
+    }
+  }
+  return ok;
+}
+
 void logToSd(const mesh_client::MsgView& m) {
   if (!board::sdReady()) return;
   spiLock();
@@ -369,6 +417,7 @@ protected:
     }
     m.timestamp = timestamp;
     m.contactIdx = 0xFF;
+    m.channelIdx = (uint8_t)(idx < 0 ? 0 : idx);   // Kanal-Zuordnung für die Chat-Trennung
     pushMsg(m);
     Serial.printf("[MESH] Channel: %s\n", m.text);
   }
@@ -414,7 +463,29 @@ public:
     initContacts();
 
     IdentityStore store(fs, "/identity");
-    if (!store.load("_main", self_id, _prefs.node_name, sizeof(_prefs.node_name))) {
+
+    // 1) Vorrang: vom Nutzer auf der SD vorgegebene Identität (kIdentityPath).
+    //    Ist sie gültig, wird sie in den SPIFFS-Store übernommen (überlebt damit
+    //    auch ohne SD) und überschreibt eine evtl. vorhandene Zufalls-Identität.
+    bool fromSd = false;
+    {
+      char prvHex[160] = {0}, pubHex[96] = {0};
+      if (readIdentityFile(prvHex, sizeof(prvHex), pubHex, sizeof(pubHex))) {
+        uint8_t prv[64];
+        if (hexToBytes(prv, 64, prvHex) == 64 &&
+            mesh::LocalIdentity::validatePrivateKey(prv)) {
+          self_id = mesh::LocalIdentity(prvHex, pubHex);
+          store.save("_main", self_id);
+          fromSd = true;
+          Serial.println("[MESH] Identität von SD geladen (/meshcore/identity.hex)");
+        } else {
+          Serial.println("[MESH] identity.hex ungültig (Key-Prüfung fehlgeschlagen) — ignoriert");
+        }
+      }
+    }
+
+    // 2) Sonst aus SPIFFS laden; 3) sonst beim Erstboot neu erzeugen.
+    if (!fromSd && !store.load("_main", self_id, _prefs.node_name, sizeof(_prefs.node_name))) {
       // Erstboot: Identität aus Hardware-Entropie erzeugen (kein Warten auf Serial).
       s_rng.begin((long)esp_random());
       self_id = mesh::LocalIdentity(getRNG());
@@ -575,8 +646,15 @@ bool begin() {
 
 bool ready() { return s_ready; }
 
+namespace { bool s_suspended = false; }
+
+void setSuspended(bool sus) {
+  s_suspended = sus;
+  if (s_ready) Serial.printf("[MESH] Pumpe %s\n", sus ? "pausiert (WiFi aktiv)" : "läuft wieder");
+}
+
 void loop() {
-  if (!s_ready) return;
+  if (!s_ready || s_suspended) return;
   spiLock();
   s_mesh->loop();
   spiUnlock();
@@ -608,6 +686,29 @@ bool sendChannelMsg(const char* text) {
     snprintf(m.text, sizeof(m.text), "%s: %s", s_mesh->name(), text);
     m.timestamp = 0;
     m.contactIdx = 0xFF;
+    m.channelIdx = 0;   // Public
+    pushMsg(m);
+  }
+  return ok;
+}
+
+// An einen Kanal nach Index senden (0=Public). Nutzt die UI für die
+// vereinheitlichte Chat-Ansicht: jeder Kanal ist ein eigener Chat.
+bool sendChannelIdxMsg(int channelIdx, const char* text) {
+  if (channelIdx <= 0) return sendChannelMsg(text);
+  if (!s_ready || !text || !text[0]) return false;
+  spiLock();
+  bool ok = s_mesh->sendToChannel(channelIdx, text);
+  spiUnlock();
+  if (ok) {
+    char nm[32] = "";
+    channelName(channelIdx, nm, sizeof(nm));
+    MsgView m{};
+    m.kind = 0;
+    snprintf(m.text, sizeof(m.text), "[%s] %s: %s", nm, s_mesh->name(), text);
+    m.timestamp = 0;
+    m.contactIdx = 0xFF;
+    m.channelIdx = (uint8_t)channelIdx;
     pushMsg(m);
   }
   return ok;
@@ -650,6 +751,7 @@ bool sendHashChannelMsg(const char* name, const char* text) {
              (name[0] == '#') ? "" : "#", name, s_mesh->name(), text);
     m.timestamp = 0;
     m.contactIdx = 0xFF;
+    m.channelIdx = (uint8_t)idx;
     pushMsg(m);
   }
   return ok;

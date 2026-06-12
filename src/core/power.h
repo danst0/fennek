@@ -29,8 +29,16 @@ void poll();
 // nur der Knopf reagiert (kurz = entsperren, lang = Standby).
 bool locked();
 
-// Sofort in Deep-Sleep-Standby gehen (Audio/Radio/Peripherie aus, Wake-Quelle
-// = Knopf). Kehrt nicht zurück (Aufwachen ist ein Reboot).
+// Sofort in Deep-Sleep-Standby gehen (Audio/Radio/Peripherie aus, Wake-Quellen
+// = Knopf + Stunden-Timer). Kehrt nicht zurück (Aufwachen ist ein Reboot).
 void enterStandby();
+
+// Ganz früh in setup() aufrufen (vor dem USB-Wait): War der Aufwach-Grund der
+// Stunden-Timer, läuft ein Minimal-Pfad (Power + I2C + Display, KEIN SD/Audio/
+// Apps), der nur die Batterie-% auf dem Schlafbild erneuert und sofort wieder
+// in Deep Sleep geht — kehrt dann nicht zurück. Gibt false zurück, wenn normal
+// weitergebootet werden soll (Knopf-Wake, Kaltstart oder Knopf wurde während
+// des Minimal-Fensters gedrückt).
+bool handleTimerWake();
 
 }  // namespace power

@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr int    kPathLen = 192;
+constexpr int    kPathLen = TRACK_PATH_LEN;
 typedef char PathBuf[kPathLen];
 
 Audio          s_audio;
@@ -19,15 +19,39 @@ TaskHandle_t   s_task   = nullptr;
 
 // Abspiel-Queue: Pfade im PSRAM + Abspiel-Reihenfolge (für Shuffle).
 // s_stage wird im UI-Thread gefüllt und per Commit (unter Mutex) übernommen.
+// Die Pfad-Puffer sind bedarfsbasiert wachsende Blocktabellen (Blöcke à
+// kQBlock Pfade) — kein Fixlimit, kein Umkopieren beim Wachsen.
+constexpr int kQBlock    = 512;
+constexpr int kQBlockMax = TRACKS_HARD_MAX / kQBlock;
+
 SemaphoreHandle_t s_qMutex = nullptr;
-PathBuf* s_paths = nullptr;        // committed (Audio-Task liest)
-PathBuf* s_stage = nullptr;        // Staging (UI-Thread schreibt)
-uint16_t s_order[MAX_TRACKS];      // Abspiel-Reihenfolge: Index in s_paths
+PathBuf* s_pathBlk[kQBlockMax]  = {nullptr};  // committed (Audio-Task liest)
+int      s_pathCap  = 0;
+PathBuf* s_stageBlk[kQBlockMax] = {nullptr};  // Staging (UI-Thread schreibt)
+int      s_stageCap = 0;
+uint16_t* s_order   = nullptr;     // Abspiel-Reihenfolge: Index in die Queue
+int      s_orderCap = 0;
 int      s_qlen = 0;
 int      s_qpos = 0;               // Position in s_order
 int      s_stageLen = 0;
 audio::Owner s_stageOwner = audio::Owner::None;
 char     s_curPath[kPathLen] = "";
+
+inline char* pathAt(PathBuf** tbl, int i) { return tbl[i / kQBlock][i % kQBlock]; }
+
+// Staging-Puffer blockweise nachziehen (nur UI-Thread; der Audio-Task liest
+// ausschließlich die committeten Blöcke).
+bool stageEnsure(int need) {
+  if (need > TRACKS_HARD_MAX) return false;
+  while (s_stageCap < need) {
+    PathBuf* blk = (PathBuf*)heap_caps_malloc(sizeof(PathBuf) * kQBlock, MALLOC_CAP_SPIRAM);
+    if (!blk) blk = (PathBuf*)malloc(sizeof(PathBuf) * kQBlock);
+    if (!blk) return false;
+    s_stageBlk[s_stageCap / kQBlock] = blk;
+    s_stageCap += kQBlock;
+  }
+  return true;
+}
 
 // --- Status-Snapshot (vom Task geschrieben, vom UI gelesen) -----------------
 // 32-Bit-aligned -> atomare Lese-/Schreibzugriffe auf ESP32, kein Lock nötig.
@@ -89,7 +113,7 @@ void startCurrent(uint32_t startSec = 0) {
   xSemaphoreTake(s_qMutex, portMAX_DELAY);
   char p[kPathLen] = "";
   if (s_qpos >= 0 && s_qpos < s_qlen) {
-    memcpy(p, s_paths[s_order[s_qpos]], kPathLen);
+    memcpy(p, pathAt(s_pathBlk, s_order[s_qpos]), kPathLen);
     strncpy(s_curPath, p, kPathLen - 1);
     s_curPath[kPathLen - 1] = '\0';
   }
@@ -176,9 +200,16 @@ void handle(const Msg& m) {
     case Cmd::Play:
       if (s_playing) stopTrack();
       xSemaphoreTake(s_qMutex, portMAX_DELAY);
-      // Staging übernehmen: Puffer tauschen, Reihenfolge zurücksetzen.
-      { PathBuf* t = s_paths; s_paths = s_stage; s_stage = t; }
-      s_qlen  = s_stageLen;
+      // Reihenfolge-Puffer an die neue Queue-Länge anpassen (klein: 2 B/Eintrag).
+      if (s_stageLen > s_orderCap) {
+        uint16_t* no = (uint16_t*)heap_caps_realloc(s_order, sizeof(uint16_t) * s_stageLen, MALLOC_CAP_SPIRAM);
+        if (!no) no = (uint16_t*)realloc(s_order, sizeof(uint16_t) * s_stageLen);
+        if (no) { s_order = no; s_orderCap = s_stageLen; }
+      }
+      // Staging übernehmen: Blocktabellen tauschen, Reihenfolge zurücksetzen.
+      for (int b = 0; b < kQBlockMax; b++) { PathBuf* t = s_pathBlk[b]; s_pathBlk[b] = s_stageBlk[b]; s_stageBlk[b] = t; }
+      { int t = s_pathCap; s_pathCap = s_stageCap; s_stageCap = t; }
+      s_qlen  = (s_stageLen <= s_orderCap) ? s_stageLen : s_orderCap;
       s_owner = (uint8_t)s_stageOwner;
       s_qpos  = (m.arg >= 0 && m.arg < s_qlen) ? m.arg : 0;
       for (int i = 0; i < s_qlen; i++) s_order[i] = (uint16_t)i;
@@ -286,11 +317,9 @@ void begin() {
   s_cmdQ   = xQueueCreate(8, sizeof(Msg));
   s_qMutex = xSemaphoreCreateMutex();
 
-  // Zwei Pfad-Puffer im PSRAM (committed + Staging), je 512 x 192 B = 96 KB.
-  s_paths = (PathBuf*)heap_caps_malloc(sizeof(PathBuf) * MAX_TRACKS, MALLOC_CAP_SPIRAM);
-  s_stage = (PathBuf*)heap_caps_malloc(sizeof(PathBuf) * MAX_TRACKS, MALLOC_CAP_SPIRAM);
-  if (!s_paths) s_paths = (PathBuf*)malloc(sizeof(PathBuf) * MAX_TRACKS);
-  if (!s_stage) s_stage = (PathBuf*)malloc(sizeof(PathBuf) * MAX_TRACKS);
+  // Erster Staging-Block im PSRAM (512 x 192 B = 96 KB); weitere Blöcke und
+  // der committed-Puffer entstehen bedarfsbasiert beim Queue-Aufbau/Commit.
+  stageEnsure(kQBlock);
 
   // I2S an den PCM5102A (BCLK, LRC, DOUT). PCM5102A ist ein "dummer" DAC ohne
   // I2C-Konfiguration — reine I2S-Bespielung genügt.
@@ -312,9 +341,10 @@ void queueBegin(Owner owner) {
 }
 
 bool queueAdd(const char* path) {
-  if (!s_stage || s_stageLen >= MAX_TRACKS || !path || !path[0]) return false;
-  strncpy(s_stage[s_stageLen], path, kPathLen - 1);
-  s_stage[s_stageLen][kPathLen - 1] = '\0';
+  if (!path || !path[0] || !stageEnsure(s_stageLen + 1)) return false;
+  char* dst = pathAt(s_stageBlk, s_stageLen);
+  strncpy(dst, path, kPathLen - 1);
+  dst[kPathLen - 1] = '\0';
   s_stageLen++;
   return true;
 }

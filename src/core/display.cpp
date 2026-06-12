@@ -55,6 +55,22 @@ void begin() {
   s_initialized = true;
 }
 
+void beginAfterSleep() {
+  spiLock();
+  g_disp.epd2.selectSPI(g_spi, SPISettings(SPI_BUS_HZ, MSBFIRST, SPI_MODE0));
+  // initial=false (GxEPD2-Muster „wake from deep sleep"): der Controller wird
+  // initialisiert, ohne den stehenden Bildinhalt zu verwerfen — Partial-
+  // Refreshes arbeiten danach gegen das angezeigte Schlafbild.
+  g_disp.init(115200, false, 2, false);
+  g_disp.epd2.setBusyCallback(einkBusyWait);
+  g_disp.setRotation(0);
+  g_disp.setTextColor(GxEPD_BLACK);
+  g_disp.setTextWrap(false);
+  g_disp.cp437(true);
+  spiUnlock();
+  s_initialized = true;
+}
+
 void render(DrawFn draw, bool full) {
   if (!s_initialized) return;
 

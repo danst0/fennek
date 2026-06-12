@@ -14,13 +14,13 @@ namespace {
 
 using gui::Rect;
 
-constexpr int kTiles = 6;
+constexpr int kTiles = 8;
 
-// 2 Spalten x 3 Reihen im Content-Bereich; darunter eine Now-Playing-Zeile.
-constexpr int kTileW = 108, kTileH = 78;
+// 2 Spalten x 4 Reihen im Content-Bereich; darunter eine Now-Playing-Zeile.
+constexpr int kTileW = 108, kTileH = 58;
 constexpr int kCol[2] = {8, 124};
 constexpr int kRowY0  = appmgr::CONTENT_Y + 6;     // 30
-constexpr int kRowGap = 88;                        // 30, 118, 206 -> Ende 284
+constexpr int kRowGap = 64;                        // 30, 94, 158, 222 -> Ende 280
 
 constexpr int kHintY = 296;                        // Now-Playing-/Resume-Zeile
 
@@ -105,7 +105,7 @@ class LauncherApp : public App {
     g.setTextSize(1);
     g.setCursor(8, kHintY);
     if (st.playing) {
-      char p[192], nm[64] = "";
+      char p[TRACK_PATH_LEN], nm[64] = "";
       audio::currentPath(p, sizeof(p));
       int flat = p[0] ? library::indexOfPath(p) : -1;
       if (flat >= 0) library::name(flat, nm, sizeof(nm));
@@ -117,7 +117,7 @@ class LauncherApp : public App {
       snprintf(line, sizeof(line), "%c %s", 0x0E, nm);   // ♫ Titel
       gui::print(g, line);
     } else {
-      char p[192]; uint32_t pos;
+      char p[TRACK_PATH_LEN]; uint32_t pos;
       settings::lastTrack(p, sizeof(p), &pos);
       if (p[0] && library::indexOfPath(p) >= 0) {
         const char* base = strrchr(p, '/');
@@ -145,7 +145,7 @@ class LauncherApp : public App {
       if (s_tiles[0].app) appmgr::launch(s_tiles[0].app);
       return;
     }
-    char p[192]; uint32_t pos;
+    char p[TRACK_PATH_LEN]; uint32_t pos;
     settings::lastTrack(p, sizeof(p), &pos);
     if (p[0] && library::indexOfPath(p) >= 0) {
       // Ab gespeicherter Position fortsetzen (Seek zuverlässig bei CBR-MP3).

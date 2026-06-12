@@ -2,12 +2,16 @@
 #include "config.h"
 #include "core/battery.h"
 #include "core/board.h"
+#include "core/power.h"
 #include "core/settings.h"
 #include "apps/mesh_client.h"
 #include "apps/reader_app.h"
+#include "services/webfm.h"
 
 #include <Arduino.h>
 #include <SD.h>
+#include <esp_sleep.h>
+#include <esp_system.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -28,6 +32,7 @@ bool ensureMesh() {
 void cmdHelp() {
   Serial.println("[CON] Befehle:");
   Serial.println("[CON]   status            - Systen-/Mesh-Status");
+  Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden");
   Serial.println("[CON]   public <text>     - Nachricht an Public-Channel");
@@ -40,6 +45,32 @@ void cmdHelp() {
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
   Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
+  Serial.println("[CON]   wifi ssid <name>  - WLAN-SSID setzen (NVS)");
+  Serial.println("[CON]   wifi pass <pw>    - WLAN-Passwort setzen (NVS)");
+  Serial.println("[CON]   wifi status       - WLAN-/Webserver-Status");
+  Serial.println("[CON]   wifi start        - Web-Dateiverwaltung starten");
+  Serial.println("[CON]   wifi stop         - Web-Dateiverwaltung stoppen");
+}
+
+void cmdWifiStatus() {
+  char ssid[33];
+  webfm::ssid(ssid, sizeof(ssid));
+  char pass[65];
+  settings::wifiPass(pass, sizeof(pass));
+  const char* st = "aus";
+  switch (webfm::state()) {
+    case webfm::State::CONNECTING: st = "verbinde ..."; break;
+    case webfm::State::RUNNING:    st = "läuft"; break;
+    case webfm::State::FAILED:     st = "FEHLGESCHLAGEN"; break;
+    default: break;
+  }
+  char ip[16];
+  webfm::ipStr(ip, sizeof(ip));
+  Serial.printf("[CON] WiFi: SSID='%s' Passwort=%s | Status: %s%s%s | Requests=%lu\n",
+                ssid[0] ? ssid : "(nicht gesetzt)",
+                pass[0] ? "gesetzt" : "(nicht gesetzt)", st,
+                ip[0] ? " http://" : "", ip,
+                (unsigned long)webfm::requestCount());
 }
 
 // SD-Verzeichnis listen (Diagnose, nicht rekursiv).
@@ -102,6 +133,14 @@ void cmdStatus() {
                 battery::milliVolts(), battery::percent(),
                 battery::charging() ? "+" : "",
                 board::sdReady() ? "ja" : "nein");
+  // Standby-Diagnose: Warum lief dieser Boot an? (1=Poweron/Hardware-Reset
+  // 5=DeepSleep-Wake 12=SW; Wake 3=EXT1/Knopf 4=Timer). Achtung: Der UNTERE
+  // Seitenknopf ist der Hardware-Reset -> immer Reset-Grund=1, Firmware
+  // sieht den Druck nie.
+  Serial.printf("[CON] Boot: Reset-Grund=%d Wake-Quelle=%d ext1=0x%llx GPIO0=%d\n",
+                (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause(),
+                (unsigned long long)esp_sleep_get_ext1_wakeup_status(),
+                (int)digitalRead(0));
   if (!mesh_client::ready()) {
     Serial.println("[CON] Mesh: nicht initialisiert ('mesh init')");
     return;
@@ -158,6 +197,23 @@ void handleLine(char* line) {
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
+  if (strncmp(line, "wifi ssid ", 10) == 0) {
+    settings::setWifiSsid(line + 10);
+    Serial.printf("[CON] WLAN-SSID gesetzt: '%s'\n", line + 10);
+    return;
+  }
+  if (strncmp(line, "wifi pass ", 10) == 0) {
+    settings::setWifiPass(line + 10);
+    Serial.println("[CON] WLAN-Passwort gesetzt");
+    return;
+  }
+  if (strcmp(line, "wifi status") == 0)     { cmdWifiStatus(); return; }
+  if (strcmp(line, "sleep") == 0)           { power::enterStandby(); return; }
+  if (strcmp(line, "wifi start") == 0) {
+    if (!webfm::start()) Serial.println("[CON] Start fehlgeschlagen — erst 'wifi ssid <name>' setzen");
+    return;
+  }
+  if (strcmp(line, "wifi stop") == 0)       { webfm::stop(); return; }
   if (strcmp(line, "channels") == 0) {
     if (!mesh_client::ready()) { Serial.println("[CON] Mesh nicht initialisiert"); return; }
     int n = mesh_client::channelCount();

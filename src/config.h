@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v1.5.0"
+#define FENNEK_VERSION "v1.6.0"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power
@@ -77,4 +77,11 @@
 #define AUDIO_VOL_MAX      21   // Wertebereich der ESP32-audioI2S-Lib
 #define AUDIO_VOL_DEFAULT  12
 #define MP3_DIR            "/music"   // Standard-Verzeichnis auf der SD
-#define MAX_TRACKS         512        // max. Einträge der Dateiliste
+// Track-Puffer wachsen bedarfsbasiert in Blöcken (kein praktisches Limit;
+// Speicher = tatsächliche Sammlungsgröße). TRACKS_HARD_MAX ist nur ein
+// Überlauf-Schutz gegen Amok-Scans (Abspiel-Reihenfolge ist uint16_t).
+#define TRACK_BLOCK        512        // Einträge pro Block (Zweierpotenz)
+#define TRACKS_HARD_MAX    32768
+// Calibre-artige Pfade (/music/Künstler/Album (Jahr)/Disc/Langer Titel.mp3)
+// sprengen 192 Zeichen; zu lange Pfade werden geloggt und übersprungen.
+#define TRACK_PATH_LEN     256

@@ -466,7 +466,8 @@ class BookApp : public App {
         st.posSec != s_lastShownSec && millis() - s_lastProg >= kProgressMs) {
       s_lastProg = millis();
       s_lastShownSec = st.posSec;
-      if (++s_progCount % 10 == 0) appmgr::markDirty();
+      // alle 20 Streifen (~60 s) statt alle 10 (~30 s) -> halb so viele Voll-Refreshes.
+      if (++s_progCount % 20 == 0) appmgr::markDirty();
       else display::renderRegion(drawProgStrip, PROG_Y, PROG_H);
     }
   }

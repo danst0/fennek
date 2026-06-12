@@ -32,6 +32,7 @@
   X(AppMesh,       "Mesh",           "Mesh",            "Mesh",           "Mesh",            "Mesh") \
   X(AppSettings,   "Einstellungen",  "Impostazioni",    "Inställningar",  "Settings",        "Ajustes") \
   X(AppGames,      "Spiele",         "Giochi",          "Spel",           "Games",           "Juegos") \
+  X(AppFiles,      "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
   /* --- Launcher-Kacheln (max 8 Zeichen) --- */ \
   X(TileMusic,     "Musik",          "Musica",          "Musik",          "Music",           "Música") \
   X(TileBook,      "Hörbuch",        "Ascolto",         "Ljudbok",        "Listen",          "Escuchar") \
@@ -39,6 +40,7 @@
   X(TileMesh,      "Mesh",           "Mesh",            "Mesh",           "Mesh",            "Mesh") \
   X(TileSettings,  "Optionen",       "Opzioni",         "System",         "Settings",        "Ajustes") \
   X(TileGames,     "Spiele",         "Giochi",          "Spel",           "Games",           "Juegos") \
+  X(TileFiles,     "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
   X(TileSoon,      "(bald)",         "(presto)",        "(snart)",        "(soon)",          "(pronto)") \
   X(FmtResume,     "Fortsetzen: %s", "Riprendi: %s",    "Fortsätt: %s",   "Resume: %s",      "Continuar: %s") /* fmt: %s */ \
   /* --- Gemeinsame Buttons --- */ \
@@ -87,6 +89,7 @@
   X(ReaderRescan,  "R: neu einlesen","R: riscansiona",  "R: skanna om",   "R: rescan",       "R: reescanear") \
   /* --- Mesh --- */ \
   X(MeshChannel,   "Mesh-Kanal",     "Canale Mesh",     "Mesh-kanal",     "Mesh channel",    "Canal Mesh") \
+  X(MeshChats,     "Chats",          "Chat",            "Chattar",        "Chats",           "Chats") \
   X(MeshContacts,  "Kontakte",       "Contatti",        "Kontakter",      "Contacts",        "Contactos") \
   X(MeshNoMsgs,    "(noch keine Nachrichten)", "(ancora nessun messaggio)", "(inga meddelanden än)", "(no messages yet)", "(sin mensajes aún)") \
   X(MeshNoContacts,"Keine Kontakte", "Nessun contatto", "Inga kontakter", "No contacts",     "Sin contactos") \
@@ -113,6 +116,9 @@
   X(StandbyOff,    "Aus",            "No",              "Av",             "Off",             "No") \
   X(HintEnterSave, "Enter speichert","Enter salva",     "Enter sparar",   "Enter saves",     "Enter guarda") /* max 19 Z. */ \
   X(HintNameEdit,  "Enter: Name ändern", "Enter: cambia nome", "Enter: byt namn", "Enter: edit name", "Enter: renombrar") /* max 19 Z. */ \
+  X(HintEdit,      "Enter: eingeben","Enter: modifica", "Enter: redigera","Enter: edit",     "Enter: editar") /* max 19 Z. */ \
+  X(LblWifiSsid,   "WLAN-SSID",      "SSID Wi-Fi",      "Wi-Fi-SSID",     "Wi-Fi SSID",      "SSID Wi-Fi") \
+  X(LblWifiPass,   "WLAN-Passwort",  "Password Wi-Fi",  "Wi-Fi-lösenord", "Wi-Fi password",  "Clave Wi-Fi") \
   X(HintChange,    "A/D bzw. Tap ändert", "A/D o tap modifica", "A/D el. tap ändrar", "A/D or tap changes", "A/D o tap cambia") /* max 19 Z. */ \
   X(FmtBattery,    "Akku %u%%%s (%u mV)", "Batt. %u%%%s (%u mV)", "Batt. %u%%%s (%u mV)", "Batt. %u%%%s (%u mV)", "Bat. %u%%%s (%u mV)") /* fmt: %u %s %u, max 20 Z. */ \
   /* --- Spiele: Menü --- */ \
@@ -177,7 +183,20 @@
   X(TttVsFennek,   "Gegner: Fennek", "Avversario: Fennek", "Motståndare: Fennek", "Opponent: Fennek", "Rival: Fennek") \
   X(TttTwoPlayers, "2 Spieler am Gerät", "2 giocatori locali", "2 spelare på enheten", "2 players on device", "2 jugadores locales") \
   X(TttKeyHint,    "N=Neu  M=Modus  Backspace=Menü", "N=Nuovo  M=Modo  Backspace=Menu", "N=Ny  M=Läge  Backspace=Meny", "N=New  M=Mode  Backspace=Menu", "N=Nuevo  M=Modo  Backspace=Menú") \
-  X(FmtTttWins,    "Siege: %u  ·  Remis: %u", "Vittorie: %u  ·  Patte: %u", "Segrar: %u  ·  Remi: %u", "Wins: %u  ·  Draws: %u", "Victorias: %u  ·  Empates: %u") /* fmt: %u %u */
+  X(FmtTttWins,    "Siege: %u  ·  Remis: %u", "Vittorie: %u  ·  Patte: %u", "Segrar: %u  ·  Remi: %u", "Wins: %u  ·  Draws: %u", "Victorias: %u  ·  Empates: %u") /* fmt: %u %u */ \
+  /* --- Dateien (Web-Dateiverwaltung) --- */ \
+  X(FilesTitle,    "Web-Dateiverwaltung", "Gestione file web", "Webbfilhantering", "Web file manager", "Gestor de archivos web") \
+  X(FilesNoCreds1, "WLAN ist nicht konfiguriert.", "Wi-Fi non configurato.", "Wi-Fi är inte konfigurerat.", "Wi-Fi is not configured.", "Wi-Fi no configurado.") \
+  X(FilesNoCreds2, "In den Optionen eintragen:", "Inserisci nelle opzioni:", "Ange i inställningarna:", "Set it in the settings:", "Introduce en los ajustes:") \
+  X(FilesNoCreds3, "oder im Serial-Monitor (USB):", "o nel monitor seriale (USB):", "eller i seriell monitor (USB):", "or in the serial monitor (USB):", "o en el monitor serie (USB):") \
+  X(FmtFilesSsid,  "WLAN: %s",       "Wi-Fi: %s",       "Wi-Fi: %s",      "Wi-Fi: %s",       "Wi-Fi: %s") /* fmt: %s */ \
+  X(FilesStartHint,"Stoppt Musik, pausiert Mesh", "Ferma la musica, pausa il mesh", "Stoppar musik, pausar mesh", "Stops music, pauses mesh", "Para la música, pausa el mesh") \
+  X(FilesConnecting,"Verbinde ...",  "Connessione ...", "Ansluter ...",   "Connecting ...",  "Conectando ...") \
+  X(FilesFailed,   "Verbindung fehlgeschlagen", "Connessione fallita", "Anslutning misslyckades", "Connection failed", "Fallo de conexión") \
+  X(FilesRetryHint,"Enter = erneut versuchen", "Enter = riprova", "Enter = försök igen", "Enter = try again", "Enter = reintentar") \
+  X(FilesBrowserHint,"Im Browser öffnen:", "Apri nel browser:", "Öppna i webbläsaren:", "Open in your browser:", "Abre en el navegador:") \
+  X(FmtRequests,   "Anfragen: %lu",  "Richieste: %lu",  "Anrop: %lu",     "Requests: %lu",   "Peticiones: %lu") /* fmt: %lu */ \
+  X(FilesStopHint, "Q oder Zurück = Stopp", "Q o Indietro = stop", "Q eller Tillbaka = stopp", "Q or Back = stop", "Q o Atrás = parar")
 
 namespace i18n {
 

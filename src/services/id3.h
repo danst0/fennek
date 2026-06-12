@@ -11,6 +11,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 namespace id3 {
 
@@ -18,6 +19,9 @@ struct Tags {
   char title[64];
   char artist[48];
   char album[48];
+  uint32_t fsize;   // Dateigröße (0 = Datei ließ sich nicht öffnen) — der
+                    // readdir-Scan der Bibliothek kennt keine Größen, sie
+                    // werden hier beim ohnehin nötigen Öffnen mitgeliefert.
 };
 
 // Tags aus einer Audio-Datei lesen. Nimmt spiLock() selbst.
