@@ -17,6 +17,7 @@
 #include "config.h"
 #include "core/appmgr.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/settings.h"
 #include "apps/games_app.h"
 #include "apps/chess_core.h"
@@ -32,7 +33,7 @@ constexpr int kHeaderY = appmgr::CONTENT_Y + 4;   // y 28
 constexpr int kFooterY = 284;
 
 // --- Schwierigkeitsstufen --------------------------------------------------------
-const char*    kLevelName[3] = {"Leicht", "Mittel", "Schwer"};
+const i18n::Str kLevelName[3] = {i18n::Str::LevelEasy, i18n::Str::LevelMid, i18n::Str::LevelHard};
 const int      kDepth[3]     = {2, 3, 4};
 const uint32_t kNodeLimit[3] = {15000, 60000, 250000};
 
@@ -125,13 +126,13 @@ void updateResult() {
   chess::Result r = chess::result(s_pos);
   if (r == chess::MATE) {
     s_result = (s_pos.stm > 0) ? 2 : 1;   // Seite am Zug ist matt
-    s_resultText = (s_result == 1) ? "Matt - Weiß gewinnt!" : "Matt - Schwarz gewinnt!";
+    s_resultText = (s_result == 1) ? i18n::tr(i18n::Str::ChessMateW) : i18n::tr(i18n::Str::ChessMateB));
   } else if (r == chess::STALEMATE) {
     s_result = 3;
-    s_resultText = "Patt - Remis";
+    s_resultText = i18n::tr(i18n::Str::ChessStale));
   } else if (r == chess::DRAW50) {
     s_result = 3;
-    s_resultText = "Remis (50 Züge)";
+    s_resultText = i18n::tr(i18n::Str::ChessDraw50));
   } else if (s_nHist > 0) {
     int rep = 0;
     uint32_t h = s_hist[s_nHist - 1];
@@ -139,7 +140,7 @@ void updateResult() {
       if (s_hist[i] == h) rep++;
     if (rep >= 3) {
       s_result = 3;
-      s_resultText = "Remis (Wiederholung)";
+      s_resultText = i18n::tr(i18n::Str::ChessDrawRep));
     }
   }
   if (s_result) {
@@ -304,19 +305,19 @@ void setupInput(const InputEvent& e) {
 }
 
 void setupDraw(Adafruit_GFX& g) {
-  gui::printAt(g, 10, kHeaderY, "Neue Partie", 2);
+  gui::printAt(g, 10, kHeaderY, i18n::tr(i18n::Str::ChessNewGame), 2);
 
   char lbl[40];
   for (int row = 0; row < 3; row++) {
     switch (row) {
-      case 0: snprintf(lbl, sizeof(lbl), "Gegner: %s", s_mode ? "2 Spieler" : "Fennek"); break;
+      case 0: snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtOpponent), s_mode ? i18n::tr(i18n::Str::TwoPlayers) : "Fennek"); break;
       case 1:
         if (s_mode == 0)
-          snprintf(lbl, sizeof(lbl), "Deine Farbe: %s", s_human > 0 ? "Weiß" : "Schwarz");
+          snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtYourColor), s_human > 0 ? i18n::tr(i18n::Str::ColorWhite) : i18n::tr(i18n::Str::ColorBlack));
         else
-          snprintf(lbl, sizeof(lbl), "Deine Farbe: -");
+          snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtYourColor), "-");
         break;
-      case 2: snprintf(lbl, sizeof(lbl), "Stufe: %s", kLevelName[s_level]); break;
+      case 2: snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtLevel), i18n::tr(kLevelName[s_level])); break;
     }
     gui::drawRowText(g, kSetupRowY + row * kSetupRowH, kSetupRowH, lbl, false);
   }
@@ -325,11 +326,11 @@ void setupDraw(Adafruit_GFX& g) {
     g.drawRect(0, y, EINK_W, kSetupRowH, GxEPD_BLACK);
     g.drawRect(1, y + 1, EINK_W - 2, kSetupRowH - 2, GxEPD_BLACK);
   }
-  gui::drawButton(g, kStartBtn, "Start", s_setupSel == 3);
+  gui::drawButton(g, kStartBtn, i18n::tr(i18n::Str::BtnStart), s_setupSel == 3);
 
   g.setTextSize(1);
   g.setCursor(10, 294);
-  gui::print(g, s_active ? "Backspace = zurück zur Partie" : "A/D bzw. Tap ändert");
+  gui::print(g, s_active ? i18n::tr(i18n::Str::ChessBackHint) : i18n::tr(i18n::Str::HintChange));
 }
 
 // --- Brett zeichnen ------------------------------------------------------------------------
@@ -390,7 +391,7 @@ void drawPromoDialog(Adafruit_GFX& g) {
   g.fillRect(x, y, w, h, GxEPD_WHITE);
   g.drawRect(x, y, w, h, GxEPD_BLACK);
   g.drawRect(x + 1, y + 1, w - 2, h - 2, GxEPD_BLACK);
-  gui::printAt(g, x + 12, y + 8, "Umwandlung:", 1);
+  gui::printAt(g, x + 12, y + 8, i18n::tr(i18n::Str::ChessPromo), 1);
   const char* names[4] = {"D", "T", "L", "S"};
   for (int i = 0; i < 4; i++) {
     Rect r{x + 12 + i * 46, y + 26, 40, 38};
@@ -453,17 +454,17 @@ void boardDraw(Adafruit_GFX& g) {
   if (s_result) {
     snprintf(head, sizeof(head), "%s", s_resultText);
   } else if (s_thinking) {
-    snprintf(head, sizeof(head), "Fennek denkt ...");
+    snprintf(head, sizeof(head), "%s", i18n::tr(i18n::Str::ChessThinking));
   } else {
     bool chk = chess::inCheck(s_pos, s_pos.stm);
-    snprintf(head, sizeof(head), "%s am Zug%s",
-             s_pos.stm > 0 ? "Weiß" : "Schwarz", chk ? " - Schach!" : "");
+    snprintf(head, sizeof(head), i18n::tr(i18n::Str::FmtChessTurn),
+             s_pos.stm > 0 ? i18n::tr(i18n::Str::ColorWhite) : i18n::tr(i18n::Str::ColorBlack), chk ? i18n::tr(i18n::Str::ChessCheck) : "");
   }
   gui::printAt(g, 8, kHeaderY, head, s_result ? 1 : 2);
   if (s_result) {
     g.setCursor(8, kHeaderY + 12);
     g.setTextSize(1);
-    gui::print(g, "N = neue Partie");
+    gui::print(g, i18n::tr(i18n::Str::ChessNewHint));
   }
 
   g.drawRect(kBoardX - 1, kBoardY - 1, 8 * kCell + 2, 8 * kCell + 2, GxEPD_BLACK);
@@ -472,11 +473,11 @@ void boardDraw(Adafruit_GFX& g) {
   g.setTextSize(1);
   g.setCursor(8, kFooterY);
   if (s_mode == 0)
-    gui::print(g, s_human > 0 ? "Du: Weiß" : "Du: Schwarz");
+    gui::print(g, s_human > 0 ? i18n::tr(i18n::Str::YouWhite) : i18n::tr(i18n::Str::YouBlack));
   else
-    gui::print(g, "2 Spieler");
+    gui::print(g, i18n::tr(i18n::Str::TwoPlayers));
   g.setCursor(8, kFooterY + 14);
-  gui::print(g, "WASD+Enter oder Tap · N=Neu · Backspace=Menü");
+  gui::print(g, i18n::tr(i18n::Str::ChessKeyHint));
 
   if (s_promoFrom >= 0) drawPromoDialog(g);
 }
@@ -533,8 +534,8 @@ void menuLine(char* out, size_t n) {
   SaveBlob b;
   bool saved = s_active && !s_result;
   if (!saved) saved = settings::chessGame(&b, sizeof(b)) && b.magic == kSaveMagic;
-  if (saved) snprintf(out, n, "Partie läuft · Siege: %u", (unsigned)wins);
-  else       snprintf(out, n, "Siege gegen Fennek: %u", (unsigned)wins);
+  if (saved) snprintf(out, n, i18n::tr(i18n::Str::FmtChessSaved), (unsigned)wins);
+  else       snprintf(out, n, i18n::tr(i18n::Str::FmtChessWins), (unsigned)wins);
 }
 
 }  // namespace chess_ui

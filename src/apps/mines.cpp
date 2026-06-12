@@ -13,6 +13,7 @@
 #include "config.h"
 #include "core/appmgr.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/settings.h"
 #include "apps/games_app.h"
 #include "apps/mines_core.h"
@@ -143,11 +144,11 @@ void drawOverlay(Adafruit_GFX& g) {
   g.drawRect(x + 1, y + 1, w - 2, h - 2, GxEPD_BLACK);
   char l1[24], l2[40];
   if (s_field.state == mines::WON) {
-    snprintf(l1, sizeof(l1), "Geschafft!");
-    snprintf(l2, sizeof(l2), "%lu s · N = neues Spiel", (unsigned long)s_elapsedSec);
+    snprintf(l1, sizeof(l1), "%s", i18n::tr(i18n::Str::MinesWin));
+    snprintf(l2, sizeof(l2), i18n::tr(i18n::Str::FmtMinesTime), (unsigned long)s_elapsedSec);
   } else {
-    snprintf(l1, sizeof(l1), "Boom!");
-    snprintf(l2, sizeof(l2), "N = neues Spiel");
+    snprintf(l1, sizeof(l1), "%s", i18n::tr(i18n::Str::MinesBoom));
+    snprintf(l2, sizeof(l2), "%s", i18n::tr(i18n::Str::MinesNewGame));
   }
   uint16_t tw, th;
   g.setTextSize(2);
@@ -214,10 +215,10 @@ void draw(Adafruit_GFX& g) {
 
   char buf[24];
   int left = (int)s_field.mines - (int)s_field.flags;
-  snprintf(buf, sizeof(buf), "Minen: %d", left);
+  snprintf(buf, sizeof(buf), i18n::tr(i18n::Str::FmtMinesLeft), left);
   gui::printAt(g, 6, kHeaderY, buf, 2);
 
-  gui::drawButton(g, kModeBtn, s_flagMode ? "Flagge" : "Graben", s_flagMode);
+  gui::drawButton(g, kModeBtn, s_flagMode ? i18n::tr(i18n::Str::BtnFlag) : i18n::tr(i18n::Str::BtnDig), s_flagMode);
 
   for (int i = 0; i < kW * kH; i++) drawCell(g, i);
 
@@ -226,9 +227,9 @@ void draw(Adafruit_GFX& g) {
 
 void menuLine(char* out, size_t n) {
   uint16_t wins = settings::minesWins();
-  if (wins) snprintf(out, n, "Siege: %u  ·  Bestzeit: %u s",
+  if (wins) snprintf(out, n, i18n::tr(i18n::Str::FmtMinesWins),
                      (unsigned)wins, (unsigned)settings::minesBestSec());
-  else      snprintf(out, n, "Noch kein Sieg");
+  else      snprintf(out, n, "%s", i18n::tr(i18n::Str::NoWinYet));
 }
 
 }  // namespace mines_ui

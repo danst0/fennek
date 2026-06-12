@@ -3,6 +3,7 @@
 #include "core/battery.h"
 #include "core/display.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/keyboard.h"
 #include "core/power.h"
 #include "core/settings.h"
@@ -58,7 +59,7 @@ void drawStatusBar(Adafruit_GFX& g) {
   if (power::locked()) {
     drawLock(g, 92, 4);
     g.setCursor(108, 7);
-    gui::print(g, "Gesperrt");
+    gui::print(g, i18n::tr(i18n::Str::StatusLocked));
   }
 
   // Audio-Indikator Mitte/rechts: CP437 0x0E = Doppelnote.
@@ -114,7 +115,7 @@ void begin() {
   settings::lastApp(last, sizeof(last));
   if (last[0]) {
     for (int i = 1; i < s_count; i++) {
-      if (strcmp(s_apps[i]->name(), last) == 0) { launch(s_apps[i]); break; }
+      if (strcmp(s_apps[i]->id(), last) == 0) { launch(s_apps[i]); break; }
     }
   }
   s_dirty = true;
@@ -125,7 +126,7 @@ void launch(App* a) {
   if (s_cur) s_cur->onLeave();
   s_cur = a;
   s_cur->onEnter();
-  settings::setLastApp(a->name());
+  settings::setLastApp(a->id());
   s_dirty = true;
 }
 
@@ -145,7 +146,7 @@ void loop() {
   int16_t tx, ty;
   if (touch::poll(tx, ty) && !locked && millis() >= s_settleUntil) {
     power::noteActivity();
-    Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->name() : "-");
+    Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->id() : "-");
     if (ty < STATUS_H) {
       if (s_cur != s_apps[0]) goHome();
     } else if (s_cur) {

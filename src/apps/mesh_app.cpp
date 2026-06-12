@@ -3,6 +3,7 @@
 #include "config.h"
 #include "core/display.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 
 #include <Arduino.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
@@ -103,7 +104,7 @@ void collectMessages(LineCollector& lc) {
       const char* ack = "";
       if (m.kind == 2) ack = (m.ackState == 2) ? " *" : (m.ackState == 3) ? " !" : " ...";
       snprintf(line, sizeof(line), "%s%s: %s%s",
-               (m.kind == 2) ? ">" : "", (m.kind == 2) ? "ich" : m.from, m.text, ack);
+               (m.kind == 2) ? ">" : "", (m.kind == 2) ? i18n::tr(i18n::Str::MeshMe) : m.from, m.text, ack);
     }
     wrapInto(lc, line);
   }
@@ -136,7 +137,7 @@ void drawCompose(Adafruit_GFX& g) {
 
 void drawChannelOrDm(Adafruit_GFX& g) {
   if (s_screen == CHANNEL) {
-    drawHeaderBar(g, "Mesh-Kanal");
+    drawHeaderBar(g, i18n::tr(i18n::Str::MeshChannel));
   } else {
     char t[48];
     snprintf(t, sizeof(t), "DM: %s", s_dmName);
@@ -156,30 +157,30 @@ void drawChannelOrDm(Adafruit_GFX& g) {
     y += MSG_LINEH;
   }
   if (lc.count == 0) {
-    gui::printAt(g, 10, MSG_Y + 30, "(noch keine Nachrichten)", 1);
+    gui::printAt(g, 10, MSG_Y + 30, i18n::tr(i18n::Str::MeshNoMsgs), 1);
   }
 
   drawCompose(g);
 
   if (s_screen == CHANNEL) {
-    gui::drawButton(g, kBtn1, "Kont.", false);
-    gui::drawButton(g, kBtn2, "Advert", false);
-    gui::drawButton(g, kBtn3, "Home", false);
+    gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnContacts), false);
+    gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
+    gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
   } else {
-    gui::drawButton(g, kBtn1, "Kanal", false);
-    gui::drawButton(g, kBtn2, "Kont.", false);
-    gui::drawButton(g, kBtn3, "Home", false);
+    gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnChannel), false);
+    gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnContacts), false);
+    gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
   }
 }
 
 void drawContacts(Adafruit_GFX& g) {
-  drawHeaderBar(g, "Kontakte");
+  drawHeaderBar(g, i18n::tr(i18n::Str::MeshContacts));
 
   int n = mesh_client::contactCount();
   if (n == 0) {
-    gui::printAt(g, 10, 90, "Keine Kontakte", 2);
-    gui::printAt(g, 10, 120, "Kontakte erscheinen automatisch,", 1);
-    gui::printAt(g, 10, 134, "sobald Adverts empfangen werden.", 1);
+    gui::printAt(g, 10, 90, i18n::tr(i18n::Str::MeshNoContacts), 2);
+    gui::printAt(g, 10, 120, i18n::tr(i18n::Str::MeshCtHint1), 1);
+    gui::printAt(g, 10, 134, i18n::tr(i18n::Str::MeshCtHint2), 1);
   }
   for (int r = 0; r < VISIBLE && s_off + r < n; r++) {
     char nm[40];
@@ -193,17 +194,17 @@ void drawContacts(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBtn1, "Kanal", false);
-  gui::drawButton(g, kBtn2, "Advert", false);
-  gui::drawButton(g, kBtn3, "Home", false);
+  gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnChannel), false);
+  gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
 void drawError(Adafruit_GFX& g) {
   drawHeaderBar(g, "Mesh");
-  gui::printAt(g, 10, 90, "Radio nicht gefunden", 2);
-  gui::printAt(g, 10, 124, "SX1262-Init fehlgeschlagen.", 1);
+  gui::printAt(g, 10, 90, i18n::tr(i18n::Str::MeshNoRadio), 2);
+  gui::printAt(g, 10, 124, i18n::tr(i18n::Str::MeshInitFail), 1);
   gui::printAt(g, 10, 138, "Details im Serial-Log.", 1);
-  gui::drawButton(g, kBtn3, "Home", false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
 // --- Interaktion --------------------------------------------------------------------
@@ -296,7 +297,8 @@ void onKey(char k) {
 // --- App-Klasse -----------------------------------------------------------------------
 class MeshApp : public App {
  public:
-  const char* name() const override { return "Mesh"; }
+  const char* id()   const override { return "Mesh"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppMesh); }
 
   void onEnter() override {
     if (!s_initTried) {

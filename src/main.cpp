@@ -145,12 +145,12 @@ void setup() {
   appmgr::add(mesh_app::get());
   appmgr::add(settings_app::get());
   appmgr::add(games_app::get());
-  launcher::setTile(0, "Musik",    music_app::get());
-  launcher::setTile(1, "Hörbuch",  book_app::get());
-  launcher::setTile(2, "Lesen",    reader_app::get());
-  launcher::setTile(3, "Mesh",     mesh_app::get());
-  launcher::setTile(4, "Optionen", settings_app::get());
-  launcher::setTile(5, "Spiele",   games_app::get());
+  launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
+  launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
+  launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
+  launcher::setTile(3, i18n::Str::TileMesh,     mesh_app::get());
+  launcher::setTile(4, i18n::Str::TileSettings, settings_app::get());
+  launcher::setTile(5, i18n::Str::TileGames,    games_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 

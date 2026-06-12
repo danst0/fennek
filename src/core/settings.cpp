@@ -12,6 +12,7 @@ bool        s_open = false;
 // Gecachte Werte: Vergleich vor jedem Write (NVS nur bei echter Änderung).
 uint8_t  s_volume = 255;        // 255 = noch nicht geladen
 uint8_t  s_standby = 5;         // Auto-Standby-Minuten (0 = aus)
+uint8_t  s_lang = 0;            // UI-Sprache (0 = Deutsch, s. i18n::Lang)
 char     s_lastApp[24] = "";
 char     s_lastTrack[192] = "";
 uint32_t s_lastPos = 0;
@@ -64,6 +65,7 @@ void begin() {
   migrateFromMeck();
   s_volume = s_prefs.getUChar("vol", 255);
   s_standby = s_prefs.getUChar("stdby", 5);
+  s_lang = s_prefs.getUChar("lang", 0);
   if (s_prefs.isKey("lastapp")) s_prefs.getString("lastapp", s_lastApp, sizeof(s_lastApp));
   if (s_prefs.isKey("trkpath")) s_prefs.getString("trkpath", s_lastTrack, sizeof(s_lastTrack));
   s_lastPos = s_prefs.getULong("trkpos", 0);
@@ -83,6 +85,14 @@ void setStandbyMinutes(uint8_t m) {
   if (!s_open || m == s_standby) return;
   s_standby = m;
   s_prefs.putUChar("stdby", m);
+}
+
+uint8_t language() { return s_lang; }
+
+void setLanguage(uint8_t lang) {
+  if (!s_open || lang == s_lang) return;
+  s_lang = lang;
+  s_prefs.putUChar("lang", lang);
 }
 
 void lastApp(char* out, size_t n) {

@@ -10,6 +10,7 @@
 #include "config.h"
 #include "core/appmgr.h"
 #include "core/gui.h"
+#include "core/i18n.h"
 #include "core/settings.h"
 #include "apps/games_app.h"
 #include "apps/ttt_core.h"
@@ -116,15 +117,15 @@ void draw(Adafruit_GFX& g) {
   // Kopfzeile: Modus + Status.
   char head[48];
   int w = ttt::winner(s_board);
-  if (w == 1)      snprintf(head, sizeof(head), s_mode ? "X gewinnt!" : "Du gewinnst!");
-  else if (w == 2) snprintf(head, sizeof(head), s_mode ? "O gewinnt!" : "Fennek gewinnt!");
-  else if (w == 3) snprintf(head, sizeof(head), "Remis!");
-  else if (s_mode) snprintf(head, sizeof(head), "%s ist dran", s_turn == 1 ? "X" : "O");
-  else             snprintf(head, sizeof(head), "Du bist X");
+  if (w == 1)      snprintf(head, sizeof(head), "%s", s_mode ? i18n::tr(i18n::Str::TttXWins) : i18n::tr(i18n::Str::TttYouWin));
+  else if (w == 2) snprintf(head, sizeof(head), "%s", s_mode ? i18n::tr(i18n::Str::TttOWins) : i18n::tr(i18n::Str::TttFennekWins));
+  else if (w == 3) snprintf(head, sizeof(head), "%s", i18n::tr(i18n::Str::TttDraw));
+  else if (s_mode) snprintf(head, sizeof(head), i18n::tr(i18n::Str::FmtTttTurn), s_turn == 1 ? "X" : "O");
+  else             snprintf(head, sizeof(head), "%s", i18n::tr(i18n::Str::TttYouAreX));
   gui::printAt(g, 12, kHeaderY, head, 2);
   g.setTextSize(1);
   g.setCursor(12, kHeaderY + 22);
-  gui::print(g, s_mode == 0 ? "Gegner: Fennek" : "2 Spieler am Gerät");
+  gui::print(g, s_mode == 0 ? i18n::tr(i18n::Str::TttVsFennek) : i18n::tr(i18n::Str::TttTwoPlayers));
 
   // Gitter (3 px dick).
   for (int i = 1; i < 3; i++) {
@@ -135,11 +136,11 @@ void draw(Adafruit_GFX& g) {
 
   g.setTextSize(1);
   g.setCursor(12, kFooterY);
-  gui::print(g, "N=Neu  M=Modus  Backspace=Menü");
+  gui::print(g, i18n::tr(i18n::Str::TttKeyHint));
 }
 
 void menuLine(char* out, size_t n) {
-  snprintf(out, n, "Siege: %u  ·  Remis: %u",
+  snprintf(out, n, i18n::tr(i18n::Str::FmtTttWins),
            (unsigned)settings::tttWins(), (unsigned)settings::tttDraws());
 }
 

@@ -1,7 +1,7 @@
 // =============================================================================
 // screenshot.cpp — Host-Renderer für README-Screenshots (kein Firmware-Build).
 //
-// Rendert vier Bildschirme von Fennek mit Beispiel-Daten in einen 1-Bit-
+// Rendert fünf Bildschirme von Fennek mit Beispiel-Daten in einen 1-Bit-
 // GFXcanvas1 (240x320) — exakt derselbe Adafruit-GFX-Zeichencode + dieselben
 // CP437-Fonts wie auf dem E-Ink, also pixelgenau. Da die echten draw()-Methoden
 // in anonymen Namespaces / hinter Geräte-Zustand liegen, sind die Zeichen-
@@ -221,6 +221,92 @@ static void screenMusic(Adafruit_GFX& g) {
 }
 
 // =============================================================================
+// Einstellungen — gespiegelt aus apps/settings_app.cpp (draw + rowLabel).
+// =============================================================================
+static void settingsSectionHeader(Adafruit_GFX& g, int y, const char* title) {
+  static constexpr int SEC_H = 15;
+  g.setTextSize(1);
+  g.setCursor(8, y + 3);
+  gui::print(g, title);
+  g.drawFastHLine(0, y + SEC_H - 1, EINK_W, GxEPD_BLACK);
+}
+
+static void settingsRow(Adafruit_GFX& g, int y, const char* label,
+                        const char* value, bool sel, bool arrows) {
+  static constexpr int W = EINK_W, ROW_H = 24, VAL_RIGHT = EINK_W - 22;
+
+  g.setTextSize(1);
+  g.setCursor(10, y + 8);
+  gui::print(g, label);
+
+  g.setTextSize(2);
+  uint16_t vw, vh;
+  gui::textBounds(g, value, &vw, &vh);
+  int vx = VAL_RIGHT - (int)vw;
+  g.setCursor(vx, y + 5);
+  gui::print(g, value);
+
+  g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
+
+  if (sel) {
+    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
+    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+    if (arrows) {
+      g.setTextSize(1);
+      g.setCursor(vx - 15, y + 8);
+      g.write((uint8_t)0x11);            // ◄
+      g.setCursor(W - 13, y + 8);
+      g.write((uint8_t)0x10);            // ►
+    }
+  }
+}
+
+static void screenSettings(Adafruit_GFX& g) {
+  static constexpr int TOP = CONTENT_Y;            // 24
+  static constexpr int SEC_H = 15, ROW_H = 24, NUM_FUNK = 7;
+  static constexpr int FUNK_Y = TOP + SEC_H;       // 39
+  static constexpr int SYS_HDR_Y = FUNK_Y + NUM_FUNK * ROW_H;  // 207
+  static constexpr int SYS_Y = SYS_HDR_Y + SEC_H;  // 222
+  const Rect kHome{6, 274, 110, 40};
+  static constexpr int FOOT_X = 120;
+  // Fixture (Deutsch): EU-Narrow-Preset, Frequenz ausgewählt, Name "T-Deck".
+  struct { const char* label; const char* value; } rows[] = {
+    {"Preset",        "EU Narrow"},
+    {"Frequenz",      "869.618 MHz"},
+    {"Bandbreite",    "62.5 kHz"},
+    {"Spreading",     "SF8"},
+    {"Coding-Rate",   "4/5"},
+    {"Sendeleistung", "22 dBm"},
+    {"Name",          "T-Deck"},
+    {"Sprache",       "Deutsch"},
+    {"Auto-Standby",  "5 min"},
+  };
+  const int sel = 1;
+
+  drawStatusBar(g, "Einstellungen", 87, false, 0);
+  g.setTextColor(GxEPD_BLACK);
+
+  settingsSectionHeader(g, TOP, "Funk — wirkt sofort");
+  for (int r = 0; r < NUM_FUNK; r++)
+    settingsRow(g, FUNK_Y + r * ROW_H, rows[r].label, rows[r].value,
+                r == sel, r != 6 /* Name ohne Pfeile */);
+
+  settingsSectionHeader(g, SYS_HDR_Y, "System");
+  for (int r = NUM_FUNK; r < 9; r++)
+    settingsRow(g, SYS_Y + (r - NUM_FUNK) * ROW_H, rows[r].label, rows[r].value,
+                r == sel, true);
+
+  gui::drawButton(g, kHome, "Home", false);
+  g.setTextSize(1);
+  g.setCursor(FOOT_X, 280);
+  gui::print(g, "A/D bzw. Tap ändert");
+  g.setCursor(FOOT_X, 294);
+  gui::print(g, "Akku 87% (4012 mV)");
+  g.setCursor(FOOT_X, 308);
+  gui::print(g, "Fennek v1.4.0");
+}
+
+// =============================================================================
 // Sleep-Screen — gespiegelt aus core/power.cpp (drawSleepScreen).
 // =============================================================================
 static void screenSleep(Adafruit_GFX& g) {
@@ -244,6 +330,7 @@ int main(int argc, char** argv) {
     {"launcher.pgm", screenLauncher},
     {"games-ttt.pgm", screenTtt},
     {"music.pgm", screenMusic},
+    {"settings.pgm", screenSettings},
     {"sleep.pgm", screenSleep},
   };
 

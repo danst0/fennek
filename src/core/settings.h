@@ -28,6 +28,10 @@ void    setLastApp(const char* name);
 uint8_t standbyMinutes();
 void    setStandbyMinutes(uint8_t m);  // schreibt nur bei Änderung
 
+// UI-Sprache (Index in i18n::Lang; 0 = Deutsch). Wird in i18n::tr() gelesen.
+uint8_t language();
+void    setLanguage(uint8_t lang);     // schreibt nur bei Änderung
+
 // --- Musik: zuletzt gespielter Track (für Resume) ----------------------------
 // Pfad + Position; leerer Pfad = nichts gespeichert.
 void    lastTrack(char* pathOut, size_t n, uint32_t* posSec);
