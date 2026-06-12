@@ -33,8 +33,8 @@ stottert und Eingaben sofort reagieren — Details in [`CLAUDE.md`](CLAUDE.md)
 ## Bauen & Flashen
 
 ```bash
-pio run -e mp3player              # bauen
-pio run -e mp3player -t upload    # flashen (USB-C)
+pio run -e fennek              # bauen
+pio run -e fennek -t upload    # flashen (USB-C)
 pio device monitor -b 115200      # Log + Debug-Konsole
 ```
 
