@@ -276,8 +276,13 @@ class MeshClient : public BaseChatMesh {
   fs::FS* _fs;
   NodePrefs _prefs;
   ChannelDetails* _public;
-  uint32_t _expectedAck;
-  int _expectedAckMsg;     // Ringpuffer-Slot der Nachricht, auf die der ACK gehört
+  // Ausstehende DM-ACKs. Mehrere parallele DMs müssen ihren Zustellstatus
+  // unabhängig behalten — ein einzelner Slot würde beim zweiten Senden den
+  // ersten überschreiben und dessen ACK verpuffen lassen. Ringbelegung.
+  static constexpr int kAckSlots = 8;
+  struct AckSlot { uint32_t ack; int msgIdx; };
+  AckSlot _acks[kAckSlots];
+  int _lastAckSlot;        // jüngst belegter Slot (für onSendTimeout)
 
   void loadContacts() {
     if (!_fs->exists("/contacts")) return;
@@ -370,24 +375,34 @@ protected:
   }
 
   ContactInfo* processAck(const uint8_t* data) override {
-    if (_expectedAck && memcmp(data, &_expectedAck, 4) == 0) {
-      _expectedAck = 0;
-      if (s_msgs && _expectedAckMsg >= 0) {
-        s_msgs[_expectedAckMsg].ackState = 2;   // zugestellt
-        s_changes++;
+    for (int i = 0; i < kAckSlots; i++) {
+      if (_acks[i].ack && memcmp(data, &_acks[i].ack, 4) == 0) {
+        if (s_msgs && _acks[i].msgIdx >= 0) {
+          s_msgs[_acks[i].msgIdx].ackState = 2;   // zugestellt
+          s_changes++;
+        }
+        _acks[i].ack = 0;
+        _acks[i].msgIdx = -1;
+        break;
       }
-      _expectedAckMsg = -1;
     }
     return NULL;
   }
 
   void onSendTimeout() override {
-    if (s_msgs && _expectedAckMsg >= 0 && s_msgs[_expectedAckMsg].ackState == 1) {
-      s_msgs[_expectedAckMsg].ackState = 3;     // Timeout
-      s_changes++;
+    // Der Base-Stack timeoutet nur den jeweils in-flight-Sendevorgang — das ist
+    // der zuletzt belegte Slot. Ältere ausstehende ACKs bleiben "ausstehend"
+    // (akzeptierte Grenze: ihre Zustellung kann noch per processAck eintreffen).
+    if (_lastAckSlot >= 0 && _acks[_lastAckSlot].ack) {
+      int mi = _acks[_lastAckSlot].msgIdx;
+      if (s_msgs && mi >= 0 && s_msgs[mi].ackState == 1) {
+        s_msgs[mi].ackState = 3;     // Timeout
+        s_changes++;
+      }
+      _acks[_lastAckSlot].ack = 0;
+      _acks[_lastAckSlot].msgIdx = -1;
     }
-    _expectedAck = 0;
-    _expectedAckMsg = -1;
+    _lastAckSlot = -1;
   }
 
   void onMessageRecv(const ContactInfo& from, mesh::Packet* pkt,
@@ -447,8 +462,8 @@ public:
     _prefs.freq = LORA_FREQ;
     _prefs.tx_power_dbm = LORA_TX_POWER;
     _public = NULL;
-    _expectedAck = 0;
-    _expectedAckMsg = -1;
+    for (int i = 0; i < kAckSlots; i++) { _acks[i].ack = 0; _acks[i].msgIdx = -1; }
+    _lastAckSlot = -1;
   }
 
   const char* name() const { return _prefs.node_name; }
@@ -578,8 +593,13 @@ public:
     m.contactIdx = (uint8_t)contactIdx;
     int slot = s_msgHead;
     pushMsg(m);
-    _expectedAck = ack;
-    _expectedAckMsg = slot;
+    // Freien ACK-Slot belegen (sonst ältesten überschreiben — Ringverhalten).
+    int as = -1;
+    for (int i = 0; i < kAckSlots; i++) if (!_acks[i].ack) { as = i; break; }
+    if (as < 0) as = (_lastAckSlot + 1) % kAckSlots;
+    _acks[as].ack = ack;
+    _acks[as].msgIdx = slot;
+    _lastAckSlot = as;
     return slot;
   }
 };
@@ -722,6 +742,25 @@ bool sendDirectMsg(int contactIdx, const char* text) {
   return slot >= 0;
 }
 
+bool resendDirect(int contactIdx) {
+  if (!s_ready) return false;
+  // Jüngste fehlgeschlagene DM (ackState==3) dieses Kontakts suchen (neu->alt).
+  for (int i = s_msgLen - 1; i >= 0; i--) {
+    MsgView m;
+    if (!msg(i, m)) continue;
+    if (m.kind == 2 && m.ackState == 3 && (int)m.contactIdx == contactIdx) {
+      char text[sizeof(m.text)];
+      strncpy(text, m.text, sizeof(text) - 1);
+      text[sizeof(text) - 1] = '\0';
+      spiLock();
+      int slot = s_mesh->sendDirect(contactIdx, text);   // neuer Sendeversuch
+      spiUnlock();
+      return slot >= 0;
+    }
+  }
+  return false;
+}
+
 void sendAdvert() {
   if (!s_ready) return;
   spiLock();
@@ -784,6 +823,16 @@ bool contactName(int i, char* out, size_t n) {
   if (!s_mesh->getContactByIdx(i, c)) return false;
   strncpy(out, c.name, n - 1);
   out[n - 1] = '\0';
+  return true;
+}
+
+bool contactDetail(int i, uint8_t* hops, uint32_t* lastSeen, uint8_t* type) {
+  if (!s_ready) return false;
+  ContactInfo c;
+  if (!s_mesh->getContactByIdx(i, c)) return false;
+  if (hops)     *hops     = c.out_path_len;        // 0xFF = unbekannt (Flood)
+  if (lastSeen) *lastSeen = c.last_advert_timestamp;
+  if (type)     *type     = c.type;
   return true;
 }
 

@@ -93,8 +93,12 @@
   X(MeshContacts,  "Kontakte",       "Contatti",        "Kontakter",      "Contacts",        "Contactos") \
   X(MeshNoMsgs,    "(noch keine Nachrichten)", "(ancora nessun messaggio)", "(inga meddelanden än)", "(no messages yet)", "(sin mensajes aún)") \
   X(MeshNoContacts,"Keine Kontakte", "Nessun contatto", "Inga kontakter", "No contacts",     "Sin contactos") \
-  X(MeshCtHint1,   "Kontakte erscheinen automatisch,", "I contatti appaiono da soli,", "Kontakter dyker upp automatiskt", "Contacts appear automatically", "Los contactos aparecen solos") \
-  X(MeshCtHint2,   "sobald Adverts empfangen werden.", "quando arrivano gli advert.",  "när adverts tas emot.",           "when adverts are received.",    "al recibir adverts.") \
+  X(MeshCtHint1,   "Noch keine Chats.",               "Ancora nessuna chat.",         "Inga chattar än.",               "No chats yet.",                 "Aún no hay chats.") \
+  X(MeshCtHint2,   "Kontakte-Button zeigt alle Knoten.", "Il tasto Contatti mostra i nodi.", "Kontakter-knappen visar noder.", "Contacts button lists all nodes.", "Contactos muestra los nodos.") \
+  X(FmtMeshStatus, "NF%d RX%lu TX%lu  %dKt %s", "NF%d RX%lu TX%lu  %dKt %s", "NF%d RX%lu TX%lu  %dKt %s", "NF%d RX%lu TX%lu  %dCt %s", "NF%d RX%lu TX%lu  %dCt %s") /* fmt: %d %lu %lu %d %s */ \
+  X(MeshResendHint,"Enter: ! erneut senden", "Enter: rinvia !", "Enter: skicka ! igen", "Enter: resend !", "Enter: reenviar !") \
+  X(FmtAge,        "vor %s",     "%s fa",    "%s sedan", "%s ago",   "hace %s") /* fmt: %s */ \
+  X(BtnRetry,      "Erneut",     "Ripeti",   "Igen",     "Retry",    "Reint.") /* 72 px, max 6 */ \
   X(MeshNoRadio,   "Radio nicht gefunden", "Radio non trovata", "Radion hittades inte", "Radio not found", "Radio no encontrada") \
   X(MeshInitFail,  "SX1262-Init fehlgeschlagen.", "Init SX1262 fallita.", "SX1262-init misslyckades.", "SX1262 init failed.", "Fallo de init SX1262.") \
   X(MeshSeeLog,    "Details im Serial-Log.", "Dettagli nel log seriale.", "Detaljer i seriell logg.", "Details in serial log.", "Detalles en el log serie.") \
