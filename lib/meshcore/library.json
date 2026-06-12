@@ -1,7 +1,8 @@
 {
   "name": "meshcore",
   "version": "1.11.0",
-  "description": "MeshCore-Stack (vendored Subset aus archive_legacy fuer den Mesh-Client)",
+  "description": "MeshCore-Stack (vendored Subset von Scott Powell / rippleradios.com fuer den Mesh-Client)",
+  "license": "MIT",
   "build": {
     "srcDir": "src",
     "includeDir": "src"
