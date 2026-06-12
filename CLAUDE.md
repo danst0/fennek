@@ -25,6 +25,7 @@ Debug-Flags (als `-D` ergänzen):
 - `AUDIO_DEBUG_GAP` — Stotter-Test: loggt `[GAP] … maxGap=…ms`; muss unter der I2S-DMA-Tiefe (~90 ms) bleiben.
 - `PLAYLIST_SELFTEST` — schreibt/scannt/löscht eine Test-`.m3u` beim Boot.
 - `MESH_SMOKE_TEST` — initialisiert das Mesh-Radio beim Boot (Verifikation ohne UI).
+- `GAMES_SMOKE_TEST` — klickt beim Boot alle vier Spiele synthetisch durch (Draw-Pfade + Schach-KI-Task; Verifikation ohne Hand am Gerät).
 
 ## Toolchain ist bewusst gepinnt — nicht aktualisieren
 
@@ -74,6 +75,7 @@ Diese Invarianten dürfen nicht brechen:
 - `apps/reader_app.*` — `/books` (.txt/.epub), Konvertierungs-/Index-Fortschritt (abbrechbar), Blättern per Touch-Hälften bzw. A/D.
 - `apps/mesh_client.*` — `MeshClient : BaseChatMesh` (lib/meshcore), SX1262 über `g_spi`, SPIFFS-Persistenz, Nachrichten-Ringpuffer (PSRAM), Public-Channel + DMs mit ACK-Status. Alle Nachrichten (ein-/ausgehend) werden zusätzlich nach **`/meshcore/messages.log`** auf SD geschrieben (Tab-getrennt, Rotation bei 256 KB) und beim Mesh-Start die letzten ~50 zurückgeladen — ohne SD wird still übersprungen.
 - `apps/mesh_app.*` — Kanal-/Kontakte-/DM-Screens mit Compose-Zeile (Tastatur tippt direkt). Radio-Init lazy beim ersten Betreten; Pumpe läuft danach in `background()` dauerhaft.
+- `apps/games_app.*` — „Spiele“ (Kachel 5): Menü + Screen-Dispatch für 2048, Minensucher, Schach, Tic-Tac-Toe. UI-Module `game2048.*`/`mines.*`/`chess.*`/`ttt.*`; die Logik liegt in Arduino-freien Cores (`*_core.h`, `chess_core.cpp`) und ist **host-getestet** via `tools/host_test_games.cpp` (g++-Aufruf im Dateikopf; Schach Perft-verifiziert, TTT-Minimax verliert im kompletten Spielbaum nie). Schach-KI = Negamax+Alpha-Beta in eigenem FreeRTOS-Task (Prio 1, Core 1 — kein SPI/Audio); laufende Partie als NVS-Blob (`settings::chessGame`), Beststände in `settings::best2048/minesWins/…`. Ein `markDirty` pro Zug (Invariante 7); Minensucher entprellt Dauer-Taps pro Zelle (500 ms).
 - `main.cpp` — Init-Reihenfolge: Power → Display → Touch/Tastatur/Akku/Settings → SD/Library → Audio → Apps/Launcher.
 
 ## Funkparameter
@@ -82,7 +84,7 @@ Default = **„EU/UK Narrow“** (Standard in Deutschland/NRW, identisch zu Dani
 
 ## Verifikationsstand
 
-Am Gerät verifiziert: Display, Touch, Tastatur, Akku-Gauge, NVS, No-SD-Pfade, Audio-Task. **Mesh end-to-end bestätigt (11.06.2026, EU Narrow):** ~19 NRW-Kontakte aus Adverts, Channel-Nachrichten in beide Richtungen — eigene `#test`-Nachricht lief über 9 Hops zum Bot `D-BO-BOT-01` (Bochum), dessen `ack @[T-Deck]`-Antwort kam zurück. Kontakte überleben Reboot (SPIFFS), SD-Log + History-Reload funktionieren. Mit SD: 512-Track-Scan + ID3-Tag-Scan inkl. Cache. textdoc host-getestet.
+Am Gerät verifiziert: Display, Touch, Tastatur, Akku-Gauge, NVS, No-SD-Pfade, Audio-Task. **Mesh end-to-end bestätigt (11.06.2026, EU Narrow):** ~19 NRW-Kontakte aus Adverts, Channel-Nachrichten in beide Richtungen — eigene `#test`-Nachricht lief über 9 Hops zum Bot `D-BO-BOT-01` (Bochum), dessen `ack @[T-Deck]`-Antwort kam zurück. Kontakte überleben Reboot (SPIFFS), SD-Log + History-Reload funktionieren. Mit SD: 512-Track-Scan + ID3-Tag-Scan inkl. Cache. textdoc host-getestet. Spiele (11.06.2026): Cores host-getestet (2301 Checks, Perft bis 197281 Knoten) + `GAMES_SMOKE_TEST` am Gerät grün (alle Draw-Pfade, Schach-KI Tiefe 3 in ~120 ms, NVS-Save, Heap stabil).
 
 **Drei am Gerät gefundene, gefixte Fallen (nicht reintroduzieren!):**
 1. `initContacts()` muss in `MeshClient::begin()` gerufen werden — sonst NULL-`contacts`-Crash beim ersten Advert.

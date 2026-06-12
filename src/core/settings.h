@@ -65,6 +65,21 @@ void       setMeshParams(const MeshParams& p);   // schreibt nur Änderungen
 void meshName(char* out, size_t n);              // Node-Name (Default "T-Deck")
 void setMeshName(const char* name);
 
+// --- Spiele: Beststände + Schach-Spielstand (Namespace "fennek") --------------
+// Schreibdisziplin: Writes nur am Spielende bzw. beim Verlassen (Schach-Blob).
+uint32_t best2048();                       // 0 = noch kein Score
+void     setBest2048(uint32_t score);      // schreibt nur bei neuem Rekord
+uint16_t minesWins();
+uint16_t minesBestSec();                   // 0 = noch kein Sieg
+void     setMinesResult(bool won, uint16_t sec);
+uint16_t chessWins();                      // Siege gegen das Gerät
+void     addChessWin();
+bool     chessGame(void* buf, size_t n);   // laufende Partie laden (true = da)
+void     setChessGame(const void* buf, size_t n);   // n=0 löscht
+uint16_t tttWins();
+uint16_t tttDraws();
+void     addTttResult(bool win, bool draw);
+
 // CRC32-Helfer (Cache-/Bookmark-Keys).
 uint32_t crc32(const char* s);
 
