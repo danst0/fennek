@@ -361,7 +361,7 @@ void drawEditor(Adafruit_GFX& g) {
     y += EDIT_LINEH;
   }
 
-  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
 }
 
 void drawConfirmDel(Adafruit_GFX& g) {
@@ -374,7 +374,7 @@ void drawConfirmDel(Adafruit_GFX& g) {
     gui::printAt(g, 10, 90, date, 2);
   }
   gui::printAt(g, 10, 130, i18n::tr(i18n::Str::NotesDelQ), 2);
-  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
 }
 
 // --- Interaktion -------------------------------------------------------------
