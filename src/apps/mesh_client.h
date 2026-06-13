@@ -47,6 +47,9 @@ uint32_t changeCounter();               // erhöht sich bei jeder Änderung
 bool sendChannelMsg(const char* text);  // an den Public-Channel
 bool sendChannelIdxMsg(int channelIdx, const char* text);  // an Kanal nach Index
 bool sendDirectMsg(int contactIdx, const char* text);
+// Letzte fehlgeschlagene DM (ackState==3 Timeout) an diesen Kontakt erneut senden.
+// false, wenn keine fehlgeschlagene DM existiert. Setzt ackState wieder auf "ausstehend".
+bool resendDirect(int contactIdx);
 void sendAdvert();                      // Zero-Hop-Advert ("ich bin hier")
 
 // --- Hashtag-Channels (Mesh-Rheinland-Konvention) ---------------------------------
@@ -60,6 +63,10 @@ bool channelName(int i, char* out, size_t n);
 // --- Kontakte ---------------------------------------------------------------------
 int  contactCount();
 bool contactName(int i, char* out, size_t n);
+// Detail eines Kontakts: hops = Hop-Anzahl des bekannten Pfads (0xFF = unbekannt,
+// Flood), lastSeen = Advert-Zeitstempel (Unix-Epoche), type = ADV_TYPE_*.
+// Beliebige Out-Pointer dürfen NULL sein. false, wenn Index ungültig/nicht ready.
+bool contactDetail(int i, uint8_t* hops, uint32_t* lastSeen, uint8_t* type);
 
 const char* nodeName();
 void setNodeName(const char* name);     // persistiert + wirkt ab sofort
