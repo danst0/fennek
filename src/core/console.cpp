@@ -10,6 +10,9 @@
 #include "apps/mesh_client.h"
 #include "apps/reader_app.h"
 #include "services/webfm.h"
+#include "services/timesync.h"
+
+#include <time.h>
 
 #include <Arduino.h>
 #include <SD.h>
@@ -36,6 +39,10 @@ bool ensureMesh() {
 void cmdHelp() {
   Serial.println("[CON] Befehle:");
   Serial.println("[CON]   status            - Systen-/Mesh-Status");
+  Serial.println("[CON]   time              - Uhrzeit/Qualität/Quelle (Zeit-Sync)");
+  Serial.println("[CON]   time set <...>    - Zeit setzen (YYYY-MM-DD HH:MM, lokal)");
+  Serial.println("[CON]   time sync         - NTP-Sync jetzt erzwingen (WLAN)");
+  Serial.println("[CON]   tz <POSIX-TZ>     - Zeitzone setzen (Default Europe/Berlin)");
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden");
@@ -147,9 +154,10 @@ const char* i2cKnownName(uint8_t addr) {
 }
 
 // I2C-Bus abklopfen (0x08..0x77). Diagnose-Befehl: zeigt, was wirklich auf dem
-// Bus hängt — insbesondere ob auf 0x51 ein RTC-Chip ackt (sonst fährt die Mesh-
-// App auf der reinen Software-Uhr VolatileRTCClock). Läuft im Arduino-loop()
-// wie der Rest des I2C-Pollings, daher kein SPI-Lock nötig (eigener Bus).
+// Bus hängt — insbesondere ob auf 0x51 ein RTC-Chip ackt (es gibt keinen; die
+// Uhr läuft auf der ESP32-Systemzeit, frisch gehalten von services/timesync aus
+// Mesh-Adverts + NTP). Läuft im Arduino-loop() wie der Rest des I2C-Pollings,
+// daher kein SPI-Lock nötig (eigener Bus).
 void cmdI2cScan() {
   Serial.println("[CON] I2C-Scan (SDA 13 / SCL 14):");
   int found = 0;
@@ -190,9 +198,49 @@ void cmdStatus() {
   Serial.printf("[CON] Mesh: '%s' @ %.3f MHz SF%u BW%.1f CR4/%u %udBm | NoiseFloor=%d dBm RX=%lu TX=%lu\n",
                 mesh_client::nodeName(), (double)p.freqMhz, p.sf, (double)p.bwKhz,
                 p.cr, p.txDbm, nf, (unsigned long)rx, (unsigned long)tx);
-  Serial.printf("[CON] Kontakte=%d Nachrichten=%d RTC=%lu\n",
+  Serial.printf("[CON] Kontakte=%d Nachrichten=%d RTC=%lu Quelle=%s estErr=%lus\n",
                 mesh_client::contactCount(), mesh_client::msgCount(),
-                (unsigned long)mesh_client::rtcTime());
+                (unsigned long)mesh_client::rtcTime(),
+                timesync::source(), (unsigned long)timesync::estErrSeconds());
+}
+
+// Uhr-Diagnose (Zeit-Koordinator): lokale + UTC-Zeit, Quelle, Qualität, Drift.
+void cmdTime() {
+  uint32_t e = timesync::now();
+  time_t   tt = (time_t)e;
+  struct tm utc, loc;
+  gmtime_r(&tt, &utc);
+  localtime_r(&tt, &loc);   // Zeitzone via timesync::applyTimezone gesetzt
+  char tz[48];
+  settings::tzString(tz, sizeof(tz));
+  Serial.printf("[CON] Zeit lokal: %04d-%02d-%02d %02d:%02d:%02d (%s)\n",
+                loc.tm_year + 1900, loc.tm_mon + 1, loc.tm_mday,
+                loc.tm_hour, loc.tm_min, loc.tm_sec, tz);
+  Serial.printf("[CON]   UTC=%lu (%02d:%02d:%02d) Quelle=%s Qualität=%s "
+                "estErr=%lus Drift=%uppm\n",
+                (unsigned long)e, utc.tm_hour, utc.tm_min, utc.tm_sec,
+                timesync::source(), timesync::qualityStr(),
+                (unsigned long)timesync::estErrSeconds(), timesync::driftPpm());
+}
+
+// `time set YYYY-MM-DD HH:MM[:SS]` — lokale Zeit setzen (über die Zeitzone nach
+// UTC umgerechnet). Fallback, wenn nie WLAN/Mesh erreichbar ist.
+void cmdTimeSet(const char* arg) {
+  struct tm lt;
+  memset(&lt, 0, sizeof(lt));
+  int y, mo, d, h, mi, s = 0;
+  int got = sscanf(arg, "%d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s);
+  if (got < 5) {
+    Serial.println("[CON] Nutzung: time set YYYY-MM-DD HH:MM[:SS] (lokale Zeit)");
+    return;
+  }
+  lt.tm_year = y - 1900; lt.tm_mon = mo - 1; lt.tm_mday = d;
+  lt.tm_hour = h; lt.tm_min = mi; lt.tm_sec = s;
+  lt.tm_isdst = -1;                  // mktime soll Sommerzeit selbst bestimmen
+  time_t utc = mktime(&lt);          // interpretiert lt in der gesetzten Zeitzone
+  if (utc <= 0) { Serial.println("[CON] Ungültiges Datum"); return; }
+  timesync::setManualTime((uint32_t)utc);
+  cmdTime();
 }
 
 void cmdContacts() {
@@ -233,6 +281,20 @@ void handleLine(char* line) {
 
   if (strcmp(line, "help") == 0)            { cmdHelp(); return; }
   if (strcmp(line, "status") == 0)          { cmdStatus(); return; }
+  if (strcmp(line, "time") == 0)            { cmdTime(); return; }
+  if (strncmp(line, "time set ", 9) == 0)   { cmdTimeSet(line + 9); return; }
+  if (strcmp(line, "time sync") == 0) {
+    if (!timesync::forceSyncNow()) Serial.println("[CON] NTP-Sync fehlgeschlagen");
+    else cmdTime();
+    return;
+  }
+  if (strncmp(line, "tz ", 3) == 0) {
+    settings::setTzString(line + 3);
+    timesync::applyTimezone();
+    Serial.printf("[CON] Zeitzone gesetzt: '%s'\n", line + 3);
+    cmdTime();
+    return;
+  }
   if (strcmp(line, "mesh init") == 0)       { ensureMesh(); return; }
   if (strcmp(line, "contacts") == 0)        { cmdContacts(); return; }
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }

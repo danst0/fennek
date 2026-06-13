@@ -7,12 +7,16 @@
 #include "core/battery.h"
 #include "core/settings.h"
 
+#include "services/timesync.h"
+
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <SD.h>
 #include <esp_heap_caps.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <sys/time.h>
 
 #include <Mesh.h>
 #include <SHA256.h>     // rweather/Crypto (Hashtag-Channel-PSK)
@@ -273,12 +277,30 @@ struct NodePrefs {
   uint8_t unused[3];
 };
 
+// Uhr auf Basis der ESP32-Systemzeit (settimeofday/gettimeofday). Anders als die
+// millis()-basierte VolatileRTCClock überlebt diese den Deep Sleep: der RTC-Zähler
+// des ESP32 läuft im Schlaf weiter, die Systemzeit springt beim Aufwachen um die
+// Schlafdauer vor (nur RTC-Oszillator-Drift). NTP (configTime) und Mesh-Adverts
+// schreiben beide dieselbe Systemzeit → automatisch konsistent. Verloren geht die
+// Zeit nur bei vollem Stromausfall/Reset/Reflash (dann greift der NVS-Fallback in
+// services/timesync). tick() ist daher ein No-op.
+class SystemRTCClock : public mesh::RTCClock {
+public:
+  uint32_t getCurrentTime() override { return (uint32_t)time(nullptr); }
+  void setCurrentTime(uint32_t t) override {
+    struct timeval tv = { (time_t)t, 0 };
+    settimeofday(&tv, nullptr);
+  }
+  void tick() override {}
+};
+
 // --- Statische Mesh-Objekte ----------------------------------------------------------
 TDeckMeshBoard       s_board;
 CustomSX1262*        s_radio = nullptr;
 CustomSX1262Wrapper* s_radioDrv = nullptr;
 StdRNG               s_rng;
-VolatileRTCClock     s_rtc;
+SystemRTCClock       s_rtc;
+bool                 s_clockConfident = false;  // erster bestätigter Sync seit Boot?
 SimpleMeshTables*    s_tables = nullptr;
 
 class MeshClient;
@@ -396,8 +418,9 @@ protected:
     // Nachrichten veraltete Timestamps und werden von Bots ignoriert.
     // Aber NICHT blind auf den größten Timestamp ratschen: ein einzelner
     // Node mit Zukunfts-Uhr zog uns am 12.06.2026 um +28 h mit. Regeln:
-    //   1. Bootstrap: solange die eigene Uhr vor kSaneEpoch steht, erste
-    //      plausible Advert-Zeit übernehmen.
+    //   1. Bootstrap: solange noch kein bestätigter Sync seit Boot vorliegt
+    //      (Kaltstart Mai 2024 ODER NVS-Restore, der >1 h hinterherhängen kann),
+    //      die erste plausible Advert-Zeit beliebig weit übernehmen.
     //   2. Danach nur kleine Vorwärts-Korrekturen (< 1 h).
     //   3. Rückwärts erst, wenn 3 Adverts in Folge > 1 h hinter uns liegen
     //      (Mehrheit hat recht, der Ausreißer nicht).
@@ -407,14 +430,17 @@ protected:
     static uint32_t s_behindMax = 0;
     static int      s_behindCnt = 0;
     if (t > kSaneEpoch) {
-      if (now < kSaneEpoch || (t > now && t - now < 3600)) {
+      if (!s_clockConfident || now < kSaneEpoch || (t > now && t - now < 3600)) {
         getRTCClock()->setCurrentTime(t + 1);
+        s_clockConfident = true;
         s_behindCnt = 0;
+        timesync::onExternalSync(t + 1, "Mesh");
         Serial.printf("[MESH] Uhr aus Advert gesetzt: %lu\n", (unsigned long)t);
       } else if (t + 3600 < now) {
         if (t > s_behindMax) s_behindMax = t;
         if (++s_behindCnt >= 3) {
           getRTCClock()->setCurrentTime(s_behindMax + 1);
+          timesync::onExternalSync(s_behindMax + 1, "Mesh");
           Serial.printf("[MESH] Uhr zurückgesetzt (3x Advert-Konsens): %lu\n",
                         (unsigned long)s_behindMax);
           s_behindCnt = 0;
@@ -782,7 +808,6 @@ void loop() {
   spiLock();
   s_mesh->loop();
   spiUnlock();
-  s_rtc.tick();
   // Im Mesh-Loop angefallene Nachrichten jetzt (lock-frei) auf SD loggen.
   flushLog();
   // Kontakt-Spiegel auf SD nachziehen (Callbacks markieren nur; gedrosselt,
@@ -994,6 +1019,16 @@ void applyRadioParams() {
 
 uint32_t rtcTime() {
   return s_ready ? s_rtc.getCurrentTime() : 0;
+}
+
+// Ungated (auch vor Mesh-Init): die Uhr ist die ESP32-Systemzeit, existiert ab Boot.
+uint32_t clockNow() {
+  return s_rtc.getCurrentTime();
+}
+
+void setRtcTime(uint32_t epoch, bool authoritative) {
+  s_rtc.setCurrentTime(epoch);
+  if (authoritative) s_clockConfident = true;
 }
 
 bool radioStats(int* noiseFloor, uint32_t* rxPkts, uint32_t* txPkts) {

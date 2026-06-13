@@ -11,6 +11,7 @@
 #include "core/settings.h"
 #include "core/sleep_img.h"
 #include "services/audio.h"
+#include "services/timesync.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -111,6 +112,11 @@ bool locked() { return s_locked; }
 void enterStandby() {
   Serial.println("[FENNEK] Standby — gehe in Deep Sleep ...");
 
+  // Aktuelle Uhrzeit ins NVS sichern (Fallback, falls der Akku im Schlaf stirbt;
+  // die ESP32-Systemzeit selbst überlebt den Deep Sleep ohne Zutun).
+  uint32_t t = timesync::now();
+  if (t > 1781000000UL) settings::setLastTime(t);
+
   // 1) Audio + DAC + Radio stilllegen.
   audio::stop();
   delay(60);                 // Audio-Task das Kommando abarbeiten lassen
@@ -210,6 +216,11 @@ void poll() {
   audio::Status st = audio::status();
   if (st.playing && !st.paused) { s_lastActivity = now; return; }
   if (now - s_lastActivity >= (uint32_t)mins * 60000UL) {
+    // Vor dem Auto-Standby (Gerät idle, Audio aus): wenn die Uhr-Qualität
+    // schlecht ist und WLAN-Daten existieren, kurz NTP nachziehen — so schläft
+    // das Gerät mit frischer Uhr ein. No-op sonst. (Beim manuellen Langdruck
+    // bewusst nicht — der Knopf soll sofort reagieren.)
+    timesync::syncBeforeStandby();
     enterStandby();
   }
 }

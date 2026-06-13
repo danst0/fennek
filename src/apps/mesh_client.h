@@ -81,7 +81,16 @@ void applyRadioParams();
 // Radio-Statistiken (Noise-Floor dBm, empfangene/gesendete Pakete).
 bool radioStats(int* noiseFloor, uint32_t* rxPkts, uint32_t* txPkts);
 
-// Aktuelle Mesh-Uhrzeit (Unix-Epoche; aus Adverts synchronisiert).
+// Aktuelle Mesh-Uhrzeit (Unix-Epoche; aus Adverts synchronisiert). 0 solange
+// Mesh nicht initialisiert.
 uint32_t rtcTime();
+
+// Aktuelle Uhrzeit der kanonischen Uhr (ESP32-Systemzeit), auch vor Mesh-Init
+// verfügbar — für den Zeit-Koordinator (services/timesync).
+uint32_t clockNow();
+
+// Uhr von außen setzen (NTP/NVS-Restore). authoritative=true markiert einen
+// bestätigten Sync: danach gilt wieder der enge ±1 h-Advert-Korrekturdeckel.
+void setRtcTime(uint32_t epoch, bool authoritative);
 
 }  // namespace mesh_client

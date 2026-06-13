@@ -78,6 +78,14 @@ void setWifiSsid(const char* ssid);
 void wifiPass(char* out, size_t n);
 void setWifiPass(const char* pass);
 
+// --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
+uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)
+void     setLastTime(uint32_t epoch);
+uint16_t clockPpm();                      // gelernte Oszillator-Drift; 0 = unbekannt
+void     setClockPpm(uint16_t ppm);
+void     tzString(char* out, size_t n);   // POSIX-TZ (Default Europe/Berlin)
+void     setTzString(const char* tz);
+
 // --- Spiele: Beststände + Schach-Spielstand (Namespace "fennek") --------------
 // Schreibdisziplin: Writes nur am Spielende bzw. beim Verlassen (Schach-Blob).
 uint32_t best2048();                       // 0 = noch kein Score

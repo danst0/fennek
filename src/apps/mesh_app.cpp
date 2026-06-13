@@ -12,6 +12,7 @@
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <string.h>
 #include <limits.h>
+#include <time.h>
 
 namespace {
 
@@ -113,9 +114,14 @@ int screenItemCount() {
 }
 
 // --- Zeit-Helfer --------------------------------------------------------------
+// Lokale Uhrzeit (Zeitzone via timesync::applyTimezone gesetzt) — die Uhr selbst
+// läuft intern in UTC.
 void fmtClock(uint32_t ts, char* out, size_t n) {
   if (!ts) { snprintf(out, n, "--:--"); return; }
-  snprintf(out, n, "%02u:%02u", (unsigned)((ts / 3600) % 24), (unsigned)((ts / 60) % 60));
+  time_t    tt = (time_t)ts;
+  struct tm lt;
+  localtime_r(&tt, &lt);
+  snprintf(out, n, "%02u:%02u", (unsigned)lt.tm_hour, (unsigned)lt.tm_min);
 }
 
 void fmtAge(uint32_t last, char* out, size_t n) {
@@ -164,9 +170,12 @@ void wrapInto(LineWindow& w, const char* text) {
 // Eine Nachricht zur Anzeigezeile (HH:MM-Prefix + Absender/ACK) formatieren.
 void buildLine(const mesh_client::MsgView& m, char* out, size_t n) {
   char ts[8] = "";
-  if (m.timestamp)
-    snprintf(ts, sizeof(ts), "%02u:%02u ",
-             (unsigned)((m.timestamp / 3600) % 24), (unsigned)((m.timestamp / 60) % 60));
+  if (m.timestamp) {
+    time_t    tt = (time_t)m.timestamp;
+    struct tm lt;
+    localtime_r(&tt, &lt);
+    snprintf(ts, sizeof(ts), "%02u:%02u ", (unsigned)lt.tm_hour, (unsigned)lt.tm_min);
+  }
   if (s_screen == CHANNEL) {
     snprintf(out, n, "%s%s", ts, m.text);
   } else {

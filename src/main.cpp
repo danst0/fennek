@@ -29,6 +29,7 @@
 #include "services/library.h"
 #include "services/audio.h"
 #include "services/webfm.h"
+#include "services/timesync.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
 #include "apps/book_app.h"
@@ -92,6 +93,9 @@ void setup() {
                 battOk ? "ok" : "NICHT gefunden",
                 battery::milliVolts(), battery::percent());
   settings::begin();
+  // Zeit-Koordinator: Uhr aus NVS wiederherstellen (Kaltstart) + Drift/Zeitzone
+  // laden. Muss nach settings::begin() laufen, braucht aber kein SD/Audio.
+  timesync::begin();
 
   // 4) SD + Bibliothek (ohne Karte läuft alles weiter, Apps zeigen Hinweis).
   bool sdOk = board::initSD();
@@ -249,6 +253,7 @@ void setup() {
 void loop() {
   console::poll();   // Serial-Debug-Konsole ('help' über USB)
   webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
+  timesync::poll();  // Zeit frisch halten (opportunistisch NTP, NVS-Sicherung)
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
 }

@@ -345,6 +345,48 @@ void setWifiPass(const char* pass) {
   s_prefs.putString("wpass", s_wifiPass);
 }
 
+// --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
+// Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
+// ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.
+uint32_t lastTime() {
+  if (!s_open || !s_prefs.isKey("ltime")) return 0;
+  return s_prefs.getUInt("ltime", 0);
+}
+
+void setLastTime(uint32_t epoch) {
+  if (!s_open) return;
+  if (s_prefs.getUInt("ltime", 0) == epoch) return;
+  s_prefs.putUInt("ltime", epoch);
+}
+
+uint16_t clockPpm() {
+  if (!s_open) return 0;
+  return s_prefs.getUShort("cppm", 0);
+}
+
+void setClockPpm(uint16_t ppm) {
+  if (!s_open) return;
+  if (s_prefs.getUShort("cppm", 0) == ppm) return;
+  s_prefs.putUShort("cppm", ppm);
+}
+
+// Zeitzone als POSIX-TZ-String (z. B. "CET-1CEST,M3.5.0,M10.5.0/3" = Europe/Berlin
+// inkl. automatischer Sommerzeit). Default Berlin. NTP/Mesh liefern nur UTC.
+void tzString(char* out, size_t n) {
+  const char* def = "CET-1CEST,M3.5.0,M10.5.0/3";
+  if (!s_open || !s_prefs.isKey("tz")) { strncpy(out, def, n - 1); out[n - 1] = '\0'; return; }
+  s_prefs.getString("tz", out, n);
+  if (!out[0]) { strncpy(out, def, n - 1); out[n - 1] = '\0'; }
+}
+
+void setTzString(const char* tz) {
+  if (!s_open || !tz || !tz[0]) return;
+  char cur[48];
+  tzString(cur, sizeof(cur));
+  if (strcmp(tz, cur) == 0) return;
+  s_prefs.putString("tz", tz);
+}
+
 // --- Spiele: Beststände + Schach-Spielstand ------------------------------------
 namespace {
 

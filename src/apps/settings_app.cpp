@@ -8,10 +8,12 @@
 #include "core/gui.h"
 #include "core/settings.h"
 #include "core/i18n.h"
+#include "services/timesync.h"
 
 #include <Arduino.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <string.h>
+#include <time.h>
 
 namespace {
 
@@ -19,26 +21,42 @@ using gui::Rect;
 
 // --- Layout -------------------------------------------------------------------
 // Kein eigener Titel — die Statuszeile zeigt bereits "Einstellungen".
-// Zwei Sektionen (Funk/System), darunter Home-Button + Info-Fußzeilen.
+// Zwei Sektionen (Funk/System) in einer scrollenden Liste (zusammen passen sie
+// nicht mehr aufs E-Ink), darunter Home-Button + Info-Fußzeilen.
 constexpr int W = EINK_W;
 constexpr int TOP       = appmgr::CONTENT_Y;              // 24
 constexpr int SEC_H     = 15;                             // Sektions-Überschrift
-constexpr int ROW_H     = 20;                             // 11 Zeilen müssen passen
+constexpr int ROW_H     = 20;
 constexpr int NUM_FUNK  = 7;                              // ROW_PRESET..ROW_NAME
-constexpr int FUNK_Y    = TOP + SEC_H;                    // 39
-constexpr int SYS_HDR_Y = FUNK_Y + NUM_FUNK * ROW_H;      // 179
-constexpr int SYS_Y     = SYS_HDR_Y + SEC_H;              // 194 (+4*20 = 274)
+constexpr int VP_TOP    = TOP;                            // Scroll-Viewport oben
+constexpr int VP_BOT    = 270;                            // … unten (darunter Home/Fuß)
 constexpr int VAL_RIGHT = W - 22;                         // Wert rechtsbündig, Platz für ►
 
 const Rect kHome {6, 274, 110, 40};
 constexpr int FOOT_X = 120;                               // Textspalte rechts vom Button
 
 // --- Zeilen ---------------------------------------------------------------------
+// Reihenfolge = Auswahlreihenfolge (W/S). Funk zuerst (7), dann System (6).
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
-  ROW_LANG, ROW_STANDBY, ROW_WSSID, ROW_WPASS,
+  ROW_LANG, ROW_STANDBY, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
   ROW_COUNT
 };
+
+// Scroll-Viewport: geordnete Liste aus Sektions-Überschriften und Zeilen.
+struct Entry { bool header; int id; };   // header: id 0=Funk,1=System; sonst RowId
+const Entry kEntries[] = {
+  {true, 0},
+  {false, ROW_PRESET}, {false, ROW_FREQ}, {false, ROW_BW}, {false, ROW_SF},
+  {false, ROW_CR}, {false, ROW_TX}, {false, ROW_NAME},
+  {true, 1},
+  {false, ROW_LANG}, {false, ROW_STANDBY}, {false, ROW_TZ}, {false, ROW_TIME},
+  {false, ROW_WSSID}, {false, ROW_WPASS},
+};
+constexpr int kNumEntries = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
+int s_scroll = 0;   // Index des ersten sichtbaren Eintrags
+
+int entryH(const Entry& e) { return e.header ? SEC_H : ROW_H; }
 
 // Auto-Standby-Stufen (Minuten; 0 = Aus).
 const uint8_t kStandbySteps[] = {0, 2, 5, 10, 30};
@@ -46,8 +64,19 @@ constexpr int kNumStandby = 5;
 
 // Per Tastatur editierbare Text-Zeilen (Enter startet, Enter speichert).
 bool rowEditable(int row) {
-  return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS;
+  return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS || row == ROW_TIME;
 }
+
+// Zeitzonen-Presets (POSIX-TZ inkl. automatischer Sommerzeit). NTP/Mesh liefern
+// nur UTC; die Zone ist eine reine Anzeige-Einstellung.
+struct TzPreset { const char* name; const char* tz; };
+const TzPreset kTz[] = {
+  {"Berlin", "CET-1CEST,M3.5.0,M10.5.0/3"},
+  {"London", "GMT0BST,M3.5.0/1,M10.5.0"},
+  {"UTC",    "UTC0"},
+  {"Athen",  "EET-2EEST,M3.5.0/3,M10.5.0/4"},
+};
+constexpr int kNumTz = (int)(sizeof(kTz) / sizeof(kTz[0]));
 
 int  s_sel = 0;
 int  s_edit = -1;          // gerade editierte Zeile (-1 = keine)
@@ -110,6 +139,17 @@ void changeRow(int row, int dir) {
     markDirty();
     return;
   }
+  if (row == ROW_TZ) {
+    char cur[48];
+    settings::tzString(cur, sizeof(cur));
+    int idx = 0;
+    for (int i = 0; i < kNumTz; i++) if (strcmp(kTz[i].tz, cur) == 0) idx = i;
+    idx = (idx + dir + kNumTz) % kNumTz;
+    settings::setTzString(kTz[idx].tz);
+    timesync::applyTimezone();
+    markDirty();
+    return;
+  }
   settings::MeshParams p = settings::meshParams();
   switch (row) {
     case ROW_PRESET: {
@@ -153,6 +193,8 @@ const char* rowName(int row) {
     case ROW_NAME:    return i18n::tr(Str::LblName);
     case ROW_LANG:    return i18n::tr(Str::SettingsLang);
     case ROW_STANDBY: return i18n::tr(Str::LblStandby);
+    case ROW_TZ:      return "Zeitzone";
+    case ROW_TIME:    return "Zeit";
     case ROW_WSSID:   return i18n::tr(Str::LblWifiSsid);
     case ROW_WPASS:   return i18n::tr(Str::LblWifiPass);
   }
@@ -187,6 +229,24 @@ void rowValue(int row, char* v, size_t n) {
       else        snprintf(v, n, "%u min", m);
       break;
     }
+    case ROW_TZ: {
+      char tz[48];
+      settings::tzString(tz, sizeof(tz));
+      int idx = -1;
+      for (int i = 0; i < kNumTz; i++) if (strcmp(kTz[i].tz, tz) == 0) idx = i;
+      snprintf(v, n, "%s", idx >= 0 ? kTz[idx].name : "eigen");
+      break;
+    }
+    case ROW_TIME:
+      // Beim Editieren der Eingabepuffer; sonst die aktuelle lokale Uhrzeit.
+      if (s_edit == ROW_TIME) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        time_t    tt = (time_t)timesync::now();
+        struct tm lt;
+        localtime_r(&tt, &lt);
+        snprintf(v, n, "%02u:%02u", (unsigned)lt.tm_hour, (unsigned)lt.tm_min);
+      }
+      break;
     case ROW_WSSID:
       if (s_edit == ROW_WSSID) snprintf(v, n, "%s_", s_editBuf);
       else {
@@ -206,16 +266,38 @@ void rowValue(int row, char* v, size_t n) {
   }
 }
 
-int rowY(int row) {
-  return (row < NUM_FUNK) ? FUNK_Y + row * ROW_H
-                          : SYS_Y + (row - NUM_FUNK) * ROW_H;
+// Entry-Index der ausgewählten Zeile (für Scroll-Sichtbarkeit).
+int entryIndexOfRow(int row) {
+  for (int i = 0; i < kNumEntries; i++)
+    if (!kEntries[i].header && kEntries[i].id == row) return i;
+  return 0;
 }
 
-// Welche Zeile liegt unter (x,y)? -1 = keine.
-int hitRow(int y) {
-  if (y >= FUNK_Y && y < FUNK_Y + NUM_FUNK * ROW_H) return (y - FUNK_Y) / ROW_H;
-  if (y >= SYS_Y && y < SYS_Y + (ROW_COUNT - NUM_FUNK) * ROW_H)
-    return NUM_FUNK + (y - SYS_Y) / ROW_H;
+// s_scroll so anpassen, dass die ausgewählte Zeile vollständig im Viewport liegt.
+void ensureVisible() {
+  int sidx = entryIndexOfRow(s_sel);
+  if (sidx < s_scroll) { s_scroll = sidx; return; }
+  while (s_scroll < sidx) {
+    int y = VP_TOP, lastFull = -1;
+    for (int i = s_scroll; i < kNumEntries; i++) {
+      int h = entryH(kEntries[i]);
+      if (y + h > VP_BOT) break;
+      lastFull = i; y += h;
+    }
+    if (sidx <= lastFull) break;
+    s_scroll++;
+  }
+}
+
+// Welche Zeile liegt unter dem Tap bei y? -1 = keine.
+int hitRow(int ty) {
+  int y = VP_TOP;
+  for (int i = s_scroll; i < kNumEntries; i++) {
+    int h = entryH(kEntries[i]);
+    if (y + h > VP_BOT) break;
+    if (!kEntries[i].header && ty >= y && ty < y + h) return kEntries[i].id;
+    y += h;
+  }
   return -1;
 }
 
@@ -228,9 +310,7 @@ void sectionHeader(Adafruit_GFX& g, int y, const char* title) {
 
 // Zeile: Label klein links, Wert groß rechtsbündig; ausgewählte Zeile mit
 // Doppelrahmen + ◄/►-Pfeilen als Hinweis auf die Tap-Hälften bzw. A/D.
-void drawRow(Adafruit_GFX& g, int row) {
-  const int y = rowY(row);
-
+void drawRow(Adafruit_GFX& g, int row, int y) {
   g.setTextSize(1);
   uint16_t lw, lh;
   gui::textBounds(g, rowName(row), &lw, &lh);
@@ -275,6 +355,15 @@ void startEdit(int row) {
     case ROW_NAME:  settings::meshName(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_WSSID: settings::wifiSsid(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_WPASS: settings::wifiPass(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_TIME: {
+      // Mit der aktuellen lokalen Zeit als Vorlage vorbelegen.
+      time_t    tt = (time_t)timesync::now();
+      struct tm lt;
+      localtime_r(&tt, &lt);
+      snprintf(s_editBuf, sizeof(s_editBuf), "%04d-%02d-%02d %02d:%02d",
+               lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min);
+      break;
+    }
     default: return;
   }
   s_edit = row;
@@ -288,6 +377,19 @@ void finishEdit(bool save) {
       case ROW_NAME:  if (s_editBuf[0]) mesh_client::setNodeName(s_editBuf); break;
       case ROW_WSSID: settings::setWifiSsid(s_editBuf); break;
       case ROW_WPASS: settings::setWifiPass(s_editBuf); break;
+      case ROW_TIME: {
+        // "YYYY-MM-DD HH:MM" als lokale Zeit lesen → über die Zeitzone nach UTC.
+        struct tm lt;
+        memset(&lt, 0, sizeof(lt));
+        int y, mo, d, h, mi;
+        if (sscanf(s_editBuf, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi) == 5) {
+          lt.tm_year = y - 1900; lt.tm_mon = mo - 1; lt.tm_mday = d;
+          lt.tm_hour = h; lt.tm_min = mi; lt.tm_isdst = -1;
+          time_t utc = mktime(&lt);
+          if (utc > 0) timesync::setManualTime((uint32_t)utc);
+        }
+        break;
+      }
     }
   }
   s_edit = -1;
@@ -366,11 +468,23 @@ class SettingsApp : public App {
     using i18n::Str;
     g.setTextColor(GxEPD_BLACK);
 
-    sectionHeader(g, TOP, i18n::tr(Str::SecRadio));
-    for (int r = 0; r < NUM_FUNK; r++) drawRow(g, r);
-
-    sectionHeader(g, SYS_HDR_Y, i18n::tr(Str::SecSystem));
-    for (int r = NUM_FUNK; r < ROW_COUNT; r++) drawRow(g, r);
+    ensureVisible();
+    int y = VP_TOP;
+    int last = s_scroll;
+    for (int i = s_scroll; i < kNumEntries; i++) {
+      int h = entryH(kEntries[i]);
+      if (y + h > VP_BOT) break;
+      if (kEntries[i].header)
+        sectionHeader(g, y, i18n::tr(kEntries[i].id == 0 ? Str::SecRadio : Str::SecSystem));
+      else
+        drawRow(g, kEntries[i].id, y);
+      y += h;
+      last = i;
+    }
+    // Scroll-Indikatoren (CP437 ▲/▼), wenn oberhalb/unterhalb mehr existiert.
+    g.setTextSize(1);
+    if (s_scroll > 0)            { g.setCursor(W - 9, VP_TOP + 1);  g.write((uint8_t)0x1E); }
+    if (last < kNumEntries - 1)  { g.setCursor(W - 9, VP_BOT - 8);  g.write((uint8_t)0x1F); }
 
     gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
     g.setTextSize(1);
