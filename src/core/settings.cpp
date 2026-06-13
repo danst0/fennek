@@ -346,6 +346,77 @@ void setWifiPass(const char* pass) {
   s_prefs.putString("wpass", s_wifiPass);
 }
 
+// --- Navidrome/Subsonic-Zugangsdaten -------------------------------------------
+namespace {
+
+bool s_navLoaded = false;
+bool s_navOn     = false;
+char s_navUrl[128]  = "";
+char s_navUser[64]  = "";
+char s_navPass[65]  = "";
+
+void navEnsure() {
+  if (s_navLoaded || !s_open) return;
+  s_navLoaded = true;
+  s_navOn = s_prefs.getBool("nscro", false);
+  if (s_prefs.isKey("nurl"))  s_prefs.getString("nurl",  s_navUrl,  sizeof(s_navUrl));
+  if (s_prefs.isKey("nuser")) s_prefs.getString("nuser", s_navUser, sizeof(s_navUser));
+  if (s_prefs.isKey("npass")) s_prefs.getString("npass", s_navPass, sizeof(s_navPass));
+}
+
+}  // namespace
+
+bool navEnabled() { navEnsure(); return s_navOn; }
+
+void setNavEnabled(bool on) {
+  navEnsure();
+  if (!s_open || on == s_navOn) return;
+  s_navOn = on;
+  s_prefs.putBool("nscro", on);
+}
+
+void navUrl(char* out, size_t n) {
+  navEnsure();
+  strncpy(out, s_navUrl, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setNavUrl(const char* url) {
+  navEnsure();
+  if (!s_open || !url || strcmp(url, s_navUrl) == 0) return;
+  strncpy(s_navUrl, url, sizeof(s_navUrl) - 1);
+  s_navUrl[sizeof(s_navUrl) - 1] = '\0';
+  s_prefs.putString("nurl", s_navUrl);
+}
+
+void navUser(char* out, size_t n) {
+  navEnsure();
+  strncpy(out, s_navUser, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setNavUser(const char* user) {
+  navEnsure();
+  if (!s_open || !user || strcmp(user, s_navUser) == 0) return;
+  strncpy(s_navUser, user, sizeof(s_navUser) - 1);
+  s_navUser[sizeof(s_navUser) - 1] = '\0';
+  s_prefs.putString("nuser", s_navUser);
+}
+
+void navPass(char* out, size_t n) {
+  navEnsure();
+  strncpy(out, s_navPass, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setNavPass(const char* pass) {
+  navEnsure();
+  if (!s_open || !pass || strcmp(pass, s_navPass) == 0) return;
+  strncpy(s_navPass, pass, sizeof(s_navPass) - 1);
+  s_navPass[sizeof(s_navPass) - 1] = '\0';
+  s_prefs.putString("npass", s_navPass);
+}
+
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
 // Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
 // ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.
@@ -484,8 +555,11 @@ size_t exportIni(char* out, size_t cap) {
   if (!out || cap == 0) return 0;
   MeshParams m = meshParams();
   char name[32], ssid[33], tz[48], lapp[24], ltrk[TRACK_PATH_LEN], lbook[256];
+  char nurl[128], nuser[64];
   meshName(name, sizeof(name));
   wifiSsid(ssid, sizeof(ssid));
+  navUrl(nurl, sizeof(nurl));
+  navUser(nuser, sizeof(nuser));
   // WLAN-Passwort wird BEWUSST NICHT exportiert (Klartext auf entnehmbarer SD).
   // Das Feld bleibt leer; ein leeres Feld lässt beim Import das NVS-Passwort
   // unangetastet — nur ein manuell eingetragenes Passwort wird übernommen.
@@ -514,6 +588,11 @@ size_t exportIni(char* out, size_t cap) {
     "\n[wifi]\n"
     "ssid = %s\n"
     "password =\n"             // leer = nicht exportiert; manuell eintragbar
+    "\n[navidrome]\n"
+    "enabled = %u\n"
+    "url = %s\n"
+    "user = %s\n"
+    "password =\n"             // leer = nicht exportiert; manuell eintragbar
     "\n[games]\n"
     "best2048 = %lu\n"
     "mines_wins = %u\n"
@@ -531,6 +610,7 @@ size_t exportIni(char* out, size_t cap) {
     (unsigned)volume(), (unsigned)standbyMinutes(), (unsigned)language(), tz,
     m.freqMhz, m.bwKhz, (unsigned)m.sf, (unsigned)m.cr, (unsigned)m.txDbm, name,
     ssid,
+    (unsigned)(navEnabled() ? 1 : 0), nurl, nuser,
     (unsigned long)best2048(), (unsigned)minesWins(), (unsigned)minesBestSec(),
     (unsigned)chessWins(), (unsigned)tttWins(), (unsigned)tttDraws(),
     lapp, ltrk, (unsigned long)lpos, lbook,
@@ -615,6 +695,12 @@ int importIni(const char* text) {
       // Leeres Passwort-Feld überspringen: bewahrt das im NVS gespeicherte
       // Passwort (Export schreibt es nie). Nur manuell Eingetragenes wird gesetzt.
       else if (strcmp(key, "password") == 0 && val[0]) { setWifiPass(val); applied++; }
+    } else if (strcmp(section, "navidrome") == 0) {
+      if      (strcmp(key, "enabled") == 0) { setNavEnabled(atoi(val) != 0); applied++; }
+      else if (strcmp(key, "url") == 0)     { setNavUrl(val); applied++; }
+      else if (strcmp(key, "user") == 0)    { setNavUser(val); applied++; }
+      // Leeres Passwort-Feld überspringen (wie WLAN) — bewahrt NVS-Passwort.
+      else if (strcmp(key, "password") == 0 && val[0]) { setNavPass(val); applied++; }
     } else if (strcmp(section, "games") == 0) {
       if      (strcmp(key, "best2048") == 0)       { restoreGameU32("g2kbest", (uint32_t)strtoul(val, nullptr, 10), s_best2048); applied++; }
       else if (strcmp(key, "mines_wins") == 0)     { restoreGameU16("mswins", (uint16_t)atoi(val), s_minesWins); applied++; }

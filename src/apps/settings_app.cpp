@@ -20,52 +20,72 @@ namespace {
 using gui::Rect;
 
 // --- Layout -------------------------------------------------------------------
-// Kein eigener Titel — die Statuszeile zeigt bereits "Einstellungen".
-// Zwei Sektionen (Funk/System) in einer scrollenden Liste (zusammen passen sie
-// nicht mehr aufs E-Ink), darunter Home-Button + Info-Fußzeilen.
+// Zwei-Ebenen-Navigation: die Wurzel zeigt Kategorien ("Ordner"), die Auswahl
+// öffnet die zugehörigen Zeilen. So bleibt jede Ebene kurz genug fürs E-Ink und
+// neue Bereiche (Navidrome …) überfüllen die Liste nicht. Kein Titel — die
+// Statuszeile zeigt bereits "Einstellungen".
 constexpr int W = EINK_W;
 constexpr int TOP       = appmgr::CONTENT_Y;              // 24
-constexpr int SEC_H     = 15;                             // Sektions-Überschrift
+constexpr int SEC_H     = 15;                             // Kategorie-Kopfzeile
 constexpr int ROW_H     = 20;
-constexpr int NUM_FUNK  = 7;                              // ROW_PRESET..ROW_NAME
-constexpr int VP_TOP    = TOP;                            // Scroll-Viewport oben
-constexpr int VP_BOT    = 270;                            // … unten (darunter Home/Fuß)
+constexpr int VP_TOP    = TOP;                            // Inhalt oben
 constexpr int VAL_RIGHT = W - 22;                         // Wert rechtsbündig, Platz für ►
 
 const Rect kHome {6, 274, 110, 40};
 constexpr int FOOT_X = 120;                               // Textspalte rechts vom Button
 
 // --- Zeilen ---------------------------------------------------------------------
-// Reihenfolge = Auswahlreihenfolge (W/S). Funk zuerst (7), dann System (6).
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
   ROW_LANG, ROW_STANDBY, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
+  ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_COUNT
 };
 
-// Scroll-Viewport: geordnete Liste aus Sektions-Überschriften und Zeilen.
-struct Entry { bool header; int id; };   // header: id 0=Funk,1=System; sonst RowId
-const Entry kEntries[] = {
-  {true, 0},
-  {false, ROW_PRESET}, {false, ROW_FREQ}, {false, ROW_BW}, {false, ROW_SF},
-  {false, ROW_CR}, {false, ROW_TX}, {false, ROW_NAME},
-  {true, 1},
-  {false, ROW_LANG}, {false, ROW_STANDBY}, {false, ROW_TZ}, {false, ROW_TIME},
-  {false, ROW_WSSID}, {false, ROW_WPASS},
-};
-constexpr int kNumEntries = (int)(sizeof(kEntries) / sizeof(kEntries[0]));
-int s_scroll = 0;   // Index des ersten sichtbaren Eintrags
+// --- Kategorien ("Ordner") ------------------------------------------------------
+enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_COUNT };
 
-int entryH(const Entry& e) { return e.header ? SEC_H : ROW_H; }
+const RowId kRadioRows[]  = {ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME};
+const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY};
+const RowId kTimeRows[]   = {ROW_TZ, ROW_TIME};
+const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
+const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
+
+struct CatRows { const RowId* rows; int count; };
+const CatRows kCats[] = {
+  {kRadioRows,  (int)(sizeof(kRadioRows)  / sizeof(RowId))},
+  {kSystemRows, (int)(sizeof(kSystemRows) / sizeof(RowId))},
+  {kTimeRows,   (int)(sizeof(kTimeRows)   / sizeof(RowId))},
+  {kWifiRows,   (int)(sizeof(kWifiRows)   / sizeof(RowId))},
+  {kNavRows,    (int)(sizeof(kNavRows)    / sizeof(RowId))},
+};
+
+const char* catName(int c) {
+  switch (c) {
+    case CAT_RADIO:  return i18n::tr(i18n::Str::SecRadio);
+    case CAT_SYSTEM: return i18n::tr(i18n::Str::SecSystem);
+    case CAT_TIME:   return "Zeit";
+    case CAT_WIFI:   return "WLAN";
+    case CAT_NAV:    return "Navidrome";
+  }
+  return "";
+}
+
+int  s_cat  = -1;          // -1 = Kategorie-Liste (Wurzel); sonst CAT_*
+int  s_sel  = 0;           // Index in der aktuellen Ebene (Kategorie bzw. Zeile)
+int  s_edit = -1;          // gerade editierte Zeile (RowId; -1 = keine)
+char s_editBuf[128] = "";  // groß genug für die Navidrome-URL (127)
+
+// Per Tastatur editierbare Text-Zeilen (Enter startet, Enter speichert).
+bool rowEditable(int row) {
+  return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS ||
+         row == ROW_TIME || row == ROW_NAVURL || row == ROW_NAVUSER ||
+         row == ROW_NAVPASS;
+}
 
 // Auto-Standby-Stufen (Minuten; 0 = Aus).
 const uint8_t kStandbySteps[] = {0, 2, 5, 10, 30};
 constexpr int kNumStandby = 5;
-
-// Per Tastatur editierbare Text-Zeilen (Enter startet, Enter speichert).
-bool rowEditable(int row) {
-  return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS || row == ROW_TIME;
-}
 
 // Zeitzonen-Presets (POSIX-TZ inkl. automatischer Sommerzeit). NTP/Mesh liefern
 // nur UTC; die Zone ist eine reine Anzeige-Einstellung.
@@ -77,10 +97,6 @@ const TzPreset kTz[] = {
   {"Athen",  "EET-2EEST,M3.5.0/3,M10.5.0/4"},
 };
 constexpr int kNumTz = (int)(sizeof(kTz) / sizeof(kTz[0]));
-
-int  s_sel = 0;
-int  s_edit = -1;          // gerade editierte Zeile (-1 = keine)
-char s_editBuf[65] = "";   // groß genug fürs WLAN-Passwort (64)
 
 // Presets (Quelle: MeshCore-Community; Narrow = Standard in DE/NRW,
 // identisch zu Daniels Repeater: 869,618 / 62,5 / SF8 / CR4-5).
@@ -150,6 +166,11 @@ void changeRow(int row, int dir) {
     markDirty();
     return;
   }
+  if (row == ROW_NAVON) {
+    settings::setNavEnabled(!settings::navEnabled());
+    markDirty();
+    return;
+  }
   settings::MeshParams p = settings::meshParams();
   switch (row) {
     case ROW_PRESET: {
@@ -176,7 +197,7 @@ void changeRow(int row, int dir) {
     case ROW_TX:
       p.txDbm = (uint8_t)constrain((int)p.txDbm + dir, 1, 22);
       break;
-    default: return;   // Text-Zeilen (Name/WLAN) werden per Enter editiert
+    default: return;   // Text-Zeilen (Name/WLAN/Navidrome) per Enter editieren
   }
   apply(p);
 }
@@ -184,19 +205,23 @@ void changeRow(int row, int dir) {
 const char* rowName(int row) {
   using i18n::Str;
   switch (row) {
-    case ROW_PRESET:  return "Preset";       // LoRa-Jargon, nicht übersetzt
-    case ROW_FREQ:    return i18n::tr(Str::LblFreq);
-    case ROW_BW:      return i18n::tr(Str::LblBandwidth);
-    case ROW_SF:      return "Spreading";    // LoRa-Jargon
-    case ROW_CR:      return i18n::tr(Str::LblCodingRate);
-    case ROW_TX:      return i18n::tr(Str::LblTxPower);
-    case ROW_NAME:    return i18n::tr(Str::LblName);
-    case ROW_LANG:    return i18n::tr(Str::SettingsLang);
-    case ROW_STANDBY: return i18n::tr(Str::LblStandby);
-    case ROW_TZ:      return "Zeitzone";
-    case ROW_TIME:    return "Zeit";
-    case ROW_WSSID:   return i18n::tr(Str::LblWifiSsid);
-    case ROW_WPASS:   return i18n::tr(Str::LblWifiPass);
+    case ROW_PRESET:   return "Preset";       // LoRa-Jargon, nicht übersetzt
+    case ROW_FREQ:     return i18n::tr(Str::LblFreq);
+    case ROW_BW:       return i18n::tr(Str::LblBandwidth);
+    case ROW_SF:       return "Spreading";    // LoRa-Jargon
+    case ROW_CR:       return i18n::tr(Str::LblCodingRate);
+    case ROW_TX:       return i18n::tr(Str::LblTxPower);
+    case ROW_NAME:     return i18n::tr(Str::LblName);
+    case ROW_LANG:     return i18n::tr(Str::SettingsLang);
+    case ROW_STANDBY:  return i18n::tr(Str::LblStandby);
+    case ROW_TZ:       return "Zeitzone";
+    case ROW_TIME:     return "Zeit";
+    case ROW_WSSID:    return i18n::tr(Str::LblWifiSsid);
+    case ROW_WPASS:    return i18n::tr(Str::LblWifiPass);
+    case ROW_NAVON:    return "Scrobbeln";
+    case ROW_NAVURL:   return "Server";
+    case ROW_NAVUSER:  return "Benutzer";
+    case ROW_NAVPASS:  return "Passwort";
   }
   return "";
 }
@@ -263,68 +288,88 @@ void rowValue(int row, char* v, size_t n) {
         snprintf(v, n, "%s", pw[0] ? "****" : "-");
       }
       break;
+    case ROW_NAVON:
+      snprintf(v, n, "%s", settings::navEnabled() ? "An" : "Aus");
+      break;
+    case ROW_NAVURL:
+      if (s_edit == ROW_NAVURL) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        settings::navUrl(v, n);
+        if (!v[0]) snprintf(v, n, "-");
+      }
+      break;
+    case ROW_NAVUSER:
+      if (s_edit == ROW_NAVUSER) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        settings::navUser(v, n);
+        if (!v[0]) snprintf(v, n, "-");
+      }
+      break;
+    case ROW_NAVPASS:
+      if (s_edit == ROW_NAVPASS) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        char pw[65];
+        settings::navPass(pw, sizeof(pw));
+        snprintf(v, n, "%s", pw[0] ? "****" : "-");
+      }
+      break;
   }
 }
 
-// Entry-Index der ausgewählten Zeile (für Scroll-Sichtbarkeit).
-int entryIndexOfRow(int row) {
-  for (int i = 0; i < kNumEntries; i++)
-    if (!kEntries[i].header && kEntries[i].id == row) return i;
-  return 0;
-}
-
-// s_scroll so anpassen, dass die ausgewählte Zeile vollständig im Viewport liegt.
-void ensureVisible() {
-  int sidx = entryIndexOfRow(s_sel);
-  if (sidx < s_scroll) { s_scroll = sidx; return; }
-  while (s_scroll < sidx) {
-    int y = VP_TOP, lastFull = -1;
-    for (int i = s_scroll; i < kNumEntries; i++) {
-      int h = entryH(kEntries[i]);
-      if (y + h > VP_BOT) break;
-      lastFull = i; y += h;
-    }
-    if (sidx <= lastFull) break;
-    s_scroll++;
-  }
-}
-
-// Welche Zeile liegt unter dem Tap bei y? -1 = keine.
-int hitRow(int ty) {
+// --- Treffer-Zonen (Touch) ------------------------------------------------------
+// Welche Kategorie liegt unter dem Tap bei y (Wurzelansicht)? -1 = keine.
+int hitCat(int ty) {
   int y = VP_TOP;
-  for (int i = s_scroll; i < kNumEntries; i++) {
-    int h = entryH(kEntries[i]);
-    if (y + h > VP_BOT) break;
-    if (!kEntries[i].header && ty >= y && ty < y + h) return kEntries[i].id;
-    y += h;
+  for (int i = 0; i < CAT_COUNT; i++) {
+    if (ty >= y && ty < y + ROW_H) return i;
+    y += ROW_H;
   }
   return -1;
 }
 
-void sectionHeader(Adafruit_GFX& g, int y, const char* title) {
-  g.setTextSize(1);
-  g.setCursor(8, y + 3);
-  gui::print(g, title);
-  g.drawFastHLine(0, y + SEC_H - 1, W, GxEPD_BLACK);
+// Welcher Zeilen-Index (innerhalb der Kategorie) liegt unter dem Tap? -1 = keiner.
+int hitRow(int ty) {
+  int y = VP_TOP + SEC_H;   // Zeilen beginnen unter der Kopfzeile
+  for (int i = 0; i < kCats[s_cat].count; i++) {
+    if (ty >= y && ty < y + ROW_H) return i;
+    y += ROW_H;
+  }
+  return -1;
 }
 
-// Zeile: Label klein links, Wert groß rechtsbündig; ausgewählte Zeile mit
-// Doppelrahmen + ◄/►-Pfeilen als Hinweis auf die Tap-Hälften bzw. A/D.
-void drawRow(Adafruit_GFX& g, int row, int y) {
+// --- Zeichnen -------------------------------------------------------------------
+// Kategorie-Zeile (Wurzel): Name groß + ►; ausgewählt mit Doppelrahmen.
+void drawCatRow(Adafruit_GFX& g, int idx, int y) {
+  g.setTextSize(2);
+  g.setCursor(10, y + 4);
+  gui::print(g, catName(idx));
+  g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
+  g.setTextSize(1);
+  g.setCursor(W - 13, y + 8);
+  g.write((uint8_t)0x10);                // ►
+  if (idx == s_sel) {
+    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
+    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+  }
+}
+
+// Einstellungs-Zeile: Label klein links, Wert groß rechtsbündig; ausgewählte
+// Zeile mit Doppelrahmen + ◄/►-Pfeilen (Tap-Hälften bzw. A/D).
+void drawRow(Adafruit_GFX& g, int row, int y, bool selected) {
   g.setTextSize(1);
   uint16_t lw, lh;
   gui::textBounds(g, rowName(row), &lw, &lh);
   g.setCursor(10, y + 8);
   gui::print(g, rowName(row));
 
-  char v[40];
+  char v[64];
   rowValue(row, v, sizeof(v));
   g.setTextSize(2);
   uint16_t vw, vh;
   gui::textBounds(g, v, &vw, &vh);
   int vx = VAL_RIGHT - (int)vw;
   int vy = y + 5;
-  if (vx < 10 + (int)lw + 8) {           // zu lang (z. B. langer Name): klein rendern
+  if (vx < 10 + (int)lw + 8) {           // zu lang (z. B. URL/Name): klein rendern
     g.setTextSize(1);
     gui::textBounds(g, v, &vw, &vh);
     vx = VAL_RIGHT - (int)vw;
@@ -336,7 +381,7 @@ void drawRow(Adafruit_GFX& g, int row, int y) {
 
   g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
 
-  if (row == s_sel) {
+  if (selected) {
     g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
     if (!rowEditable(row)) {             // Text-Zeilen werden per Enter editiert
@@ -352,9 +397,12 @@ void drawRow(Adafruit_GFX& g, int row, int y) {
 void startEdit(int row) {
   s_editBuf[0] = '\0';
   switch (row) {
-    case ROW_NAME:  settings::meshName(s_editBuf, sizeof(s_editBuf)); break;
-    case ROW_WSSID: settings::wifiSsid(s_editBuf, sizeof(s_editBuf)); break;
-    case ROW_WPASS: settings::wifiPass(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_NAME:    settings::meshName(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WSSID:   settings::wifiSsid(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WPASS:   settings::wifiPass(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_NAVURL:  settings::navUrl(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_NAVUSER: settings::navUser(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_NAVPASS: settings::navPass(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_TIME: {
       // Mit der aktuellen lokalen Zeit als Vorlage vorbelegen.
       time_t    tt = (time_t)timesync::now();
@@ -373,10 +421,13 @@ void startEdit(int row) {
 void finishEdit(bool save) {
   if (save) {
     switch (s_edit) {
-      // Leerer Node-Name wird verworfen; leere WLAN-Werte löschen den Eintrag.
-      case ROW_NAME:  if (s_editBuf[0]) mesh_client::setNodeName(s_editBuf); break;
-      case ROW_WSSID: settings::setWifiSsid(s_editBuf); break;
-      case ROW_WPASS: settings::setWifiPass(s_editBuf); break;
+      // Leerer Node-Name wird verworfen; leere WLAN-/Navidrome-Werte löschen.
+      case ROW_NAME:    if (s_editBuf[0]) mesh_client::setNodeName(s_editBuf); break;
+      case ROW_WSSID:   settings::setWifiSsid(s_editBuf); break;
+      case ROW_WPASS:   settings::setWifiPass(s_editBuf); break;
+      case ROW_NAVURL:  settings::setNavUrl(s_editBuf); break;
+      case ROW_NAVUSER: settings::setNavUser(s_editBuf); break;
+      case ROW_NAVPASS: settings::setNavPass(s_editBuf); break;
       case ROW_TIME: {
         // "YYYY-MM-DD HH:MM" als lokale Zeit lesen → über die Zeitzone nach UTC.
         struct tm lt;
@@ -396,8 +447,11 @@ void finishEdit(bool save) {
   markDirty();
 }
 
+// Aktuell ausgewählte Zeile (RowId) innerhalb der geöffneten Kategorie; -1 Wurzel.
+int curRow() { return s_cat < 0 ? -1 : kCats[s_cat].rows[s_sel]; }
+
 void onKey(char k) {
-  // Editiermodus: Tasten gehen in den Text (Name/SSID/Passwort).
+  // Editiermodus: Tasten gehen in den Text (Name/SSID/Passwort/URL …).
   if (s_edit >= 0) {
     if (k == '\r')      { finishEdit(true); return; }
     if (k == 0x02)      { finishEdit(false); return; }   // Mic = abbrechen
@@ -407,8 +461,15 @@ void onKey(char k) {
       else finishEdit(false);
       return;
     }
-    // Eingabelimit: Node-Name/SSID 32 Zeichen, Passwort 64.
-    int maxLen = (s_edit == ROW_WPASS) ? 64 : 32;
+    // Eingabelimits je Feld: URL 127, Passwort 64, Benutzer 63, sonst 32.
+    int maxLen;
+    switch (s_edit) {
+      case ROW_NAVURL:  maxLen = 127; break;
+      case ROW_WPASS:
+      case ROW_NAVPASS: maxLen = 64;  break;
+      case ROW_NAVUSER: maxLen = 63;  break;
+      default:          maxLen = 32;  break;
+    }
     if (k >= 32 && k < 127) {
       int len = strlen(s_editBuf);
       if (len < maxLen && len < (int)sizeof(s_editBuf) - 1) {
@@ -420,17 +481,32 @@ void onKey(char k) {
     return;
   }
 
+  // Wurzelebene: Kategorien durchblättern, Enter/► öffnet.
+  if (s_cat < 0) {
+    switch (k) {
+      case 'w': case 'W': s_sel = (s_sel + CAT_COUNT - 1) % CAT_COUNT; markDirty(); break;
+      case 's': case 'S': s_sel = (s_sel + 1) % CAT_COUNT; markDirty(); break;
+      case '\r': case 'd': case 'D': s_cat = s_sel; s_sel = 0; markDirty(); break;
+      case '\b': case 'q': case 'Q': appmgr::goHome(); break;
+      default: break;
+    }
+    return;
+  }
+
+  // Innerhalb einer Kategorie.
+  int n   = kCats[s_cat].count;
+  int row = kCats[s_cat].rows[s_sel];
   switch (k) {
-    case 'w': case 'W': s_sel = (s_sel + ROW_COUNT - 1) % ROW_COUNT; markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % ROW_COUNT; markDirty(); break;
-    case 'a': case 'A': changeRow(s_sel, -1); break;
-    case 'd': case 'D': changeRow(s_sel, +1); break;
+    case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+    case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
+    case 'a': case 'A': changeRow(row, -1); break;
+    case 'd': case 'D': changeRow(row, +1); break;
     case '\r':
-      if (rowEditable(s_sel)) startEdit(s_sel);
-      else changeRow(s_sel, +1);
+      if (rowEditable(row)) startEdit(row);
+      else changeRow(row, +1);
       break;
-    case '\b':
-    case 'q': case 'Q': appmgr::goHome(); break;
+    case '\b': case 'q': case 'Q':   // zurück zur Kategorie-Liste
+      s_sel = s_cat; s_cat = -1; markDirty(); break;
     default: break;
   }
 }
@@ -441,11 +517,25 @@ void onTouch(int x, int y) {
     appmgr::goHome();
     return;
   }
-  int row = hitRow(y);
-  if (row < 0) return;
-  // Erster Tap wählt nur aus (verhindert versehentliches Verstellen),
-  // Tap auf die ausgewählte Zeile ändert: linke Hälfte -, rechte +.
-  if (row != s_sel) { s_sel = row; markDirty(); return; }
+
+  // Wurzelebene: Tap auf eine Kategorie öffnet sie.
+  if (s_cat < 0) {
+    int c = hitCat(y);
+    if (c >= 0) { s_cat = c; s_sel = 0; markDirty(); }
+    return;
+  }
+
+  // Tap auf die Kopfzeile geht zurück zur Kategorie-Liste.
+  if (y >= VP_TOP && y < VP_TOP + SEC_H) {
+    s_sel = s_cat; s_cat = -1; markDirty();
+    return;
+  }
+
+  int sidx = hitRow(y);
+  if (sidx < 0) return;
+  int row = kCats[s_cat].rows[sidx];
+  // Erster Tap wählt nur aus; Tap auf die ausgewählte Zeile ändert/öffnet.
+  if (sidx != s_sel) { s_sel = sidx; markDirty(); return; }
   if (rowEditable(row)) { startEdit(row); return; }
   changeRow(row, (x >= W / 2) ? +1 : -1);
 }
@@ -454,6 +544,8 @@ class SettingsApp : public App {
  public:
   const char* id()   const override { return "Einstellungen"; }
   const char* name() const override { return i18n::tr(i18n::Str::AppSettings); }
+
+  void onEnter() override { s_cat = -1; s_sel = 0; s_edit = -1; }
 
   void onLeave() override {
     if (s_edit >= 0) finishEdit(true);
@@ -468,31 +560,33 @@ class SettingsApp : public App {
     using i18n::Str;
     g.setTextColor(GxEPD_BLACK);
 
-    ensureVisible();
-    int y = VP_TOP;
-    int last = s_scroll;
-    for (int i = s_scroll; i < kNumEntries; i++) {
-      int h = entryH(kEntries[i]);
-      if (y + h > VP_BOT) break;
-      if (kEntries[i].header)
-        sectionHeader(g, y, i18n::tr(kEntries[i].id == 0 ? Str::SecRadio : Str::SecSystem));
-      else
-        drawRow(g, kEntries[i].id, y);
-      y += h;
-      last = i;
+    if (s_cat < 0) {
+      // Wurzel: Kategorie-Liste.
+      int y = VP_TOP;
+      for (int i = 0; i < CAT_COUNT; i++) { drawCatRow(g, i, y); y += ROW_H; }
+    } else {
+      // Kopfzeile mit Zurück-Hinweis (◄), darunter die Zeilen.
+      g.setTextSize(1);
+      char hdr[40];
+      snprintf(hdr, sizeof(hdr), "\x11 %s", catName(s_cat));   // 0x11 = ◄
+      g.setCursor(8, VP_TOP + 3);
+      gui::print(g, hdr);
+      g.drawFastHLine(0, VP_TOP + SEC_H - 1, W, GxEPD_BLACK);
+      int y = VP_TOP + SEC_H;
+      for (int i = 0; i < kCats[s_cat].count; i++) {
+        drawRow(g, kCats[s_cat].rows[i], y, i == s_sel);
+        y += ROW_H;
+      }
     }
-    // Scroll-Indikatoren (CP437 ▲/▼), wenn oberhalb/unterhalb mehr existiert.
-    g.setTextSize(1);
-    if (s_scroll > 0)            { g.setCursor(W - 9, VP_TOP + 1);  g.write((uint8_t)0x1E); }
-    if (last < kNumEntries - 1)  { g.setCursor(W - 9, VP_BOT - 8);  g.write((uint8_t)0x1F); }
 
     gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
     g.setTextSize(1);
     g.setCursor(FOOT_X, 278);
-    if (s_edit >= 0)              gui::print(g, i18n::tr(Str::HintEnterSave));
-    else if (s_sel == ROW_NAME)   gui::print(g, i18n::tr(Str::HintNameEdit));
-    else if (rowEditable(s_sel))  gui::print(g, i18n::tr(Str::HintEdit));
-    else                          gui::print(g, i18n::tr(Str::HintChange));
+    if (s_edit >= 0)                gui::print(g, i18n::tr(Str::HintEnterSave));
+    else if (s_cat < 0)            gui::print(g, "Ordner oeffnen");
+    else if (curRow() == ROW_NAME) gui::print(g, i18n::tr(Str::HintNameEdit));
+    else if (rowEditable(curRow())) gui::print(g, i18n::tr(Str::HintEdit));
+    else                           gui::print(g, i18n::tr(Str::HintChange));
     char info[32];
     snprintf(info, sizeof(info), i18n::tr(Str::FmtBattery), battery::percent(),
              battery::charging() ? "+" : "", battery::milliVolts());

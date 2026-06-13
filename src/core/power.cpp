@@ -11,6 +11,7 @@
 #include "core/settings.h"
 #include "core/sleep_img.h"
 #include "services/audio.h"
+#include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
 
@@ -227,6 +228,9 @@ void poll() {
     // das Gerät mit frischer Uhr ein. No-op sonst. (Beim manuellen Langdruck
     // bewusst nicht — der Knopf soll sofort reagieren.)
     timesync::syncBeforeStandby();
+    // Gespielte Tracks gesammelt an Navidrome scrobbeln (verwaltet WLAN selbst,
+    // mit Back-off). No-op ohne offene Einträge bzw. ohne Konfiguration.
+    scrobble::flushBeforeStandby();
     enterStandby();
   }
 }

@@ -30,6 +30,7 @@
 #include "services/audio.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
@@ -131,6 +132,9 @@ void setup() {
   if (settings::volume() != 255) audio::setVolume(settings::volume());
   Serial.printf("[FENNEK] Audio-Engine gestartet (freier PSRAM: %u KB)\n",
                 (unsigned)(ESP.getFreePsram() / 1024));
+
+  // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
+  scrobble::begin();
 
   Serial.printf("[FENNEK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
                 library::artistCount(), library::albumCount(),
@@ -259,6 +263,7 @@ void loop() {
   console::poll();   // Serial-Debug-Konsole ('help' über USB)
   webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
   timesync::poll();  // Zeit frisch halten (opportunistisch NTP, NVS-Sicherung)
+  scrobble::poll();  // Scrobble-Queue gedrosselt nach SD persistieren
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
 }

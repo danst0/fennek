@@ -11,6 +11,7 @@
 #include "apps/reader_app.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/scrobble.h"
 #include "services/settingsfile.h"
 
 #include <time.h>
@@ -63,6 +64,13 @@ void cmdHelp() {
   Serial.println("[CON]   wifi status       - WLAN-/Webserver-Status");
   Serial.println("[CON]   wifi start        - Web-Dateiverwaltung starten");
   Serial.println("[CON]   wifi stop         - Web-Dateiverwaltung stoppen");
+  Serial.println("[CON]   nav url <url>     - Navidrome-Server-URL setzen");
+  Serial.println("[CON]   nav user <name>   - Navidrome-Benutzer setzen");
+  Serial.println("[CON]   nav pass <pw>     - Navidrome-Passwort setzen");
+  Serial.println("[CON]   nav on|off        - Scrobbeln ein-/ausschalten");
+  Serial.println("[CON]   nav test          - Subsonic-Ping (WLAN)");
+  Serial.println("[CON]   scrobble          - offene Scrobbles zeigen");
+  Serial.println("[CON]   scrobble flush    - offene Scrobbles jetzt hochladen (WLAN)");
   Serial.println("[CON]   settings show     - aktuelle Einstellungen anzeigen");
   Serial.println("[CON]   settings save     - Einstellungen nach /fennek.ini (SD)");
   Serial.println("[CON]   settings load     - /fennek.ini ins NVS einlesen");
@@ -332,6 +340,40 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "wifi stop") == 0)       { webfm::stop(); return; }
+  if (strncmp(line, "nav url ", 8) == 0) {
+    settings::setNavUrl(line + 8);
+    Serial.printf("[CON] Navidrome-URL gesetzt: '%s'\n", line + 8);
+    return;
+  }
+  if (strncmp(line, "nav user ", 9) == 0) {
+    settings::setNavUser(line + 9);
+    Serial.printf("[CON] Navidrome-Benutzer gesetzt: '%s'\n", line + 9);
+    return;
+  }
+  if (strncmp(line, "nav pass ", 9) == 0) {
+    settings::setNavPass(line + 9);
+    Serial.println("[CON] Navidrome-Passwort gesetzt");
+    return;
+  }
+  if (strcmp(line, "nav on") == 0)  { settings::setNavEnabled(true);  Serial.println("[CON] Scrobbeln EIN"); return; }
+  if (strcmp(line, "nav off") == 0) { settings::setNavEnabled(false); Serial.println("[CON] Scrobbeln AUS"); return; }
+  if (strcmp(line, "nav test") == 0) {
+    char msg[64];
+    bool ok = scrobble::ping(msg, sizeof(msg));
+    Serial.printf("[CON] Navidrome-Test: %s (%s)\n", ok ? "OK" : "Fehler", msg);
+    return;
+  }
+  if (strcmp(line, "scrobble") == 0) {
+    Serial.printf("[CON] %d offene Scrobble(s); Scrobbeln=%s\n",
+                  scrobble::pendingCount(), settings::navEnabled() ? "an" : "aus");
+    return;
+  }
+  if (strcmp(line, "scrobble flush") == 0) {
+    char msg[64];
+    scrobble::flushNow(msg, sizeof(msg));
+    Serial.printf("[CON] Scrobble-Flush: %s\n", msg);
+    return;
+  }
   if (strcmp(line, "settings show") == 0)   { cmdSettingsShow(); return; }
   if (strcmp(line, "settings save") == 0) {
     Serial.println(settingsfile::exportToSd()
