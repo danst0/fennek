@@ -11,6 +11,7 @@
 #include "core/settings.h"
 #include "core/sleep_img.h"
 #include "services/audio.h"
+#include "services/settingsfile.h"
 #include "services/timesync.h"
 
 #include <Arduino.h>
@@ -122,6 +123,11 @@ void enterStandby() {
   delay(60);                 // Audio-Task das Kommando abarbeiten lassen
   board::dacPower(false);
   board::loraPower(false);
+
+  // 1b) Einstellungen auf die SD spiegeln, solange der Bus ruhig ist (Audio
+  //     gestoppt, Radio aus) und die Peripherie noch versorgt ist — so bleibt
+  //     /fennek.ini aktuell und der Boot-Import überschreibt keine Änderung.
+  settingsfile::exportToSd();
 
   // 2) Schlafender Fennek aufs E-Ink (bleibt stromlos stehen) — vorher den
   //    Akkustand lesen (I2C-Peripherie ist hier noch versorgt).

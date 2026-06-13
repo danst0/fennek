@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace {
@@ -474,6 +475,158 @@ uint32_t crc32(const char* s) {
       crc = (crc >> 1) ^ (0xEDB88320 & (-(int32_t)(crc & 1)));
   }
   return ~crc;
+}
+
+// --- INI-Export/Import ---------------------------------------------------------
+// Serialisierung in einen RAM-Puffer (kein SD-/SPI-Zugriff hier — den macht
+// services/settingsfile unter spiLock). Format: [sektion] + key = value.
+size_t exportIni(char* out, size_t cap) {
+  if (!out || cap == 0) return 0;
+  MeshParams m = meshParams();
+  char name[32], ssid[33], tz[48], lapp[24], ltrk[TRACK_PATH_LEN], lbook[256];
+  meshName(name, sizeof(name));
+  wifiSsid(ssid, sizeof(ssid));
+  // WLAN-Passwort wird BEWUSST NICHT exportiert (Klartext auf entnehmbarer SD).
+  // Das Feld bleibt leer; ein leeres Feld lässt beim Import das NVS-Passwort
+  // unangetastet — nur ein manuell eingetragenes Passwort wird übernommen.
+  tzString(tz, sizeof(tz));
+  lastApp(lapp, sizeof(lapp));
+  uint32_t lpos = 0;
+  lastTrack(ltrk, sizeof(ltrk), &lpos);
+  lastBook(lbook, sizeof(lbook));
+
+  int len = snprintf(out, cap,
+    "# Fennek-Einstellungen — bearbeitbar, beim Boot eingelesen.\n"
+    "# Pro-Buch-Lesepositionen/Hoerbuch-Bookmarks sind hier NICHT enthalten\n"
+    "# (intern CRC32-verschluesselt). [state] wird beim Import ignoriert.\n"
+    "\n[general]\n"
+    "volume = %u\n"             // 0..21
+    "standby_minutes = %u\n"    // 0 = aus
+    "language = %u\n"           // 0 = Deutsch
+    "timezone = %s\n"
+    "\n[mesh]\n"
+    "freq_mhz = %.3f\n"
+    "bw_khz = %.1f\n"
+    "sf = %u\n"
+    "cr = %u\n"
+    "tx_dbm = %u\n"
+    "node_name = %s\n"
+    "\n[wifi]\n"
+    "ssid = %s\n"
+    "password =\n"             // leer = nicht exportiert; manuell eintragbar
+    "\n[games]\n"
+    "best2048 = %lu\n"
+    "mines_wins = %u\n"
+    "mines_best_sec = %u\n"
+    "chess_wins = %u\n"
+    "ttt_wins = %u\n"
+    "ttt_draws = %u\n"
+    "\n[state]\n"               // nur Backup — Import ueberspringt diese Sektion
+    "last_app = %s\n"
+    "last_track = %s\n"
+    "last_pos = %lu\n"
+    "last_book = %s\n"
+    "last_time = %lu\n"
+    "clock_ppm = %u\n",
+    (unsigned)volume(), (unsigned)standbyMinutes(), (unsigned)language(), tz,
+    m.freqMhz, m.bwKhz, (unsigned)m.sf, (unsigned)m.cr, (unsigned)m.txDbm, name,
+    ssid,
+    (unsigned long)best2048(), (unsigned)minesWins(), (unsigned)minesBestSec(),
+    (unsigned)chessWins(), (unsigned)tttWins(), (unsigned)tttDraws(),
+    lapp, ltrk, (unsigned long)lpos, lbook,
+    (unsigned long)lastTime(), (unsigned)clockPpm());
+
+  if (len < 0) return 0;
+  return (size_t)len >= cap ? cap - 1 : (size_t)len;
+}
+
+namespace {
+
+// Beidseitig trimmen (in-place): führende/abschließende Whitespaces entfernen.
+char* trim(char* s) {
+  while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+  char* e = s + strlen(s);
+  while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n')) *--e = '\0';
+  return s;
+}
+
+// Direkter NVS-Write für Spiele-Bestände beim Restore: die öffentlichen Setter
+// sind monoton/inkrementell (setBest2048 nur Rekorde, addChessWin zählt hoch),
+// ungeeignet zum Wiederherstellen eines exakten Werts.
+void restoreGameU32(const char* nvsKey, uint32_t v, uint32_t& cache) {
+  if (!s_open) return;
+  gamesEnsure();
+  cache = v;
+  s_prefs.putULong(nvsKey, v);
+}
+void restoreGameU16(const char* nvsKey, uint16_t v, uint16_t& cache) {
+  if (!s_open) return;
+  gamesEnsure();
+  cache = v;
+  s_prefs.putUShort(nvsKey, v);
+}
+
+}  // namespace
+
+int importIni(const char* text) {
+  if (!text) return -1;
+  // Auf einer modifizierbaren Kopie arbeiten (zeilenweises In-place-Trimmen).
+  size_t n = strlen(text);
+  char* buf = (char*)malloc(n + 1);
+  if (!buf) return -1;
+  memcpy(buf, text, n + 1);
+
+  int applied = 0;
+  char section[16] = "";
+  char* save = nullptr;
+  for (char* line = strtok_r(buf, "\n", &save); line; line = strtok_r(nullptr, "\n", &save)) {
+    char* t = trim(line);
+    if (!t[0] || t[0] == '#' || t[0] == ';') continue;
+    if (t[0] == '[') {
+      char* close = strchr(t, ']');
+      if (close) {
+        *close = '\0';
+        strncpy(section, t + 1, sizeof(section) - 1);
+        section[sizeof(section) - 1] = '\0';
+      }
+      continue;
+    }
+    char* eq = strchr(t, '=');
+    if (!eq) continue;
+    *eq = '\0';
+    char* key = trim(t);
+    char* val = trim(eq + 1);
+
+    if (strcmp(section, "general") == 0) {
+      if      (strcmp(key, "volume") == 0)          { setVolume((uint8_t)atoi(val)); applied++; }
+      else if (strcmp(key, "standby_minutes") == 0) { setStandbyMinutes((uint8_t)atoi(val)); applied++; }
+      else if (strcmp(key, "language") == 0)        { setLanguage((uint8_t)atoi(val)); applied++; }
+      else if (strcmp(key, "timezone") == 0)        { setTzString(val); applied++; }
+    } else if (strcmp(section, "mesh") == 0) {
+      MeshParams m = meshParams();
+      if      (strcmp(key, "freq_mhz") == 0)  { m.freqMhz = atof(val); setMeshParams(m); applied++; }
+      else if (strcmp(key, "bw_khz") == 0)    { m.bwKhz = atof(val); setMeshParams(m); applied++; }
+      else if (strcmp(key, "sf") == 0)        { m.sf = (uint8_t)atoi(val); setMeshParams(m); applied++; }
+      else if (strcmp(key, "cr") == 0)        { m.cr = (uint8_t)atoi(val); setMeshParams(m); applied++; }
+      else if (strcmp(key, "tx_dbm") == 0)    { m.txDbm = (uint8_t)atoi(val); setMeshParams(m); applied++; }
+      else if (strcmp(key, "node_name") == 0) { setMeshName(val); applied++; }
+    } else if (strcmp(section, "wifi") == 0) {
+      if      (strcmp(key, "ssid") == 0)     { setWifiSsid(val); applied++; }
+      // Leeres Passwort-Feld überspringen: bewahrt das im NVS gespeicherte
+      // Passwort (Export schreibt es nie). Nur manuell Eingetragenes wird gesetzt.
+      else if (strcmp(key, "password") == 0 && val[0]) { setWifiPass(val); applied++; }
+    } else if (strcmp(section, "games") == 0) {
+      if      (strcmp(key, "best2048") == 0)       { restoreGameU32("g2kbest", (uint32_t)strtoul(val, nullptr, 10), s_best2048); applied++; }
+      else if (strcmp(key, "mines_wins") == 0)     { restoreGameU16("mswins", (uint16_t)atoi(val), s_minesWins); applied++; }
+      else if (strcmp(key, "mines_best_sec") == 0) { restoreGameU16("msbest", (uint16_t)atoi(val), s_minesBest); applied++; }
+      else if (strcmp(key, "chess_wins") == 0)     { restoreGameU16("chwins", (uint16_t)atoi(val), s_chessWins); applied++; }
+      else if (strcmp(key, "ttt_wins") == 0)       { restoreGameU16("tttw", (uint16_t)atoi(val), s_tttWins); applied++; }
+      else if (strcmp(key, "ttt_draws") == 0)      { restoreGameU16("tttd", (uint16_t)atoi(val), s_tttDraws); applied++; }
+    }
+    // [state] und unbekannte Sektionen: bewusst ignoriert.
+  }
+  free(buf);
+  return applied;
 }
 
 }  // namespace settings

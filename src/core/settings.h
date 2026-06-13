@@ -104,4 +104,12 @@ void     addTttResult(bool win, bool draw);
 // CRC32-Helfer (Cache-/Bookmark-Keys).
 uint32_t crc32(const char* s);
 
+// --- INI-Export/Import (SD-Spiegel, services/settingsfile) --------------------
+// Bewusst SPI-frei: beide arbeiten nur auf einem RAM-Puffer; die SD-I/O liegt in
+// services/settingsfile.* (unter spiLock). exportIni() serialisiert alle Werte,
+// importIni() parst sie zurück ins NVS. Pro-Buch-Bookmarks/Lesepositionen sind
+// CRC32-verschlüsselt (Pfad nicht rekonstruierbar) und daher NICHT enthalten.
+size_t exportIni(char* out, size_t cap);   // gibt geschriebene Länge zurück
+int    importIni(const char* text);        // angewandte Schlüssel; -1 = Parse-Fehler
+
 }  // namespace settings

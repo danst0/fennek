@@ -30,6 +30,7 @@
 #include "services/audio.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/settingsfile.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
 #include "apps/book_app.h"
@@ -108,6 +109,10 @@ void setup() {
       Serial.printf("[FENNEK] SD-Cache-Migration /.meck -> /.fennek: %s\n", ok ? "ok" : "FEHLER");
     }
     spiUnlock();
+    // Einstellungen von der SD ins NVS spiegeln (SD ist beim Boot autoritativ),
+    // bevor Audio die Lautstärke und die Apps Mesh-/WLAN-Werte lesen.
+    if (settingsfile::importFromSd())
+      Serial.println("[FENNEK] Einstellungen aus /fennek.ini übernommen");
   }
   library::begin();
   int n = 0;

@@ -11,6 +11,7 @@
 #include "apps/reader_app.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/settingsfile.h"
 
 #include <time.h>
 
@@ -62,6 +63,17 @@ void cmdHelp() {
   Serial.println("[CON]   wifi status       - WLAN-/Webserver-Status");
   Serial.println("[CON]   wifi start        - Web-Dateiverwaltung starten");
   Serial.println("[CON]   wifi stop         - Web-Dateiverwaltung stoppen");
+  Serial.println("[CON]   settings show     - aktuelle Einstellungen anzeigen");
+  Serial.println("[CON]   settings save     - Einstellungen nach /fennek.ini (SD)");
+  Serial.println("[CON]   settings load     - /fennek.ini ins NVS einlesen");
+}
+
+void cmdSettingsShow() {
+  // exportIni() exportiert das WLAN-Passwort bewusst nicht (Feld bleibt leer),
+  // daher gibt es hier nichts zu maskieren.
+  static char buf[2048];
+  settings::exportIni(buf, sizeof(buf));
+  Serial.print(buf);
 }
 
 void cmdWifiStatus() {
@@ -320,6 +332,19 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "wifi stop") == 0)       { webfm::stop(); return; }
+  if (strcmp(line, "settings show") == 0)   { cmdSettingsShow(); return; }
+  if (strcmp(line, "settings save") == 0) {
+    Serial.println(settingsfile::exportToSd()
+        ? "[CON] Einstellungen nach /fennek.ini gesichert"
+        : "[CON] Sichern fehlgeschlagen (keine SD?)");
+    return;
+  }
+  if (strcmp(line, "settings load") == 0) {
+    Serial.println(settingsfile::importFromSd()
+        ? "[CON] Einstellungen aus /fennek.ini geladen"
+        : "[CON] Laden fehlgeschlagen (keine SD / Datei fehlt?)");
+    return;
+  }
   if (strcmp(line, "channels") == 0) {
     if (!mesh_client::ready()) { Serial.println("[CON] Mesh nicht initialisiert"); return; }
     int n = mesh_client::channelCount();
