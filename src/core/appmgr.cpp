@@ -13,10 +13,12 @@
 #include "core/touch.h"
 #include "services/audio.h"
 #include "services/library.h"
+#include "services/timesync.h"
 
 #include <Arduino.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <string.h>
+#include <time.h>
 
 namespace {
 
@@ -31,6 +33,7 @@ uint32_t s_settleUntil = 0;    // Anti-Doppeltap nach langem Refresh
 
 // Statuszeilen-Zustand (für Region-Refresh nur bei Änderung).
 uint8_t  s_lastAudioGlyph = 0; // 0=aus, 1=spielt, 2=pausiert
+uint8_t  s_lastClockMin   = 0xFF; // zuletzt gezeichnete Uhr-Minute (0xFF = ungültig/keine)
 uint8_t  s_battPct        = 0;
 bool     s_battChg        = false;
 uint32_t s_lastStatusPoll = 0;
@@ -41,6 +44,15 @@ uint8_t audioGlyph() {
   audio::Status st = audio::status();
   if (!st.playing) return 0;
   return st.paused ? 2 : 1;
+}
+
+// Aktuelle Lokal-Minute (0..59) für den Statuszeilen-Takt; 0xFF wenn Uhr ungültig.
+uint8_t clockMinute() {
+  time_t tt = (time_t)timesync::now();
+  struct tm lt;
+  localtime_r(&tt, &lt);
+  if (lt.tm_year + 1900 < 2025) return 0xFF;
+  return (uint8_t)lt.tm_min;
 }
 
 // Kleines Schloss-Symbol (Tastensperre) in der Statuszeile.
@@ -63,6 +75,20 @@ void drawStatusBar(Adafruit_GFX& g) {
     drawLock(g, 92, 4);
     g.setCursor(108, 7);
     gui::print(g, i18n::tr(i18n::Str::StatusLocked));
+  }
+
+  // Uhr (HH:MM) mittig — entfällt bei Tastensperre (da steht dort "Gesperrt").
+  if (!power::locked()) {
+    char clk[6];
+    time_t tt = (time_t)timesync::now();
+    struct tm lt;
+    localtime_r(&tt, &lt);
+    if (lt.tm_year + 1900 >= 2025)
+      snprintf(clk, sizeof(clk), "%02d:%02d", lt.tm_hour, lt.tm_min);
+    else
+      snprintf(clk, sizeof(clk), "--:--");   // Uhr noch nie gesetzt
+    g.setCursor(105, 7);   // mittig: (240-30)/2
+    g.print(clk);
   }
 
   // Audio-Indikator Mitte/rechts: CP437 0x0E = Doppelnote.
@@ -222,9 +248,11 @@ void loop() {
   // 5) Statuszeile aktuell halten (nur Region-Refresh bei Änderung).
   if (!s_dirty && now - s_lastStatusPoll >= 1000) {
     s_lastStatusPoll = now;
-    uint8_t a = audioGlyph();
-    if (a != s_lastAudioGlyph) {
+    uint8_t a  = audioGlyph();
+    uint8_t mn = clockMinute();
+    if (a != s_lastAudioGlyph || mn != s_lastClockMin) {
       s_lastAudioGlyph = a;
+      s_lastClockMin = mn;
       display::renderRegion(drawStatusBar, 0, STATUS_H);
     }
   }
@@ -241,6 +269,7 @@ void loop() {
   if (s_dirty) {
     s_dirty = false;
     s_lastAudioGlyph = audioGlyph();
+    s_lastClockMin = clockMinute();
     display::render(drawComposite, false);
     // Der Render blockierte ~650 ms; aufgelaufene Taps verwerfen und kurz
     // nachsperren, damit ein Tap nicht doppelt zählt (aus altem ui.cpp).
