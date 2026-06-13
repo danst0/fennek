@@ -19,6 +19,11 @@ typedef void (*DrawFn)(Adafruit_GFX& g);
 
 void begin();
 
+// Re-Init nach Deep-Sleep-Wakeup (Timer-Wake): wie begin(), aber OHNE das
+// weiße Vollbild-Clear — das E-Ink hält das Schlafbild stromlos, und
+// renderRegion() kann danach partiell dagegen aktualisieren.
+void beginAfterSleep();
+
 // Bildschirm neu aufbauen. full=true erzwingt Full-Refresh (Ghosting-Reset).
 // Ansonsten wird ~alle N Refreshes automatisch ein Full-Refresh eingestreut.
 void render(DrawFn draw, bool full = false);

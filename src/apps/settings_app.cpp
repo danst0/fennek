@@ -20,11 +20,11 @@ using gui::Rect;
 constexpr int W = EINK_W;
 constexpr int TOP       = appmgr::CONTENT_Y;              // 24
 constexpr int SEC_H     = 15;                             // Sektions-Überschrift
-constexpr int ROW_H     = 24;
+constexpr int ROW_H     = 20;                             // 11 Zeilen müssen passen
 constexpr int NUM_FUNK  = 7;                              // ROW_PRESET..ROW_NAME
 constexpr int FUNK_Y    = TOP + SEC_H;                    // 39
-constexpr int SYS_HDR_Y = FUNK_Y + NUM_FUNK * ROW_H;      // 207
-constexpr int SYS_Y     = SYS_HDR_Y + SEC_H;              // 222 (+2*24 = 270)
+constexpr int SYS_HDR_Y = FUNK_Y + NUM_FUNK * ROW_H;      // 179
+constexpr int SYS_Y     = SYS_HDR_Y + SEC_H;              // 194 (+4*20 = 274)
 constexpr int VAL_RIGHT = W - 22;                         // Wert rechtsbündig, Platz für ►
 
 const Rect kHome {6, 274, 110, 40};
@@ -33,7 +33,7 @@ constexpr int FOOT_X = 120;                               // Textspalte rechts v
 // --- Zeilen ---------------------------------------------------------------------
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
-  ROW_LANG, ROW_STANDBY,
+  ROW_LANG, ROW_STANDBY, ROW_WSSID, ROW_WPASS,
   ROW_COUNT
 };
 
@@ -41,9 +41,14 @@ enum RowId {
 const uint8_t kStandbySteps[] = {0, 2, 5, 10, 30};
 constexpr int kNumStandby = 5;
 
+// Per Tastatur editierbare Text-Zeilen (Enter startet, Enter speichert).
+bool rowEditable(int row) {
+  return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS;
+}
+
 int  s_sel = 0;
-bool s_editName = false;
-char s_nameBuf[32] = "";
+int  s_edit = -1;          // gerade editierte Zeile (-1 = keine)
+char s_editBuf[65] = "";   // groß genug fürs WLAN-Passwort (64)
 
 // Presets (Quelle: MeshCore-Community; Narrow = Standard in DE/NRW,
 // identisch zu Daniels Repeater: 869,618 / 62,5 / SF8 / CR4-5).
@@ -128,7 +133,7 @@ void changeRow(int row, int dir) {
     case ROW_TX:
       p.txDbm = (uint8_t)constrain((int)p.txDbm + dir, 1, 22);
       break;
-    default: return;
+    default: return;   // Text-Zeilen (Name/WLAN) werden per Enter editiert
   }
   apply(p);
 }
@@ -145,6 +150,8 @@ const char* rowName(int row) {
     case ROW_NAME:    return i18n::tr(Str::LblName);
     case ROW_LANG:    return i18n::tr(Str::SettingsLang);
     case ROW_STANDBY: return i18n::tr(Str::LblStandby);
+    case ROW_WSSID:   return i18n::tr(Str::LblWifiSsid);
+    case ROW_WPASS:   return i18n::tr(Str::LblWifiPass);
   }
   return "";
 }
@@ -165,8 +172,8 @@ void rowValue(int row, char* v, size_t n) {
     case ROW_CR:   snprintf(v, n, "4/%u", p.cr); break;
     case ROW_TX:   snprintf(v, n, "%u dBm", p.txDbm); break;
     case ROW_NAME:
-      if (s_editName) snprintf(v, n, "%s_", s_nameBuf);
-      else            settings::meshName(v, n);
+      if (s_edit == ROW_NAME) snprintf(v, n, "%s_", s_editBuf);
+      else                    settings::meshName(v, n);
       break;
     case ROW_LANG:
       snprintf(v, n, "%s", i18n::langName(i18n::lang()));
@@ -177,6 +184,22 @@ void rowValue(int row, char* v, size_t n) {
       else        snprintf(v, n, "%u min", m);
       break;
     }
+    case ROW_WSSID:
+      if (s_edit == ROW_WSSID) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        settings::wifiSsid(v, n);
+        if (!v[0]) snprintf(v, n, "-");
+      }
+      break;
+    case ROW_WPASS:
+      // Klartext nur während der Eingabe; sonst nur "gesetzt"-Indikator.
+      if (s_edit == ROW_WPASS) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        char pw[65];
+        settings::wifiPass(pw, sizeof(pw));
+        snprintf(v, n, "%s", pw[0] ? "****" : "-");
+      }
+      break;
   }
 }
 
@@ -233,7 +256,7 @@ void drawRow(Adafruit_GFX& g, int row) {
   if (row == s_sel) {
     g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
-    if (row != ROW_NAME) {               // Name wird per Enter/Tap editiert
+    if (!rowEditable(row)) {             // Text-Zeilen werden per Enter editiert
       g.setTextSize(1);
       g.setCursor(vx - 15, y + 8);
       g.write((uint8_t)0x11);            // ◄
@@ -243,34 +266,49 @@ void drawRow(Adafruit_GFX& g, int row) {
   }
 }
 
-void startEditName() {
-  settings::meshName(s_nameBuf, sizeof(s_nameBuf));
-  s_editName = true;
+void startEdit(int row) {
+  s_editBuf[0] = '\0';
+  switch (row) {
+    case ROW_NAME:  settings::meshName(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WSSID: settings::wifiSsid(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WPASS: settings::wifiPass(s_editBuf, sizeof(s_editBuf)); break;
+    default: return;
+  }
+  s_edit = row;
   markDirty();
 }
 
-void finishEditName(bool save) {
-  if (save && s_nameBuf[0]) mesh_client::setNodeName(s_nameBuf);
-  s_editName = false;
+void finishEdit(bool save) {
+  if (save) {
+    switch (s_edit) {
+      // Leerer Node-Name wird verworfen; leere WLAN-Werte löschen den Eintrag.
+      case ROW_NAME:  if (s_editBuf[0]) mesh_client::setNodeName(s_editBuf); break;
+      case ROW_WSSID: settings::setWifiSsid(s_editBuf); break;
+      case ROW_WPASS: settings::setWifiPass(s_editBuf); break;
+    }
+  }
+  s_edit = -1;
   markDirty();
 }
 
 void onKey(char k) {
-  // Name-Editiermodus: Tasten gehen in den Namen.
-  if (s_editName) {
-    if (k == '\r')      { finishEditName(true); return; }
-    if (k == 0x02)      { finishEditName(false); return; }   // Mic = abbrechen
+  // Editiermodus: Tasten gehen in den Text (Name/SSID/Passwort).
+  if (s_edit >= 0) {
+    if (k == '\r')      { finishEdit(true); return; }
+    if (k == 0x02)      { finishEdit(false); return; }   // Mic = abbrechen
     if (k == '\b') {
-      int len = strlen(s_nameBuf);
-      if (len > 0) { s_nameBuf[len - 1] = '\0'; markDirty(); }
-      else finishEditName(false);
+      int len = strlen(s_editBuf);
+      if (len > 0) { s_editBuf[len - 1] = '\0'; markDirty(); }
+      else finishEdit(false);
       return;
     }
+    // Eingabelimit: Node-Name/SSID 32 Zeichen, Passwort 64.
+    int maxLen = (s_edit == ROW_WPASS) ? 64 : 32;
     if (k >= 32 && k < 127) {
-      int len = strlen(s_nameBuf);
-      if (len < (int)sizeof(s_nameBuf) - 1) {
-        s_nameBuf[len] = k;
-        s_nameBuf[len + 1] = '\0';
+      int len = strlen(s_editBuf);
+      if (len < maxLen && len < (int)sizeof(s_editBuf) - 1) {
+        s_editBuf[len] = k;
+        s_editBuf[len + 1] = '\0';
         markDirty();
       }
     }
@@ -283,7 +321,7 @@ void onKey(char k) {
     case 'a': case 'A': changeRow(s_sel, -1); break;
     case 'd': case 'D': changeRow(s_sel, +1); break;
     case '\r':
-      if (s_sel == ROW_NAME) startEditName();
+      if (rowEditable(s_sel)) startEdit(s_sel);
       else changeRow(s_sel, +1);
       break;
     case '\b':
@@ -294,7 +332,7 @@ void onKey(char k) {
 
 void onTouch(int x, int y) {
   if (kHome.hit(x, y)) {
-    if (s_editName) finishEditName(true);
+    if (s_edit >= 0) finishEdit(true);
     appmgr::goHome();
     return;
   }
@@ -303,7 +341,7 @@ void onTouch(int x, int y) {
   // Erster Tap wählt nur aus (verhindert versehentliches Verstellen),
   // Tap auf die ausgewählte Zeile ändert: linke Hälfte -, rechte +.
   if (row != s_sel) { s_sel = row; markDirty(); return; }
-  if (row == ROW_NAME) { startEditName(); return; }
+  if (rowEditable(row)) { startEdit(row); return; }
   changeRow(row, (x >= W / 2) ? +1 : -1);
 }
 
@@ -313,7 +351,7 @@ class SettingsApp : public App {
   const char* name() const override { return i18n::tr(i18n::Str::AppSettings); }
 
   void onLeave() override {
-    if (s_editName) finishEditName(true);
+    if (s_edit >= 0) finishEdit(true);
   }
 
   void handleInput(const InputEvent& e) override {
@@ -334,8 +372,9 @@ class SettingsApp : public App {
     gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
     g.setTextSize(1);
     g.setCursor(FOOT_X, 280);
-    if (s_editName)               gui::print(g, i18n::tr(Str::HintEnterSave));
+    if (s_edit >= 0)              gui::print(g, i18n::tr(Str::HintEnterSave));
     else if (s_sel == ROW_NAME)   gui::print(g, i18n::tr(Str::HintNameEdit));
+    else if (rowEditable(s_sel))  gui::print(g, i18n::tr(Str::HintEdit));
     else                          gui::print(g, i18n::tr(Str::HintChange));
     char info[32];
     snprintf(info, sizeof(info), i18n::tr(Str::FmtBattery), battery::percent(),

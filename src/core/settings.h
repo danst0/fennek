@@ -69,6 +69,12 @@ void       setMeshParams(const MeshParams& p);   // schreibt nur Änderungen
 void meshName(char* out, size_t n);              // Node-Name (Default "T-Deck")
 void setMeshName(const char* name);
 
+// --- WLAN-Zugangsdaten (Web-Dateiverwaltung; Eingabe via Serial-Konsole) -----
+void wifiSsid(char* out, size_t n);              // "" = nicht konfiguriert
+void setWifiSsid(const char* ssid);
+void wifiPass(char* out, size_t n);
+void setWifiPass(const char* pass);
+
 // --- Spiele: Beststände + Schach-Spielstand (Namespace "fennek") --------------
 // Schreibdisziplin: Writes nur am Spielende bzw. beim Verlassen (Schach-Blob).
 uint32_t best2048();                       // 0 = noch kein Score

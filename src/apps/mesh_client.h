@@ -24,6 +24,7 @@ struct MsgView {
   char     text[160];     // UTF-8
   uint32_t timestamp;
   uint8_t  contactIdx;    // nur DM: Index in der Kontaktliste (0xFF = unbekannt)
+  uint8_t  channelIdx;    // nur kind=0: Kanal-Index (0=Public). Trennt die Chats.
 };
 
 // Radio + Identity + Kontakte initialisieren. false = Radio nicht gefunden.
@@ -33,6 +34,10 @@ bool ready();
 // Mesh-Pumpe: jeden Loop-Durchlauf aufrufen (nimmt spiLock selbst).
 void loop();
 
+// Pumpe pausieren (z. B. während WiFi-Dateitransfers den SPI-Bus brauchen).
+// Wirkt sofort; das Radio bleibt initialisiert. No-op solange nicht ready.
+void setSuspended(bool sus);
+
 // --- Nachrichten ---------------------------------------------------------------
 int  msgCount();
 bool msg(int i, MsgView& out);          // i=0 = älteste im Puffer
@@ -40,6 +45,7 @@ uint32_t changeCounter();               // erhöht sich bei jeder Änderung
 
 // --- Senden ----------------------------------------------------------------------
 bool sendChannelMsg(const char* text);  // an den Public-Channel
+bool sendChannelIdxMsg(int channelIdx, const char* text);  // an Kanal nach Index
 bool sendDirectMsg(int contactIdx, const char* text);
 void sendAdvert();                      // Zero-Hop-Advert ("ich bin hier")
 

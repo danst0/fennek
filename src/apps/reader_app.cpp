@@ -430,18 +430,48 @@ void drawList(Adafruit_GFX& g) {
   if (s_off + VISIBLE < s_fileCount)  gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }
 
+// Fortschrittsbalken-Geometrie — von drawProgress (Voll-Draw) und
+// drawProgStrip (Region-Refresh) gemeinsam genutzt, damit beide deckungsgleich
+// zeichnen.
+constexpr int PROG_BAR_X = 10;
+constexpr int PROG_BAR_Y = 130;
+constexpr int PROG_BAR_W = W - 20;
+constexpr int PROG_BAR_H = 16;
+constexpr int PROG_PCT_Y = 156;
+constexpr int PROG_STRIP_Y = 128;   // 8er-ausgerichteter Region-Streifen (Balken+%)
+constexpr int PROG_STRIP_H = 40;
+constexpr int SCAN_CNT_Y   = 104;   // Region für die "N gefunden"-Zeile (Scan)
+constexpr int SCAN_CNT_H   = 24;
+
+// Aktueller Prozentwert für den Region-Refresh (DrawFn ist parameterlos).
+int s_progPct = 0;
+
+void drawProgBar(Adafruit_GFX& g, int percent) {
+  g.drawRect(PROG_BAR_X, PROG_BAR_Y, PROG_BAR_W, PROG_BAR_H, GxEPD_BLACK);
+  int fw = (PROG_BAR_W - 2) * percent / 100;
+  if (fw > 0) g.fillRect(PROG_BAR_X + 1, PROG_BAR_Y + 1, fw, PROG_BAR_H - 2, GxEPD_BLACK);
+  char pct[8];
+  snprintf(pct, sizeof(pct), "%d%%", percent);
+  gui::printAt(g, 10, PROG_PCT_Y, pct, 1);
+}
+
 void drawProgress(Adafruit_GFX& g, const char* what, int percent) {
   gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppReader), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
   gui::printAt(g, 10, 90, what, 2);
-  int barX = 10, barY = 130, barW = W - 20, barH = 16;
-  g.drawRect(barX, barY, barW, barH, GxEPD_BLACK);
-  int fw = (barW - 2) * percent / 100;
-  if (fw > 0) g.fillRect(barX + 1, barY + 1, fw, barH - 2, GxEPD_BLACK);
-  char pct[8];
-  snprintf(pct, sizeof(pct), "%d%%", percent);
-  gui::printAt(g, 10, 156, pct, 1);
+  drawProgBar(g, percent);
   gui::drawButton(g, kCancel, i18n::tr(i18n::Str::BtnCancel), false);
+}
+
+// Region-Draw-Funktionen (parameterlos für display::renderRegion) — lesen den
+// aktuellen Zustand aus den Datei-Statics, damit nur ein Streifen statt des
+// ganzen Schirms aktualisiert wird (vermeidet Voll-Refresh alle 2 s).
+void drawProgStrip(Adafruit_GFX& g) { drawProgBar(g, s_progPct); }
+
+void drawScanCount(Adafruit_GFX& g) {
+  char found[32];
+  snprintf(found, sizeof(found), i18n::tr(i18n::Str::FmtReaderFound), s_fileCount);
+  gui::printAt(g, 10, 110, found, 1);
 }
 
 void drawRead(Adafruit_GFX& g) {
@@ -500,7 +530,10 @@ void onListTouch(int x, int y) {
     if (kRetrySD.hit(x, y)) retrySD();
     return;
   }
-  if (kUp.hit(x, y))   { s_off = (s_off > VISIBLE) ? s_off - VISIBLE : 0; markDirty(); return; }
+  if (kUp.hit(x, y))   {
+    if (s_off > 0) { s_off = (s_off > VISIBLE) ? s_off - VISIBLE : 0; markDirty(); }
+    return;   // am oberen Rand kein Refresh (vermeidet Noop-Voll-Refresh)
+  }
   if (kDown.hit(x, y)) {
     if (s_off + VISIBLE < s_fileCount) { s_off += VISIBLE; markDirty(); }
     return;
@@ -637,7 +670,11 @@ class ReaderApp : public App {
     if (pct != s_lastPct && now - s_lastProgDraw >= 2000) {
       s_lastProgDraw = now;
       s_lastPct = pct;
-      appmgr::markDirty();
+      s_progPct  = pct;
+      // Nur den Fortschritts-Streifen partiell aktualisieren statt Voll-Refresh:
+      // im Listen-Scan die "N gefunden"-Zeile, sonst den Balken+Prozent.
+      if (s_screen == LIST) display::renderRegion(drawScanCount, SCAN_CNT_Y, SCAN_CNT_H);
+      else                  display::renderRegion(drawProgStrip, PROG_STRIP_Y, PROG_STRIP_H);
     }
   }
 };

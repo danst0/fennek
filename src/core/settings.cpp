@@ -1,5 +1,7 @@
 #include "settings.h"
 
+#include "config.h"
+
 #include <Arduino.h>
 #include <Preferences.h>
 #include <string.h>
@@ -14,7 +16,7 @@ uint8_t  s_volume = 255;        // 255 = noch nicht geladen
 uint8_t  s_standby = 5;         // Auto-Standby-Minuten (0 = aus)
 uint8_t  s_lang = 0;            // UI-Sprache (0 = Deutsch, s. i18n::Lang)
 char     s_lastApp[24] = "";
-char     s_lastTrack[192] = "";
+char     s_lastTrack[TRACK_PATH_LEN] = "";
 uint32_t s_lastPos = 0;
 
 // Einmalige Migration vom alten NVS-Namespace "meck" (Firmware hieß früher
@@ -32,7 +34,7 @@ void migrateFromMeck() {
       s_prefs.putString("lastapp", b);
     }
     if (old.isKey("trkpath")) {
-      char b[192];
+      char b[TRACK_PATH_LEN];
       old.getString("trkpath", b, sizeof(b));
       s_prefs.putString("trkpath", b);
       s_prefs.putULong("trkpos", old.getULong("trkpos", 0));
@@ -60,6 +62,9 @@ void migrateFromMeck() {
 namespace settings {
 
 void begin() {
+  // Idempotent: ein zweiter Preferences::begin() gäbe false zurück und würde
+  // s_open kippen (Pfad: Timer-Wake-Minimal-Boot fällt in den Voll-Boot durch).
+  if (s_open) return;
   s_open = s_prefs.begin("fennek", false);
   if (!s_open) return;
   migrateFromMeck();
@@ -291,6 +296,50 @@ void setMeshName(const char* name) {
   strncpy(s_meshName, name, sizeof(s_meshName) - 1);
   s_meshName[sizeof(s_meshName) - 1] = '\0';
   s_prefs.putString("mname", s_meshName);
+}
+
+// --- WLAN-Zugangsdaten ----------------------------------------------------------
+namespace {
+
+bool s_wifiLoaded = false;
+char s_wifiSsid[33] = "";
+char s_wifiPass[65] = "";
+
+void wifiEnsure() {
+  if (s_wifiLoaded || !s_open) return;
+  s_wifiLoaded = true;
+  if (s_prefs.isKey("wssid")) s_prefs.getString("wssid", s_wifiSsid, sizeof(s_wifiSsid));
+  if (s_prefs.isKey("wpass")) s_prefs.getString("wpass", s_wifiPass, sizeof(s_wifiPass));
+}
+
+}  // namespace
+
+void wifiSsid(char* out, size_t n) {
+  wifiEnsure();
+  strncpy(out, s_wifiSsid, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setWifiSsid(const char* ssid) {
+  wifiEnsure();
+  if (!s_open || !ssid || strcmp(ssid, s_wifiSsid) == 0) return;
+  strncpy(s_wifiSsid, ssid, sizeof(s_wifiSsid) - 1);
+  s_wifiSsid[sizeof(s_wifiSsid) - 1] = '\0';
+  s_prefs.putString("wssid", s_wifiSsid);
+}
+
+void wifiPass(char* out, size_t n) {
+  wifiEnsure();
+  strncpy(out, s_wifiPass, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setWifiPass(const char* pass) {
+  wifiEnsure();
+  if (!s_open || !pass || strcmp(pass, s_wifiPass) == 0) return;
+  strncpy(s_wifiPass, pass, sizeof(s_wifiPass) - 1);
+  s_wifiPass[sizeof(s_wifiPass) - 1] = '\0';
+  s_prefs.putString("wpass", s_wifiPass);
 }
 
 // --- Spiele: Beststände + Schach-Spielstand ------------------------------------

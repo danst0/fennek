@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
+#include <esp_heap_caps.h>
 #include <string.h>
 
 namespace {
@@ -71,7 +72,8 @@ int      s_plOpenCount  = 0;       // # Tracks der gerade geöffneten Playlist
 int      s_sel          = 0;       // Tastatur-Auswahl-Cursor in der Liste
 int      s_off          = 0;       // Scroll-Offset (nur Track-Listen)
 
-int      s_scratch[MAX_TRACKS];    // Queue-Aufbau (kein Stack-Druck)
+int*     s_scratch    = nullptr;   // Queue-Aufbau (PSRAM, wächst mit der Bibliothek)
+int      s_scratchCap = 0;
 
 constexpr uint32_t kProgressMs = 3000;
 
@@ -188,7 +190,7 @@ int visibleRows() {
 
 // Flat-Index des aktuell spielenden Tracks (-1 = keiner / nicht in Bibliothek).
 int currentFlat() {
-  char p[192];
+  char p[TRACK_PATH_LEN];
   audio::currentPath(p, sizeof(p));
   return p[0] ? library::indexOfPath(p) : -1;
 }
@@ -197,7 +199,7 @@ int currentFlat() {
 void playFlatList(const int* flat, int n, int startItem) {
   if (n <= 0) return;
   audio::queueBegin(audio::Owner::Music);
-  char p[192];
+  char p[TRACK_PATH_LEN];
   for (int i = 0; i < n; i++) {
     if (library::path(flat[i], p, sizeof(p))) audio::queueAdd(p);
   }
@@ -206,21 +208,41 @@ void playFlatList(const int* flat, int n, int startItem) {
   markDirty();
 }
 
+// Scratch auf mindestens n Einträge bringen (PSRAM, Fallback internes RAM).
+int* scratchFor(int n) {
+  if (n > s_scratchCap) {
+    int* np = (int*)heap_caps_realloc(s_scratch, sizeof(int) * n, MALLOC_CAP_SPIRAM);
+    if (!np) np = (int*)realloc(s_scratch, sizeof(int) * n);
+    if (!np) return nullptr;
+    s_scratch = np;
+    s_scratchCap = n;
+  }
+  return s_scratch;
+}
+
 void playFromAlbum(int run, int startItem) {
-  int n = library::albumTrackFlatList(run, s_scratch, MAX_TRACKS);
-  playFlatList(s_scratch, n, startItem);
+  int cnt = library::albumTrackCount(run);
+  if (cnt <= 0) return;
+  int* buf = scratchFor(cnt);
+  if (!buf) return;
+  int n = library::albumTrackFlatList(run, buf, cnt);
+  playFlatList(buf, n, startItem);
 }
 void playFromTitles(int startItem) {
   int n = library::titleCount();
-  if (n > MAX_TRACKS) n = MAX_TRACKS;
-  for (int i = 0; i < n; i++) s_scratch[i] = library::titleFlatIndex(i);
-  playFlatList(s_scratch, n, startItem);
+  if (n <= 0) return;
+  int* buf = scratchFor(n);
+  if (!buf) return;
+  for (int i = 0; i < n; i++) buf[i] = library::titleFlatIndex(i);
+  playFlatList(buf, n, startItem);
 }
 void playFromPlaylist(int startItem) {
   int n = s_plOpenCount;
-  if (n > MAX_TRACKS) n = MAX_TRACKS;
-  for (int i = 0; i < n; i++) s_scratch[i] = library::playlistTrackFlatIndex(i);
-  playFlatList(s_scratch, n, startItem);
+  if (n <= 0) return;
+  int* buf = scratchFor(n);
+  if (!buf) return;
+  for (int i = 0; i < n; i++) buf[i] = library::playlistTrackFlatIndex(i);
+  playFlatList(buf, n, startItem);
 }
 
 // Auswahl eines einzelnen Items (Leaf-Liste) an Item-Index idx.
@@ -242,10 +264,10 @@ void selectItem(Level lv, int ctx, int idx) {
 }
 
 // SD erneut mounten und Bibliothek neu scannen ("Erneut suchen").
+// Der Scan läuft im Hintergrund (appmgr-Häppchen); die UI bleibt bedienbar.
 void retrySD() {
   if (board::initSD()) {
-    int n = library::scan(MP3_DIR);
-    if (n == 0) library::scan("/");
+    library::startScan(MP3_DIR);
     s_depth = 0;
     s_stack[0] = Frame{L_MENU, -1, 0, 3};
   }
@@ -261,7 +283,12 @@ void drawListArea(Adafruit_GFX& g) {
   bool trackList = isTrackList(f.level);
 
   if (M <= 0) {
-    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::EmptyList), 2);
+    if (library::scanning()) {
+      gui::printAt(g, 10, 80, "Suche Musik ...", 2);
+      gui::printAt(g, 10, 110, "(läuft im Hintergrund)", 1);
+    } else {
+      gui::printAt(g, 10, 80, i18n::tr(i18n::Str::EmptyList), 2);
+    }
   } else if (trackList || M <= VISIBLE) {
     // Leaf-Liste: Items einzeln; Track-Listen mit Scroll-Fenster
     int off = trackList ? s_off : 0;
@@ -396,7 +423,7 @@ void drawPlayer(Adafruit_GFX& g) {
     library::name(flat, nm, sizeof(nm));
     library::trackArtist(flat, artist, sizeof(artist));
   } else {
-    char p[192];
+    char p[TRACK_PATH_LEN];
     audio::currentPath(p, sizeof(p));
     if (p[0]) {
       const char* base = strrchr(p, '/');
@@ -631,8 +658,9 @@ class MusicApp : public App {
         millis() - s_lastProg >= kProgressMs) {
       s_lastProg = millis();
       s_lastShownSec = st.posSec;
-      // periodisch voll neu zeichnen (Ghosting im Streifen beseitigen)
-      if (++s_progCount % 10 == 0) appmgr::markDirty();
+      // periodisch voll neu zeichnen (Ghosting im Streifen beseitigen);
+      // alle 20 Streifen (~60 s) statt alle 10 (~30 s) -> halb so viele Voll-Refreshes.
+      if (++s_progCount % 20 == 0) appmgr::markDirty();
       else display::renderRegion(drawProgStrip, PROG_Y, PROG_H);
     }
   }

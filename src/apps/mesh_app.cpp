@@ -40,17 +40,36 @@ constexpr int ROW_H   = 30;
 constexpr int VISIBLE = 7;
 constexpr int LIST_Y  = HEADER_H + 4;
 
-enum Screen { CHANNEL, CONTACTS, DM, ERROR_SCREEN };
-Screen s_screen = CHANNEL;
+// CHATS = vereinheitlichte, scrollbare Liste aller Kanäle + Direktnachrichten
+// (Einstieg). CHANNEL/DM = geöffnete Konversation. Kein separater Kontakt-Screen
+// mehr: Kontakte erscheinen direkt als DM-Einträge in der Chat-Liste.
+enum Screen { CHATS, CHANNEL, DM, ERROR_SCREEN };
+Screen s_screen = CHATS;
 
 bool     s_initTried = false;
 int      s_dmContact = -1;           // Kontakt-Index der offenen DM-Ansicht
 char     s_dmName[32] = "";
-int      s_sel = 0, s_off = 0;       // Kontaktlisten-Cursor
+int      s_channelIdx = 0;           // Kanal-Index der offenen CHANNEL-Ansicht
+int      s_sel = 0, s_off = 0;       // Chat-Listen-Cursor
 char     s_compose[140] = "";
 uint32_t s_seenChanges = 0;
 
 void markDirty() { appmgr::markDirty(); }
+
+// --- Chat-Liste: Kanäle (zuerst) + Kontakte (als DMs) -------------------------
+struct ChatEntry { uint8_t kind; int idx; };   // kind: 0=Kanal, 1=DM (Kontakt)
+constexpr int kMaxChats = 8 + 32;              // MAX_GROUP_CHANNELS + MAX_CONTACTS
+
+int chatCount() { return mesh_client::channelCount() + mesh_client::contactCount(); }
+
+int buildChatList(ChatEntry* out, int max) {
+  int n = 0;
+  int nc = mesh_client::channelCount();
+  for (int i = 0; i < nc && n < max; i++) out[n++] = {0, i};
+  int nk = mesh_client::contactCount();
+  for (int i = 0; i < nk && n < max; i++) out[n++] = {1, i};
+  return n;
+}
 
 // Nachricht in Anzeigezeilen umbrechen und (von unten befüllt) sammeln.
 struct LineCollector {
@@ -96,7 +115,7 @@ void collectMessages(LineCollector& lc) {
     if (!mesh_client::msg(i, m)) continue;
     char line[224];
     if (s_screen == CHANNEL) {
-      if (m.kind != 0) continue;
+      if (m.kind != 0 || (int)m.channelIdx != s_channelIdx) continue;
       strncpy(line, m.text, sizeof(line) - 1);
       line[sizeof(line) - 1] = '\0';
     } else {  // DM
@@ -137,7 +156,10 @@ void drawCompose(Adafruit_GFX& g) {
 
 void drawChannelOrDm(Adafruit_GFX& g) {
   if (s_screen == CHANNEL) {
-    drawHeaderBar(g, i18n::tr(i18n::Str::MeshChannel));
+    char cn[32] = "";
+    if (!mesh_client::channelName(s_channelIdx, cn, sizeof(cn)))
+      strncpy(cn, i18n::tr(i18n::Str::MeshChannel), sizeof(cn) - 1);
+    drawHeaderBar(g, cn);
   } else {
     char t[48];
     snprintf(t, sizeof(t), "DM: %s", s_dmName);
@@ -162,29 +184,37 @@ void drawChannelOrDm(Adafruit_GFX& g) {
 
   drawCompose(g);
 
-  if (s_screen == CHANNEL) {
-    gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnContacts), false);
-    gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
-    gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
-  } else {
-    gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnChannel), false);
-    gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnContacts), false);
-    gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
-  }
+  // In jeder Konversation: zurück zur Chat-Liste, Advert, Home.
+  gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnBackShort), false);
+  gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
-void drawContacts(Adafruit_GFX& g) {
-  drawHeaderBar(g, i18n::tr(i18n::Str::MeshContacts));
+void drawChats(Adafruit_GFX& g) {
+  drawHeaderBar(g, i18n::tr(i18n::Str::MeshChats));
 
-  int n = mesh_client::contactCount();
-  if (n == 0) {
-    gui::printAt(g, 10, 90, i18n::tr(i18n::Str::MeshNoContacts), 2);
-    gui::printAt(g, 10, 120, i18n::tr(i18n::Str::MeshCtHint1), 1);
-    gui::printAt(g, 10, 134, i18n::tr(i18n::Str::MeshCtHint2), 1);
+  ChatEntry entries[kMaxChats];
+  int n = buildChatList(entries, kMaxChats);
+
+  // Kontakte tauchen automatisch auf — Hinweis zeigen, wenn (noch) keine DMs.
+  if (mesh_client::contactCount() == 0) {
+    int hy = LIST_Y + mesh_client::channelCount() * ROW_H + 6;
+    gui::printAt(g, 10, hy,      i18n::tr(i18n::Str::MeshCtHint1), 1);
+    gui::printAt(g, 10, hy + 14, i18n::tr(i18n::Str::MeshCtHint2), 1);
   }
+
   for (int r = 0; r < VISIBLE && s_off + r < n; r++) {
-    char nm[40];
-    mesh_client::contactName(s_off + r, nm, sizeof(nm));
+    ChatEntry& e = entries[s_off + r];
+    char raw[40] = "", nm[44];
+    if (e.kind == 0) {
+      mesh_client::channelName(e.idx, raw, sizeof(raw));
+      // Kanäle ohne '#' (z. B. "Public") mit Raute markieren.
+      snprintf(nm, sizeof(nm), "%s%s", (raw[0] == '#') ? "" : "#", raw);
+    } else {
+      mesh_client::contactName(e.idx, raw, sizeof(raw));
+      // DM-Marker (CP437 0x10 = ►) vor dem Kontaktnamen.
+      snprintf(nm, sizeof(nm), "\x10 %s", raw);
+    }
     gui::drawRowText(g, LIST_Y + r * ROW_H, ROW_H, nm, false);
   }
   int cr = s_sel - s_off;
@@ -194,7 +224,6 @@ void drawContacts(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnChannel), false);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
   gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
@@ -211,9 +240,15 @@ void drawError(Adafruit_GFX& g) {
 void sendCompose() {
   if (!s_compose[0]) return;
   bool ok = (s_screen == CHANNEL)
-                ? mesh_client::sendChannelMsg(s_compose)
+                ? mesh_client::sendChannelIdxMsg(s_channelIdx, s_compose)
                 : mesh_client::sendDirectMsg(s_dmContact, s_compose);
   if (ok) s_compose[0] = '\0';
+  markDirty();
+}
+
+void backToChats() {
+  s_screen = CHATS;
+  s_compose[0] = '\0';
   markDirty();
 }
 
@@ -226,8 +261,24 @@ void openDm(int idx) {
   markDirty();
 }
 
+// Eintrag der Chat-Liste öffnen (Kanal oder DM).
+void openChat(int listIdx) {
+  ChatEntry entries[kMaxChats];
+  int n = buildChatList(entries, kMaxChats);
+  if (listIdx < 0 || listIdx >= n) return;
+  ChatEntry& e = entries[listIdx];
+  if (e.kind == 0) {
+    s_channelIdx = e.idx;
+    s_compose[0] = '\0';
+    s_screen = CHANNEL;
+    markDirty();
+  } else {
+    openDm(e.idx);
+  }
+}
+
 void moveSel(int delta) {
-  int n = mesh_client::contactCount();
+  int n = chatCount();
   if (n <= 0) return;
   int ns = s_sel + delta;
   if (ns < 0) ns = n - 1;
@@ -245,31 +296,28 @@ void onTouch(int x, int y) {
   }
   if (kBtn3.hit(x, y)) { appmgr::goHome(); return; }
 
-  if (s_screen == CHANNEL) {
-    if (kBtn1.hit(x, y)) { s_screen = CONTACTS; markDirty(); return; }
-    if (kBtn2.hit(x, y)) { mesh_client::sendAdvert(); markDirty(); return; }
-  } else if (s_screen == DM) {
-    if (kBtn1.hit(x, y)) { s_screen = CHANNEL; s_compose[0] = '\0'; markDirty(); return; }
-    if (kBtn2.hit(x, y)) { s_screen = CONTACTS; markDirty(); return; }
-  } else if (s_screen == CONTACTS) {
-    if (kBtn1.hit(x, y)) { s_screen = CHANNEL; markDirty(); return; }
+  if (s_screen == CHATS) {
     if (kBtn2.hit(x, y)) { mesh_client::sendAdvert(); markDirty(); return; }
     if (y >= LIST_Y && y < LIST_Y + VISIBLE * ROW_H) {
       int r = (y - LIST_Y) / ROW_H;
-      if (s_off + r < mesh_client::contactCount()) openDm(s_off + r);
+      openChat(s_off + r);
     }
+    return;
   }
+
+  // CHANNEL / DM: zurück zur Liste, Advert.
+  if (kBtn1.hit(x, y)) { backToChats(); return; }
+  if (kBtn2.hit(x, y)) { mesh_client::sendAdvert(); markDirty(); return; }
 }
 
 void onKey(char k) {
   if (s_screen == ERROR_SCREEN) return;
 
-  if (s_screen == CONTACTS) {
+  if (s_screen == CHATS) {
     switch (k) {
       case 'w': case 'W': moveSel(-1); break;
       case 's': case 'S': moveSel(+1); break;
-      case '\r':          openDm(s_sel); break;
-      case '\b':          s_screen = CHANNEL; markDirty(); break;
+      case '\r':          openChat(s_sel); break;
       case 'q': case 'Q': appmgr::goHome(); break;
       default: break;
     }
@@ -281,7 +329,7 @@ void onKey(char k) {
   if (k == '\b') {
     int len = strlen(s_compose);
     if (len > 0) { s_compose[len - 1] = '\0'; markDirty(); }
-    else if (s_screen == DM) { s_screen = CHANNEL; markDirty(); }
+    else { backToChats(); }   // leere Eingabe + Backspace = zurück zur Chat-Liste
     return;
   }
   if (k >= 32 && k < 127) {
@@ -303,9 +351,11 @@ class MeshApp : public App {
   void onEnter() override {
     if (!s_initTried) {
       s_initTried = true;
-      if (!mesh_client::begin()) s_screen = ERROR_SCREEN;
+      s_screen = mesh_client::begin() ? CHATS : ERROR_SCREEN;
     } else if (!mesh_client::ready()) {
       s_screen = ERROR_SCREEN;
+    } else {
+      s_screen = CHATS;   // Wiedereintritt zeigt immer die Chat-Übersicht
     }
     s_seenChanges = mesh_client::changeCounter();
   }
@@ -333,8 +383,8 @@ class MeshApp : public App {
   void draw(Adafruit_GFX& g) override {
     g.setTextColor(GxEPD_BLACK);
     switch (s_screen) {
+      case CHATS:            drawChats(g); break;
       case CHANNEL: case DM: drawChannelOrDm(g); break;
-      case CONTACTS:         drawContacts(g); break;
       case ERROR_SCREEN:     drawError(g); break;
     }
   }

@@ -177,6 +177,7 @@ bool read(const char* path, Tags& out) {
   spiLock();
   File f = SD.open(path);
   if (f) {
+    out.fsize = (uint32_t)f.size();
     ok = readV2(f, out);
     if (!ok) ok = readV1(f, out);
     f.close();

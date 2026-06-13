@@ -14,7 +14,19 @@ namespace library {
 
 void begin();
 
-// Verzeichnis nach *.mp3 scannen. Gibt die Anzahl gefundener Tracks zurück.
+// --- Aufbau der Bibliothek ----------------------------------------------------
+// Normaler Weg beim Boot: loadCache() lädt /.fennek/tracks.bin (Sekunden);
+// ohne Cache startScan() + scanStep()-Häppchen aus dem appmgr-Loop (readdir,
+// UI bleibt bedienbar). Der Abschluss publiziert die Funde, wendet den
+// ID3-Cache an und schreibt den Track-Cache. Fallback auf "/" passiert
+// automatisch, wenn unter dem Startverzeichnis nichts gefunden wird.
+bool loadCache();
+void startScan(const char* dir);
+bool scanning();
+int  scanFound();                 // bisher gefundene Tracks (nur w. Scan läuft)
+void scanStep(int maxEntries);
+
+// Blockierender Komplett-Scan (Selbsttests). Gibt die Track-Anzahl zurück.
 int scan(const char* dir);
 
 int count();

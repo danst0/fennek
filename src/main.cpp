@@ -9,6 +9,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SD.h>
+#include <esp_sleep.h>
+#include <esp_system.h>
 #include <string.h>
 
 #include "config.h"
@@ -20,8 +22,10 @@
 #include "core/settings.h"
 #include "core/appmgr.h"
 #include "core/console.h"
+#include "core/power.h"
 #include "services/library.h"
 #include "services/audio.h"
+#include "services/webfm.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
 #include "apps/book_app.h"
@@ -30,6 +34,7 @@
 #include "apps/mesh_client.h"
 #include "apps/settings_app.h"
 #include "apps/games_app.h"
+#include "apps/files_app.h"
 
 #ifdef GAMES_SMOKE_TEST
 namespace {
@@ -49,10 +54,20 @@ void gamesSmokeTap(int16_t x, int16_t y) {
 
 void setup() {
   Serial.begin(115200);
+
+  // Stunden-Timer-Wake aus dem Standby? Dann Minimal-Pfad: nur Akku-% aufs
+  // Schlafbild und sofort zurück in Deep Sleep (kehrt dann nicht zurück).
+  // Bei Knopf-Wake/Kaltstart geht es hier normal weiter.
+  power::handleTimerWake();
+
   // USB-CDC kurz Zeit zum Enumerieren geben (sonst geht das Boot-Log verloren).
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 2000) delay(10);
   Serial.println("\n[FENNEK] Boot — Fennek " FENNEK_VERSION " (T-Deck Pro)");
+  // Diagnose Standby-Sofort-Wake: Warum sind wir hier? (Reset-Grund + Wake-Quelle)
+  Serial.printf("[FENNEK] Reset-Grund=%d Wake-Quelle=%d ext1=0x%llx\n",
+                (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause(),
+                (unsigned long long)esp_sleep_get_ext1_wakeup_status());
 
   // 1) Power + Busse.
   board::powerOn();
@@ -90,10 +105,14 @@ void setup() {
   library::begin();
   int n = 0;
   if (sdOk) {
-    n = library::scan(MP3_DIR);
-    if (n == 0) n = library::scan("/");   // Fallback: Root durchsuchen
+    // Schneller Weg: Track-Cache von der SD; sonst Hintergrund-Scan über die
+    // appmgr-Häppchen (Boot blockiert nicht mehr minutenlang — Fallback auf
+    // "/" übernimmt die Library selbst, wenn unter /music nichts liegt).
+    if (library::loadCache()) n = library::count();
+    else                      library::startScan(MP3_DIR);
   }
-  Serial.printf("[FENNEK] Tracks gefunden: %d\n", n);
+  Serial.printf("[FENNEK] Tracks gefunden: %d%s\n", n,
+                library::scanning() ? " (Scan läuft im Hintergrund)" : "");
 
   // 5) Audio-Engine (startet den Decode-Task auf Core 0).
   audio::begin();
@@ -108,7 +127,7 @@ void setup() {
 #ifdef PLAYLIST_SELFTEST
   // TEMP: Test-.m3u schreiben (1x absolut, 1x relativ), scannen, auflösen, löschen.
   if (sdOk && library::count() >= 2) {
-    char p0[192], p1[192];
+    char p0[TRACK_PATH_LEN], p1[TRACK_PATH_LEN];
     library::path(0, p0, sizeof(p0));
     library::path(1, p1, sizeof(p1));
     const char* rel1 = strstr(p1, "/music/");
@@ -145,12 +164,14 @@ void setup() {
   appmgr::add(mesh_app::get());
   appmgr::add(settings_app::get());
   appmgr::add(games_app::get());
+  appmgr::add(files_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
   launcher::setTile(3, i18n::Str::TileMesh,     mesh_app::get());
   launcher::setTile(4, i18n::Str::TileSettings, settings_app::get());
   launcher::setTile(5, i18n::Str::TileGames,    games_app::get());
+  launcher::setTile(6, i18n::Str::TileFiles,    files_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
@@ -206,7 +227,7 @@ void setup() {
   // TEMP: Track 0 spielen und alle 2 s einen Refresh erzwingen — der Audio-Task
   // meldet [GAP] maxGap; bleibt der trotz Refresh klein, stottert es nicht.
   if (n > 0) {
-    char p0[192];
+    char p0[TRACK_PATH_LEN];
     library::path(0, p0, sizeof(p0));
     audio::queueBegin(audio::Owner::Music);
     audio::queueAdd(p0);
@@ -224,6 +245,7 @@ void setup() {
 
 void loop() {
   console::poll();   // Serial-Debug-Konsole ('help' über USB)
+  webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
 }

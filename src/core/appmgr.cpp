@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr int kMaxApps = 8;
+constexpr int kMaxApps = 10;
 
 App*     s_apps[kMaxApps];
 int      s_count = 0;
@@ -91,7 +91,7 @@ void persistPlayback() {
   audio::Status st = audio::status();
   settings::setVolume(st.volume);
   if (st.playing && st.owner == audio::Owner::Music) {
-    char p[192];
+    char p[TRACK_PATH_LEN];
     audio::currentPath(p, sizeof(p));
     if (p[0]) settings::setLastTrack(p, st.posSec);
   }
@@ -172,16 +172,32 @@ void loop() {
   // 2) Hintergrund-Arbeit aller Apps (Mesh-Loop, Bookmark-Writes, ...).
   for (int i = 0; i < s_count; i++) s_apps[i]->background();
 
-  // 2b) ID3-Tag-Scan häppchenweise abarbeiten (UI bleibt bedienbar).
-  static bool s_wasTagging = false;
-  if (library::tagScanPending()) {
-    library::tagScanStep(2);
-    s_wasTagging = true;
-  } else if (s_wasTagging) {
-    s_wasTagging = false;
-    int d, t; library::tagScanProgress(&d, &t);
-    Serial.printf("[APP] ID3-Scan fertig (%d/%d) — Indizes neu sortiert\n", d, t);
-    s_dirty = true;   // Listen zeigen jetzt Tag-Daten
+  // 2b) Bibliotheks-Scan und ID3-Tag-Scan häppchenweise (UI bleibt bedienbar).
+  //     Beide pausieren bei laufender Wiedergabe: jeder Schritt belegt unter
+  //     spiLock die SD und würde dem Audio-Task den Bus streitig machen.
+  static bool s_wasTagging  = false;
+  static bool s_wasScanning = false;
+  audio::Status ast = audio::status();
+  const bool audioActive = ast.playing && !ast.paused;
+  if (library::scanning()) {
+    if (!audioActive) library::scanStep(6);
+    s_wasScanning = true;
+  } else {
+    if (s_wasScanning) {
+      s_wasScanning = false;
+      s_dirty = true;   // Listen/Launcher zeigen die frische Bibliothek
+    }
+    if (library::tagScanPending()) {
+      if (!audioActive) {
+        library::tagScanStep(2);
+        s_wasTagging = true;
+      }
+    } else if (s_wasTagging) {
+      s_wasTagging = false;
+      int d, t; library::tagScanProgress(&d, &t);
+      Serial.printf("[APP] ID3-Scan fertig (%d/%d) — Indizes neu sortiert\n", d, t);
+      s_dirty = true;   // Listen zeigen jetzt Tag-Daten
+    }
   }
 
   // 3) Vordergrund-Tick (kann markDirty() setzen oder Region-Refreshes machen).
