@@ -44,11 +44,14 @@ const Rect kRetrySD {20, 150, W - 40, 48};
 
 // --- Layout: Editor ----------------------------------------------------------
 // Default-Font Größe 1: 6x8 px. 38 Spalten; Text füllt bis zur Button-Leiste.
-constexpr int EDIT_COLS  = 38;
-constexpr int EDIT_X     = 6;
-constexpr int EDIT_Y     = TOP + 4;
-constexpr int EDIT_LINEH = 10;
-constexpr int EDIT_ROWS  = (BAR_Y - 2 - EDIT_Y) / EDIT_LINEH;
+// Kompakte Kopfzeile (Dateiname klein, Größe 1) — der Text beginnt darunter.
+constexpr int EDIT_COLS    = 38;
+constexpr int EDIT_X       = 6;
+constexpr int EDIT_HDR_Y   = TOP + 3;
+constexpr int EDIT_HDR_LN  = TOP + 14;   // Trennlinie unter dem Titel
+constexpr int EDIT_Y       = TOP + 18;   // Textstart, unterhalb der Kopfzeile
+constexpr int EDIT_LINEH   = 10;
+constexpr int EDIT_ROWS    = (BAR_Y - 2 - EDIT_Y) / EDIT_LINEH;
 
 // --- Zustand -----------------------------------------------------------------
 enum Screen { LIST, EDIT, CONFIRM_DEL };
@@ -320,11 +323,9 @@ void drawList(Adafruit_GFX& g) {
 // Puffer in Zeilen umbrechen (an '\n' und an EDIT_COLS) und nur die letzten
 // EDIT_ROWS Zeilen rendern (Anhänge-Modus → Cursor bleibt unten sichtbar).
 void drawEditor(Adafruit_GFX& g) {
-  char date[kFileLen];
-  strncpy(date, s_curFile, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
-  char* dot = strrchr(date, '.'); if (dot) *dot = '\0';
-  gui::printAt(g, 6, HEADER_Y, date, 2);
-  g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
+  // Titel klein (Größe 1) und mit ".md" — spart Platz, Text beginnt darunter.
+  gui::printAt(g, EDIT_X, EDIT_HDR_Y, s_curFile, 1);
+  g.drawFastHLine(0, EDIT_HDR_LN, W, GxEPD_BLACK);
 
   static char ring[EDIT_ROWS][EDIT_COLS + 2];
   int total = 0;   // Index der aktuellen (Teil-)Zeile im Ring
