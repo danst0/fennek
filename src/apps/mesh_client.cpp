@@ -416,38 +416,60 @@ protected:
     // Uhr opportunistisch aus (signierten) Adverts synchronisieren — das
     // Gerät hat keine gepufferte RTC; ohne echte Zeit tragen unsere
     // Nachrichten veraltete Timestamps und werden von Bots ignoriert.
-    // Aber NICHT blind auf den größten Timestamp ratschen: ein einzelner
-    // Node mit Zukunfts-Uhr zog uns am 12.06.2026 um +28 h mit. Regeln:
-    //   1. Bootstrap: solange noch kein bestätigter Sync seit Boot vorliegt
-    //      (Kaltstart Mai 2024 ODER NVS-Restore, der >1 h hinterherhängen kann),
-    //      die erste plausible Advert-Zeit beliebig weit übernehmen.
-    //   2. Danach nur kleine Vorwärts-Korrekturen (< 1 h).
-    //   3. Rückwärts erst, wenn 3 Adverts in Folge > 1 h hinter uns liegen
-    //      (Mehrheit hat recht, der Ausreißer nicht).
+    // Aber NICHT einem einzelnen Advert trauen: ein Node mit Zukunfts-Uhr
+    // zog uns am 12.06. UND erneut am 13.06.2026 um +28 h mit. Regeln:
+    //   1. Kaltstart (Uhr noch im Jahr 2024) ODER kleine Vorwärtskorrektur
+    //      (< 1 h): sofort übernehmen.
+    //   2. Großer Vorwärtssprung beim ersten Sync seit Boot (NVS lag weit
+    //      zurück ODER Ausreißer): erst nach Bestätigung durch einen zweiten,
+    //      grob (±5 min) passenden Advert übernehmen — ein einzelner Zukunfts-
+    //      Node soll uns nicht beim Booten/Aufwachen mitziehen können.
+    //   3. Rückwärts (Advert > 1 h hinter uns): nach 3 Adverts auf den MEDIAN
+    //      korrigieren, nie auf das Maximum — der Median ist robust gegen einen
+    //      einzelnen, weniger weit zurückliegenden Zukunfts-Ausreißer.
     constexpr uint32_t kSaneEpoch = 1781000000UL;  // ≈ 09.06.2026, Build-Ära
     uint32_t t   = contact.last_advert_timestamp;
     uint32_t now = getRTCClock()->getCurrentTime();
-    static uint32_t s_behindMax = 0;
-    static int      s_behindCnt = 0;
+    static uint32_t s_behind[3]   = {0, 0, 0};  // gesammelte „hinter uns"-Timestamps
+    static int      s_behindCnt   = 0;
+    static uint32_t s_fwdCandidate = 0;         // wartender großer Vorwärtssprung
     if (t > kSaneEpoch) {
-      if (!s_clockConfident || now < kSaneEpoch || (t > now && t - now < 3600)) {
+      bool smallFwd = (t > now && t - now < 3600);
+      if (now < kSaneEpoch || smallFwd) {
         getRTCClock()->setCurrentTime(t + 1);
         s_clockConfident = true;
-        s_behindCnt = 0;
+        s_behindCnt = 0; s_fwdCandidate = 0;
         timesync::onExternalSync(t + 1, "Mesh");
         Serial.printf("[MESH] Uhr aus Advert gesetzt: %lu\n", (unsigned long)t);
+      } else if (!s_clockConfident && t > now) {
+        // Großer Vorwärtssprung, noch unbestätigt seit Boot — auf Bestätigung warten.
+        if (s_fwdCandidate && t + 300 > s_fwdCandidate && t < s_fwdCandidate + 300) {
+          getRTCClock()->setCurrentTime(t + 1);
+          s_clockConfident = true;
+          s_behindCnt = 0; s_fwdCandidate = 0;
+          timesync::onExternalSync(t + 1, "Mesh");
+          Serial.printf("[MESH] Uhr aus Advert gesetzt (bestätigt): %lu\n",
+                        (unsigned long)t);
+        } else {
+          s_fwdCandidate = t;
+          Serial.printf("[MESH] Großer Vorwärtssprung %lu vorgemerkt (warte auf Bestätigung)\n",
+                        (unsigned long)t);
+        }
       } else if (t + 3600 < now) {
-        if (t > s_behindMax) s_behindMax = t;
+        s_behind[s_behindCnt % 3] = t;
         if (++s_behindCnt >= 3) {
-          getRTCClock()->setCurrentTime(s_behindMax + 1);
-          timesync::onExternalSync(s_behindMax + 1, "Mesh");
-          Serial.printf("[MESH] Uhr zurückgesetzt (3x Advert-Konsens): %lu\n",
-                        (unsigned long)s_behindMax);
+          uint32_t a = s_behind[0], b = s_behind[1], c = s_behind[2];
+          uint32_t med = a < b ? (b < c ? b : (a < c ? c : a))
+                               : (a < c ? a : (b < c ? c : b));
+          getRTCClock()->setCurrentTime(med + 1);
+          timesync::onExternalSync(med + 1, "Mesh");
+          Serial.printf("[MESH] Uhr zurückgesetzt (Median aus 3 Adverts): %lu\n",
+                        (unsigned long)med);
           s_behindCnt = 0;
-          s_behindMax = 0;
         }
       } else {
-        s_behindCnt = 0;   // Advert innerhalb ±1 h — Uhr passt
+        s_behindCnt = 0;       // Advert innerhalb ±1 h — Uhr passt
+        s_fwdCandidate = 0;
       }
     }
     saveContacts();

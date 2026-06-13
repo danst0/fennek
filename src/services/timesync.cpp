@@ -100,6 +100,10 @@ void handleNtpSynced() {
   s_lastNvsMs     = millis();
   Serial.printf("[TIME] NTP-Sync: %lu (Fehler war ~%ld s)\n",
                 (unsigned long)trueNow, (long)errSecs);
+  // beginNtpAttempt() rief configTime(0,0,…) und hat damit die libc-TZ auf UTC
+  // gesetzt — Zeitzone erneut anwenden, sonst zeigen alle localtime_r-Ausgaben
+  // nach dem NTP-Sync UTC statt Europe/Berlin (lokale Zeit == UTC).
+  timesync::applyTimezone();
 }
 
 // Eigene, blockierende WLAN→NTP-Sequenz. Nur dort aufrufen, wo das vertretbar ist
