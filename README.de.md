@@ -60,6 +60,7 @@ liefert.
 | **📖 Lesen** | `.txt` und `.epub` aus `/books`, EPUB-Konvertierung on-device (ROM-tinfl), Seiten-Index-Cache, Leseposition pro Buch |
 | **📡 Mesh** | Schlanker MeshCore-Client: Public- und Hashtag-Kanäle (`#test` …), DMs mit Zustellstatus, Kontakte aus Adverts, Nachrichten-Log auf SD inkl. Verlauf-Reload |
 | **🎮 Spiele** | 2048, Minensucher, Schach (Negamax-KI) und Tic-Tac-Toe — Logik host-getestet |
+| **📝 Notizen** | Eine Notiz pro Tag unter `/notes` (`YYYY-MM-DD.md`); „+ Heute" öffnet/erweitert die heutige Notiz, Liste aller Tage (neueste oben) mit Vorschau der ersten Zeile, Anhänge-Editor mit Lösch-Bestätigung |
 | **⚙️ Optionen** | Funk-Presets (EU Narrow = DE/NRW-Standard 869,618 MHz/62,5 kHz/SF8), Einzelparameter, Node-Name, Akku-Info, Firmware-Version |
 
 Dazu: Statuszeile (Akku, Wiedergabe), Standby/Tastensperre per Knopf, und eine

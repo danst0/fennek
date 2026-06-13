@@ -59,6 +59,7 @@ SPI bus, while still delivering stutter-free audio playback.
 | **📖 Reading** | `.txt` and `.epub` from `/books`, on-device EPUB conversion (ROM-tinfl), page-index cache, per-book reading position |
 | **📡 Mesh** | Lean MeshCore client: public and hashtag channels (`#test` …), DMs with delivery status, contacts from adverts, message log on SD incl. history reload |
 | **🎮 Games** | 2048, Minesweeper, Chess (Negamax AI) and Tic-Tac-Toe — logic host-tested |
+| **📝 Notes** | One note per day under `/notes` (`YYYY-MM-DD.md`); "+ Today" opens or appends to today's note, the list shows every day newest-first with a first-line preview, append-style editor with delete confirmation |
 | **⚙️ Options** | Radio presets (EU Narrow = DE/NRW standard 869.618 MHz / 62.5 kHz / SF8), individual parameters, node name, battery info, firmware version |
 
 Plus: a status line (battery, playback), standby/key-lock via the button, and a

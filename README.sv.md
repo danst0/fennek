@@ -59,6 +59,7 @@ SPI-buss, och ändå levererar hackfri ljuduppspelning.
 | **📖 Läsa** | `.txt` och `.epub` från `/books`, EPUB-konvertering på enheten (ROM-tinfl), sidindex-cache, läsposition per bok |
 | **📡 Mesh** | Slimmad MeshCore-klient: publika kanaler och hashtagg-kanaler (`#test` …), DM med leveransstatus, kontakter från adverts, meddelandelogg på SD inkl. historik-omladdning |
 | **🎮 Spel** | 2048, Minröj, Schack (Negamax-AI) och Tre i rad — logiken testad på värd |
+| **📝 Anteckningar** | En anteckning per dag under `/notes` (`YYYY-MM-DD.md`); "+ Idag" öppnar eller utökar dagens anteckning, listan visar alla dagar (nyaste först) med förhandsvisning av första raden, tilläggsredigerare med raderingsbekräftelse |
 | **⚙️ Alternativ** | Radioförinställningar (EU Narrow = DE/NRW-standard 869,618 MHz / 62,5 kHz / SF8), enskilda parametrar, nodnamn, batteriinfo, firmware-version |
 
 Dessutom: en statusrad (batteri, uppspelning), vänteläge/knapplås via knappen,

@@ -6,6 +6,20 @@ are documented here. This file covers the five most recent minor versions.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-06-13
+
+### Added
+- **Notes app** (`apps/notes_app`, launcher tile 7): a daily-notes model — exactly
+  one note per day, named after the local date (`/notes/YYYY-MM-DD.md`). "+ Today"
+  opens (or appends to) today's note; the list shows all days newest-first with the
+  date and a first-line preview, and notes can be deleted with a confirmation. The
+  editor is append-style (type / Backspace / Enter) with its own word wrap and a
+  compact header. Persistence is chunked under `spiLock` (never inside `draw()`),
+  with a 30 s autosave and a save on leave; empty notes are removed. Without an SD
+  card it shows "No SD card" + "Search again" like the other apps. The date comes
+  from the local system clock (`timesync`). New console command `notes` runs an SD
+  round-trip / scan self-check (in the style of `books`).
+
 ## [1.7.1] — 2026-06-13
 
 ### Added
