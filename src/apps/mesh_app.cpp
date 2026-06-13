@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "mesh_app.h"
 #include "mesh_client.h"
 #include "config.h"

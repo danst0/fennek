@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // ttt_core.h — Tic-Tac-Toe-Spiellogik, Arduino-frei (host-testbar).
 //

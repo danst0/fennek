@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "console.h"
 #include "config.h"
 #include "core/battery.h"
@@ -187,6 +190,10 @@ void handleLine(char* line) {
   // Führende Leerzeichen überspringen.
   while (*line == ' ') line++;
   if (!*line) return;
+
+  // Konsolen-Befehle zählen als Aktivität — sonst schlägt der Auto-Standby
+  // mitten in seriellen Mesh-Tests zu (passiert am 12.06.2026, zweimal).
+  power::noteActivity();
 
   if (strcmp(line, "help") == 0)            { cmdHelp(); return; }
   if (strcmp(line, "status") == 0)          { cmdStatus(); return; }

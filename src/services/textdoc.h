@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // textdoc.h — Streaming-Paginierung für TXT-Dateien (eBook-Reader).
 //

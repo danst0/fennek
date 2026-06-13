@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // game2048.cpp — 2048-UI (siehe game2048.h). Logik in game2048_core.h
 // (host-getestet). Ein markDirty pro echtem Zug; Spawn via esp_random().

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // epubproc.h — EPUB → Klartext (Port aus archive_legacy .../Epubprocessor.h).
 //

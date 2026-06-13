@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // config.h — zentrale Hardware-Konstanten für den T-Deck Pro MP3-Player.
 //
@@ -10,7 +13,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v1.6.1"
+#define FENNEK_VERSION "v1.6.2"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power

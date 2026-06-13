@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // battery.h — BQ27220-Fuel-Gauge (I2C 0x55), Lesezugriffe.
 //

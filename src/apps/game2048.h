@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // game2048.h — 2048-Screen (UI zu game2048_core.h), gehostet von games_app.
 // =============================================================================

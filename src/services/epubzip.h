@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #pragma once
 // =============================================================================
 // epubzip.h — minimaler ZIP-Reader für EPUB-Dateien (Port aus

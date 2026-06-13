@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // mines_core.h — Minesweeper-Spiellogik, Arduino-frei (host-testbar).
 //

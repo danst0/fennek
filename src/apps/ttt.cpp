@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // ttt.cpp — Tic-Tac-Toe-UI (siehe ttt.h). Logik in ttt_core.h (host-getestet).
 // =============================================================================

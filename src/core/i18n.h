@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // i18n.h — Laufzeit-Lokalisierung (Deutsch = Default, IT, SV, EN, ES).
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 #include "mesh_client.h"
 #include "config.h"
 #include "core/board.h"
@@ -353,6 +356,11 @@ protected:
   int calcRxDelay(float score, uint32_t air_time) const override { return 0; }
   bool allowPacketForward(const mesh::Packet* packet) override { return true; }
   uint8_t getPathHashSize() const override { return 1; }
+
+  // Kontakt-Tabelle voll (MAX_CONTACTS=64): ältesten Nicht-Favoriten
+  // überschreiben statt neue Adverts still zu verwerfen — sonst tauchen
+  // neue Nodes (Echobot & Co.) nie in der Liste auf (gefunden 12.06.2026).
+  bool shouldOverwriteWhenFull() const override { return true; }
 
   void onDiscoveredContact(ContactInfo& contact, bool is_new, uint8_t path_len,
                            const uint8_t* path) override {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // library.h — Track-Liste (MP3-Dateien eines SD-Verzeichnisses).
 //

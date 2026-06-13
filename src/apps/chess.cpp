@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // chess.cpp — Schach-UI (siehe chess.h). Logik/KI in chess_core.* (perft-
 // und suchgetestet auf dem Host).

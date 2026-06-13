@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // games_app.h — "Spiele": Menü-Hülle für 2048, Minensucher, Schach, Tic-Tac-Toe.
 //

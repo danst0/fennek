@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // audio.h — Wiedergabe (ESP32-audioI2S → PCM5102A), pfadbasierte Queue.
 //

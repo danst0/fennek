@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // keyboard.h — physische Tastatur (TCA8418, I2C 0x34) mit Key-Repeat.
 //

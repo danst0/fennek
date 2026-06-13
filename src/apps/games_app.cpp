@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // =============================================================================
 // games_app.cpp — Spiele-Menü + Screen-Dispatch (siehe games_app.h).
 // =============================================================================

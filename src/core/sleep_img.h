@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
 // sleep_img.h — Standby-Bild: schlafender Fennek (KI-generiert via AI Horde,
 // AlbedoBase XL), per Floyd-Steinberg auf 1 Bit gedithert. 240x320, MSB-first,
 // gesetztes Bit = schwarzes Pixel (für Adafruit_GFX::drawBitmap).
