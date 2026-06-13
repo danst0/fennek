@@ -64,6 +64,35 @@ constexpr const char* kContactsSdPath = "/meshcore/contacts.bin";
 constexpr const char* kChannelsPath   = "/meshcore/channels.txt";
 bool s_contactsSdDirty = false;
 
+// Plausibilitätsschranken für persistierte Kontakt-Zeitstempel. Untergrenze =
+// Jan 2024 (gleicher EPOCH_MIN_SANE wie BaseChatMesh), Obergrenze ~Jahr 2046.
+// Fängt Müllwerte aus korrupten contacts.bin-Datensätzen ab (z. B. „vor 5437d").
+constexpr uint32_t kEpochMinSane = 1704067200UL;
+constexpr uint32_t kEpochMaxSane = 2400000000UL;
+
+// Validiert einen aus contacts.bin gelesenen Datensatz, bevor er übernommen wird.
+// SD-Korruption (abgerissene Writes) verschiebt Datensätze → Müll-Namen/-Zeiten.
+// Kriterien: nicht-leerer Public-Key, druckbarer null-terminierter Name (Umlaute
+// ≥0x80 erlaubt), Zeitstempel 0 (= „unbekannt") oder im plausiblen Bereich.
+static bool isSaneContact(const ContactInfo& c) {
+  bool keyNonZero = false;
+  for (int i = 0; i < 32; i++) if (c.id.pub_key[i]) { keyNonZero = true; break; }
+  if (!keyNonZero) return false;
+
+  if (c.name[0] == 0) return false;               // leerer Name = Müll/leerer Slot
+  bool terminated = false;
+  for (int i = 0; i < 32; i++) {
+    uint8_t ch = (uint8_t)c.name[i];
+    if (ch == 0) { terminated = true; break; }
+    if (ch < 0x20) return false;                  // Steuerzeichen → korrupt
+  }
+  if (!terminated) return false;                  // kein \0 in 32 Bytes → korrupt
+
+  uint32_t ts = c.last_advert_timestamp;
+  if (ts != 0 && (ts < kEpochMinSane || ts > kEpochMaxSane)) return false;
+  return true;
+}
+
 // Optionale, vom Nutzer vorgegebene MeshCore-Identität von der SD-Karte.
 // Format (Textdatei): Zeile 1 = Private Key (128 Hex-Zeichen / 64 Byte),
 // Zeile 2 = Public Key (64 Hex-Zeichen / 32 Byte). Ist die Datei vorhanden und
@@ -333,6 +362,7 @@ class MeshClient : public BaseChatMesh {
     }
     if (!file) return;
     bool full = false;
+    int skipped = 0;
     while (!full) {
       ContactInfo c;
       uint8_t pub_key[32];
@@ -350,6 +380,10 @@ class MeshClient : public BaseChatMesh {
       c.gps_lat = c.gps_lon = 0;
       if (!ok) break;
       c.id = mesh::Identity(pub_key);
+      // Korrupte Datensätze (SD-Falle: abgerissene Writes verschieben die
+      // Records → Müll-Namen/-Zeiten) verwerfen statt anzeigen. Datei bleibt
+      // 140-Byte-aligned, also weiterlesen (continue, nicht break).
+      if (!isSaneContact(c)) { skipped++; continue; }
       // lastmod = Advert-Zeit, damit bootstrapRTCfromContacts() die Uhr
       // setzen kann (lastmod=0 ließe die RTC auf Mai 2024 stehen — Bots
       // verwerfen dann unsere Nachrichten als veraltet).
@@ -357,6 +391,12 @@ class MeshClient : public BaseChatMesh {
       if (!addContact(c)) full = true;
     }
     file.close();
+    // Bereinigten Stand zurückschreiben (SPIFFS sofort, SD deferred über loop()),
+    // damit der Müll nicht beim nächsten Speichern wieder verstetigt wird.
+    if (skipped > 0) {
+      Serial.printf("[MESH] %d korrupte Kontakte verworfen\n", skipped);
+      saveContacts();
+    }
   }
 
   void writeContactRecords(File& file) {
@@ -576,6 +616,19 @@ public:
   const char* name() const { return _prefs.node_name; }
   float freqPref() const { return _prefs.freq; }
   uint8_t txPowerPref() const { return _prefs.tx_power_dbm; }
+
+  // Alle Kontakte verwerfen + persistente Spiegel löschen (Konsole „contacts
+  // reset"). Läuft NICHT unter spiLock (Aufrufer = Konsole) → SD selbst sperren.
+  void clearPersistedContacts() {
+    resetContacts();                       // num_contacts = 0 (lib)
+    if (_fs) _fs->remove("/contacts");     // SPIFFS (führend) — kein SPI-Bus
+    if (board::sdReady()) {
+      spiLock();
+      if (SD.exists(kContactsSdPath)) SD.remove(kContactsSdPath);
+      spiUnlock();
+    }
+    s_contactsSdDirty = false;             // ausstehenden Spiegel-Write verwerfen
+  }
 
   void begin(fs::FS& fs) {
     _fs = &fs;
@@ -852,6 +905,12 @@ bool msg(int i, MsgView& out) {
 }
 
 uint32_t changeCounter() { return s_changes; }
+
+void resetContacts() {
+  if (!s_ready) return;
+  s_mesh->clearPersistedContacts();
+  s_changes++;   // Kontakte-Screen leer neu zeichnen
+}
 
 bool sendChannelMsg(const char* text) {
   if (!s_ready || !text || !text[0]) return false;

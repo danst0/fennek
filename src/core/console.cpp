@@ -52,6 +52,7 @@ void cmdHelp() {
   Serial.println("[CON]   public <text>     - Nachricht an Public-Channel");
   Serial.println("[CON]   dm <idx> <text>   - Direktnachricht an Kontakt #idx");
   Serial.println("[CON]   contacts          - Kontaktliste");
+  Serial.println("[CON]   contacts reset    - alle Kontakte löschen (Neuaufbau aus Adverts)");
   Serial.println("[CON]   channels          - beigetretene Kanäle");
   Serial.println("[CON]   join <name>       - Hashtag-Kanal beitreten (z.B. join test)");
   Serial.println("[CON]   chan <name> <txt> - Nachricht an Hashtag-Kanal");
@@ -317,6 +318,12 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "mesh init") == 0)       { ensureMesh(); return; }
+  if (strcmp(line, "contacts reset") == 0)  {
+    if (!ensureMesh()) return;
+    mesh_client::resetContacts();
+    Serial.println("[CON] Kontakte gelöscht (Neuaufbau aus Adverts)");
+    return;
+  }
   if (strcmp(line, "contacts") == 0)        { cmdContacts(); return; }
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }

@@ -71,6 +71,10 @@ bool contactName(int i, char* out, size_t n);
 // Beliebige Out-Pointer dürfen NULL sein. false, wenn Index ungültig/nicht ready.
 bool contactDetail(int i, uint8_t* hops, uint32_t* lastSeen, uint8_t* type);
 
+// Alle Kontakte löschen + persistente Spiegel (SPIFFS /contacts, SD contacts.bin)
+// entfernen. Neuaufbau erfolgt aus eingehenden Adverts. Konsole: „contacts reset".
+void resetContacts();
+
 const char* nodeName();
 void setNodeName(const char* name);     // persistiert + wirkt ab sofort
 
