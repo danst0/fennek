@@ -109,6 +109,10 @@
   X(BtnChannel,    "Kanal",          "Canale",          "Kanal",          "Chan.",           "Canal") \
   X(BtnContacts,   "Kont.",          "Cont.",           "Kont.",          "Cont.",           "Cont.") \
   X(BtnAdvert,     "Advert",         "Advert",          "Advert",         "Advert",          "Advert") \
+  X(MeshNewChannel,"\x10 Neuer Kanal","\x10 Nuovo canale","\x10 Ny kanal",  "\x10 New channel", "\x10 Nuevo canal") \
+  X(MeshJoinTitle, "Neuer Kanal",    "Nuovo canale",    "Ny kanal",       "New channel",     "Nuevo canal") \
+  X(MeshJoinHint,  "Name tippen, Enter = beitreten", "Scrivi nome, Enter per entrare", "Skriv namn, Enter för att gå med", "Type name, Enter to join", "Escribe nombre, Enter para unir") \
+  X(BtnJoin,       "Beitr.",         "Entra",           "Gå med",         "Join",            "Unir") \
   /* --- Einstellungen (Label/Wert-Layout; Werte selbst sind LoRa-Jargon) --- */ \
   X(SettingsLang,  "Sprache",        "Lingua",          "Språk",          "Language",        "Idioma") \
   X(SettingsManual,"Manuell",        "Manuale",         "Manuell",        "Manual",          "Manual") \

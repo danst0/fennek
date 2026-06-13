@@ -50,7 +50,8 @@ constexpr int SCROLL_STEP = MSG_LINES - 3;          // Touch-Seitensprung im Ver
 // CHATS  = scrollbare Liste: alle Kanäle + Kontakte MIT Chat-Verlauf (Einstieg).
 // CONTACTS = alle bekannten Knoten (Adverts) zum Starten neuer DMs.
 // CHANNEL/DM = geöffnete Konversation. ERROR_SCREEN = Radio nicht verfügbar.
-enum Screen { CHATS, CONTACTS, CHANNEL, DM, ERROR_SCREEN };
+// JOIN_CHANNEL = Eingabezeile für einen neuen Hashtag-Kanal (Name → joinHash).
+enum Screen { CHATS, CONTACTS, CHANNEL, DM, JOIN_CHANNEL, ERROR_SCREEN };
 Screen s_screen = CHATS;
 
 bool     s_initTried = false;
@@ -109,8 +110,12 @@ int chatCount() {
   return c;
 }
 
+// CHATS zeigt zusätzlich eine feste „+ Neuer Kanal“-Zeile an Position 0.
+constexpr int kAddChannelRow = 0;
+int chatsRowCount() { return 1 + chatCount(); }
+
 int screenItemCount() {
-  return (s_screen == CHATS) ? chatCount() : mesh_client::contactCount();
+  return (s_screen == CHATS) ? chatsRowCount() : mesh_client::contactCount();
 }
 
 // --- Zeit-Helfer --------------------------------------------------------------
@@ -246,6 +251,21 @@ void drawCompose(Adafruit_GFX& g) {
   }
 }
 
+// Eingabebox für den Kanal-Namen: festes '#'-Präfix (außer der Nutzer tippt
+// selbst eines), damit klar ist, dass ein Hashtag-Kanal entsteht.
+void drawComposeChannel(Adafruit_GFX& g) {
+  g.drawRect(4, INPUT_Y, W - 8, INPUT_H, GxEPD_BLACK);
+  char line[150];
+  snprintf(line, sizeof(line), "%s%s_", (s_compose[0] == '#') ? "" : "#", s_compose);
+  int maxCols = MSG_COLS - 1;
+  int len = strlen(line);
+  const char* show = line;
+  if (len > maxCols) show = line + (len - maxCols);
+  g.setTextSize(1);
+  g.setCursor(8, INPUT_Y + 7);
+  gui::print(g, show);
+}
+
 void drawChannelOrDm(Adafruit_GFX& g) {
   if (s_screen == CHANNEL) {
     char cn[32] = "";
@@ -320,24 +340,32 @@ void drawChats(Adafruit_GFX& g) {
   drawStatusLine(g);
 
   ChatEntry entries[kMaxChats];
-  int n = buildChatList(entries, kMaxChats);
+  int nChats = buildChatList(entries, kMaxChats);
+  int n = chatsRowCount();   // inkl. „+ Neuer Kanal“-Zeile an Position 0
 
-  if (n == 0) {
-    int hy = listTop() + 6;
+  // Leerhinweis unter der Add-Zeile, wenn es noch keine echten Chats gibt.
+  if (nChats == 0) {
+    int hy = listTop() + ROW_H + 6;
     gui::printAt(g, 10, hy,      i18n::tr(i18n::Str::MeshCtHint1), 1);
     gui::printAt(g, 10, hy + 14, i18n::tr(i18n::Str::MeshCtHint2), 1);
   }
 
   int top = listTop(), vis = visibleRows();
   for (int r = 0; r < vis && s_off + r < n; r++) {
-    ChatEntry& e = entries[s_off + r];
+    int di = s_off + r;
     char raw[40] = "", nm[44];
-    if (e.kind == 0) {
-      mesh_client::channelName(e.idx, raw, sizeof(raw));
-      snprintf(nm, sizeof(nm), "%s%s", (raw[0] == '#') ? "" : "#", raw);
+    if (di == kAddChannelRow) {
+      strncpy(nm, i18n::tr(i18n::Str::MeshNewChannel), sizeof(nm) - 1);
+      nm[sizeof(nm) - 1] = '\0';
     } else {
-      mesh_client::contactName(e.idx, raw, sizeof(raw));
-      snprintf(nm, sizeof(nm), "\x10 %s", raw);   // ► DM-Marker
+      ChatEntry& e = entries[di - 1];
+      if (e.kind == 0) {
+        mesh_client::channelName(e.idx, raw, sizeof(raw));
+        snprintf(nm, sizeof(nm), "%s%s", (raw[0] == '#') ? "" : "#", raw);
+      } else {
+        mesh_client::contactName(e.idx, raw, sizeof(raw));
+        snprintf(nm, sizeof(nm), "\x10 %s", raw);   // ► DM-Marker
+      }
     }
     gui::drawRowText(g, top + r * ROW_H, ROW_H, nm, false);
   }
@@ -387,6 +415,15 @@ void drawContacts(Adafruit_GFX& g) {
   gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
+void drawJoinChannel(Adafruit_GFX& g) {
+  drawHeaderBar(g, i18n::tr(i18n::Str::MeshJoinTitle));
+  gui::printAt(g, 10, MSG_Y + 10, i18n::tr(i18n::Str::MeshJoinHint), 1);
+  drawComposeChannel(g);
+  gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnBackShort), false);
+  gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnJoin), false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
+}
+
 void drawError(Adafruit_GFX& g) {
   drawHeaderBar(g, "Mesh");
   gui::printAt(g, 10, 90, i18n::tr(i18n::Str::MeshNoRadio), 2);
@@ -411,8 +448,31 @@ void backToChats() {
   s_screen = CHATS;
   s_compose[0] = '\0';
   s_msgScroll = 0;
-  int n = chatCount();
+  int n = chatsRowCount();
   if (s_sel >= n) { s_sel = 0; s_off = 0; }
+  markDirty();
+}
+
+// „+ Neuer Kanal“: leere Eingabezeile für den Hashtag-Namen öffnen.
+void openJoinChannel() {
+  s_screen = JOIN_CHANNEL;
+  s_compose[0] = '\0';
+  markDirty();
+}
+
+// Eingetippten Namen beitreten (PSK aus #name abgeleitet, persistiert auf SD).
+// Erfolg → direkt in den neuen Kanal springen; Fehlschlag → zurück zur Liste.
+void doJoinChannel() {
+  if (!s_compose[0]) return;
+  int idx = mesh_client::joinHashChannel(s_compose);
+  s_compose[0] = '\0';
+  if (idx >= 0) {
+    s_channelIdx = idx;
+    s_msgScroll = 0;
+    s_screen = CHANNEL;
+  } else {
+    backToChats();
+  }
   markDirty();
 }
 
@@ -507,11 +567,19 @@ void onTouch(int x, int y) {
         pageList(y < top + vis * ROW_H / 2 ? -1 : +1);
         return;
       }
-      int idx = s_off + (y - top) / ROW_H;
-      if (s_screen == CHATS) openChat(idx);
-      else if (idx < mesh_client::contactCount()) openDm(idx);
+      int di = s_off + (y - top) / ROW_H;
+      if (s_screen == CHATS) {
+        if (di == kAddChannelRow) openJoinChannel();
+        else                      openChat(di - 1);
+      } else if (di < mesh_client::contactCount()) openDm(di);
     }
     return;
+  }
+
+  if (s_screen == JOIN_CHANNEL) {
+    if (kBtn1.hit(x, y)) { backToChats();   return; }
+    if (kBtn2.hit(x, y)) { doJoinChannel(); return; }
+    return;   // kBtn3 (Home) oben behandelt; Tippen sonst ignorieren
   }
 
   // CHANNEL / DM: zurück zur Liste, Advert, Scrollback.
@@ -536,13 +604,35 @@ void onKey(char k) {
       case 'w': case 'W': moveSel(-1); break;
       case 's': case 'S': moveSel(+1); break;
       case '\r':
-        if (s_screen == CHATS) openChat(s_sel);
-        else if (s_sel < mesh_client::contactCount()) openDm(s_sel);
+        if (s_screen == CHATS) {
+          if (s_sel == kAddChannelRow) openJoinChannel();
+          else                         openChat(s_sel - 1);
+        } else if (s_sel < mesh_client::contactCount()) openDm(s_sel);
         break;
       case 'k': case 'K': if (s_screen == CHATS) goContacts(); break;
       case '\b':          if (s_screen == CONTACTS) backToChats(); break;
       case 'q': case 'Q': appmgr::goHome(); break;
       default: break;
+    }
+    return;
+  }
+
+  // JOIN_CHANNEL: Tastatur tippt den Kanal-Namen; Enter tritt bei.
+  if (s_screen == JOIN_CHANNEL) {
+    if (k == '\r') { doJoinChannel(); return; }
+    if (k == '\b') {
+      int len = strlen(s_compose);
+      if (len > 0) { s_compose[len - 1] = '\0'; markDirty(); }
+      else backToChats();   // leere Eingabe + Backspace = zurück
+      return;
+    }
+    if (k >= 32 && k < 127) {
+      int len = strlen(s_compose);
+      if (len < (int)sizeof(s_compose) - 1) {
+        s_compose[len] = k;
+        s_compose[len + 1] = '\0';
+        markDirty();
+      }
     }
     return;
   }
@@ -614,6 +704,7 @@ class MeshApp : public App {
       case CHATS:            drawChats(g); break;
       case CONTACTS:         drawContacts(g); break;
       case CHANNEL: case DM: drawChannelOrDm(g); break;
+      case JOIN_CHANNEL:     drawJoinChannel(g); break;
       case ERROR_SCREEN:     drawError(g); break;
     }
   }
