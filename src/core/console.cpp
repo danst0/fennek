@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <Wire.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
 #include <string.h>
@@ -46,6 +47,7 @@ void cmdHelp() {
   Serial.println("[CON]   chan <name> <txt> - Nachricht an Hashtag-Kanal");
   Serial.println("[CON]   msgs              - Nachrichten-Verlauf dumpen");
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
+  Serial.println("[CON]   i2cscan           - I2C-Bus abklopfen (RTC auf 0x51?)");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
   Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
   Serial.println("[CON]   wifi ssid <name>  - WLAN-SSID setzen (NVS)");
@@ -129,6 +131,40 @@ void cmdMeshLog() {
   Serial.println(buf);
 }
 
+// Bekannte Geräte auf dem geteilten I2C-Bus (SDA 13 / SCL 14) benennen, damit
+// der Scan auf einen Blick verrät, ob ein Hardware-RTC bestückt ist.
+const char* i2cKnownName(uint8_t addr) {
+  switch (addr) {
+    case 0x1A: return "CST328 Touch";
+    case 0x28: return "BHI260AP Gyro/IMU";
+    case 0x34: return "TCA8418 Tastatur";
+    case 0x51: return "PCF85063/PCF8563 RTC?";   // genau das wollen wir wissen
+    case 0x55: return "BQ27220 Fuel-Gauge";
+    case 0x5A: return "DRV2605 Vibrationsmotor";
+    case 0x6B: return "BQ25896 Ladekontroller";
+    default:   return nullptr;
+  }
+}
+
+// I2C-Bus abklopfen (0x08..0x77). Diagnose-Befehl: zeigt, was wirklich auf dem
+// Bus hängt — insbesondere ob auf 0x51 ein RTC-Chip ackt (sonst fährt die Mesh-
+// App auf der reinen Software-Uhr VolatileRTCClock). Läuft im Arduino-loop()
+// wie der Rest des I2C-Pollings, daher kein SPI-Lock nötig (eigener Bus).
+void cmdI2cScan() {
+  Serial.println("[CON] I2C-Scan (SDA 13 / SCL 14):");
+  int found = 0;
+  for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      const char* name = i2cKnownName(addr);
+      Serial.printf("[CON]   0x%02X  %s\n", addr, name ? name : "(unbekannt)");
+      found++;
+    }
+  }
+  Serial.printf("[CON] %d Gerät(e) gefunden. %s\n", found,
+                found ? "" : "Bus stumm — Verkabelung/Pins prüfen.");
+}
+
 void cmdStatus() {
   Serial.printf("[CON] Heap=%uKB PSRAM=%uKB Akku=%umV/%u%%%s SD=%s\n",
                 (unsigned)(ESP.getFreeHeap() / 1024),
@@ -201,6 +237,7 @@ void handleLine(char* line) {
   if (strcmp(line, "contacts") == 0)        { cmdContacts(); return; }
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }
+  if (strcmp(line, "i2cscan") == 0)         { cmdI2cScan(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
