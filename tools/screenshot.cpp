@@ -8,6 +8,10 @@
 // Bodies hier 1:1 aus den Quellen gespiegelt (Quellenangabe je Funktion);
 // gemeinsame Helfer (gui::, Fonts, das Sleep-Bitmap) werden direkt verlinkt.
 //
+// Alle UI-Texte kommen aus derselben i18n-Tabelle wie die Firmware (FENNEK_STRS
+// in core/i18n.h) — die Sprache wählt das 2. Argument (de/it/sv/en/es). So sind
+// die Screenshots pro Sprache echt übersetzt, nicht handgepflegt.
+//
 //   Bauen/Ausführen über tools/screenshots.sh
 // =============================================================================
 #include <cstdint>
@@ -18,11 +22,53 @@
 #include <Adafruit_GFX.h>
 #include <GxEPD2_BW.h>          // Host-Shim: GxEPD_BLACK / GxEPD_WHITE
 
-#include "config.h"            // EINK_W / EINK_H (host-sicher)
+#include "config.h"            // EINK_W / EINK_H / FENNEK_VERSION (host-sicher)
 #include "core/gui.h"
+#include "core/i18n.h"         // FENNEK_STRS / i18n::Str (nur Header, kein .cpp)
 #include "core/sleep_img.h"    // kSleepImg / kSleepImgW / kSleepImgH
 
 using gui::Rect;
+using i18n::Str;
+
+// --- Host-Lokalisierung ------------------------------------------------------
+// i18n.cpp wird bewusst NICHT gelinkt (zieht settings/NVS/Arduino). Stattdessen
+// bauen wir die Tabellen direkt aus der X-Macro-Liste — exakt dieselben Texte.
+namespace {
+const char* const kDE[] = { "",
+#define X(id, de, it, sv, en, es) de,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kIT[] = { "",
+#define X(id, de, it, sv, en, es) it,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kSV[] = { "",
+#define X(id, de, it, sv, en, es) sv,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kEN[] = { "",
+#define X(id, de, it, sv, en, es) en,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const kES[] = { "",
+#define X(id, de, it, sv, en, es) es,
+  FENNEK_STRS(X)
+#undef X
+};
+const char* const* const kTab[] = { kDE, kIT, kSV, kEN, kES };           // Lang-Index
+const char* const kEndonym[]    = { "Deutsch", "Italiano", "Svenska", "English", "Español" };
+
+int g_lang = (int)i18n::Lang::EN;   // Default = Englisch (README-Default)
+
+const char* T(Str id) {
+  const char* s = kTab[g_lang][(uint16_t)id];
+  return (s && s[0]) ? s : kDE[(uint16_t)id];   // leerer Eintrag -> Deutsch
+}
+}  // namespace
 
 // appmgr-Konstanten (aus core/appmgr.h, ohne den Arduino-Header zu ziehen).
 static constexpr int STATUS_H  = 22;
@@ -81,11 +127,14 @@ static void screenLauncher(Adafruit_GFX& g) {
   static constexpr int kRowY0 = CONTENT_Y + 6;   // 30
   static constexpr int kRowGap = 88;
   static constexpr int kHintY = 296;
-  const char* labels[kTiles] = {"Musik", "Hörbuch", "Lesen", "Mesh", "Spiele", "Optionen"};
+  const char* labels[kTiles] = {
+    T(Str::TileMusic), T(Str::TileBook), T(Str::TileReader),
+    T(Str::TileMesh),  T(Str::TileGames), T(Str::TileSettings)
+  };
   const int cursor = 0;
-  const char* nowPlaying = "Nuvole Bianche";
+  const char* nowPlaying = "Nuvole Bianche";   // Titel — nicht übersetzen
 
-  drawStatusBar(g, "Start", 87, false, 1);
+  drawStatusBar(g, T(Str::AppLauncher), 87, false, 1);
 
   g.setTextColor(GxEPD_BLACK);
   for (int i = 0; i < kTiles; i++) {
@@ -136,13 +185,13 @@ static void screenTtt(Adafruit_GFX& g) {
                             0, 1, 0,
                             2, 0, 1};
 
-  drawStatusBar(g, "Spiele", 87, false, 0);
+  drawStatusBar(g, T(Str::AppGames), 87, false, 0);
 
   g.setTextColor(GxEPD_BLACK);
-  gui::printAt(g, 12, kHeaderY, "Du bist X", 2);
+  gui::printAt(g, 12, kHeaderY, T(Str::TttYouAreX), 2);
   g.setTextSize(1);
   g.setCursor(12, kHeaderY + 22);
-  gui::print(g, "Gegner: Fennek");
+  gui::print(g, T(Str::TttVsFennek));
 
   for (int i = 1; i < 3; i++) {
     g.fillRect(kGridX + i * kCell - 1, kGridY, 3, 3 * kCell, GxEPD_BLACK);
@@ -152,7 +201,7 @@ static void screenTtt(Adafruit_GFX& g) {
 
   g.setTextSize(1);
   g.setCursor(12, kFooterY);
-  gui::print(g, "N=Neu  M=Modus  Backspace=Menü");
+  gui::print(g, T(Str::TttKeyHint));
 }
 
 // =============================================================================
@@ -171,13 +220,13 @@ static void screenMusic(Adafruit_GFX& g) {
   const int volume = 18;
   const bool playing = true, paused = false, shuffle = false;
   const bool repeatOn = false;
-  const char* nm = "Nuvole Bianche";
+  const char* nm = "Nuvole Bianche";      // Titel/Künstler — nicht übersetzen
   const char* artist = "Ludovico Einaudi";
 
-  drawStatusBar(g, "Musik", 87, false, 1);
+  drawStatusBar(g, T(Str::AppMusic), 87, false, 1);
 
   g.setTextColor(GxEPD_BLACK);
-  gui::printAt(g, 6, HEADER_Y, "Wiedergabe", 2);
+  gui::printAt(g, 6, HEADER_Y, T(Str::MusicPlayback), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
 
   gui::printAt(g, 6, HEADER_H + 8, nm, 2);
@@ -215,9 +264,9 @@ static void screenMusic(Adafruit_GFX& g) {
   g.setCursor((W - (int)bw) / 2, kBtnVolDn.y + (kBtnVolDn.h - (int)bh) / 2);
   g.print(vol);
 
-  gui::drawButton(g, kBtnList, "Liste", false);
-  gui::drawButton(g, kBtnShuf, "Mix", shuffle);
-  gui::drawButton(g, kBtnRep, "Wdh", repeatOn);
+  gui::drawButton(g, kBtnList, T(Str::BtnList), false);
+  gui::drawButton(g, kBtnShuf, T(Str::BtnShuffle), shuffle);
+  gui::drawButton(g, kBtnRep, T(Str::RepOff), repeatOn);
 }
 
 // =============================================================================
@@ -269,41 +318,47 @@ static void screenSettings(Adafruit_GFX& g) {
   static constexpr int SYS_Y = SYS_HDR_Y + SEC_H;  // 222
   const Rect kHome{6, 274, 110, 40};
   static constexpr int FOOT_X = 120;
-  // Fixture (Deutsch): EU-Narrow-Preset, Frequenz ausgewählt, Name "T-Deck".
+  // Fixture: EU-Narrow-Preset, Frequenz ausgewählt, Name "T-Deck".
+  // "Preset"/"Spreading" + die Werte sind LoRa-Jargon und werden nicht übersetzt;
+  // der Sprach-Wert zeigt das Endonym der gerade gerenderten Sprache.
   struct { const char* label; const char* value; } rows[] = {
-    {"Preset",        "EU Narrow"},
-    {"Frequenz",      "869.618 MHz"},
-    {"Bandbreite",    "62.5 kHz"},
-    {"Spreading",     "SF8"},
-    {"Coding-Rate",   "4/5"},
-    {"Sendeleistung", "22 dBm"},
-    {"Name",          "T-Deck"},
-    {"Sprache",       "Deutsch"},
-    {"Auto-Standby",  "5 min"},
+    {"Preset",              "EU Narrow"},
+    {T(Str::LblFreq),       "869.618 MHz"},
+    {T(Str::LblBandwidth),  "62.5 kHz"},
+    {"Spreading",           "SF8"},
+    {T(Str::LblCodingRate), "4/5"},
+    {T(Str::LblTxPower),    "22 dBm"},
+    {T(Str::LblName),       "T-Deck"},
+    {T(Str::SettingsLang),  kEndonym[g_lang]},
+    {T(Str::LblStandby),    "5 min"},
   };
   const int sel = 1;
 
-  drawStatusBar(g, "Einstellungen", 87, false, 0);
+  drawStatusBar(g, T(Str::AppSettings), 87, false, 0);
   g.setTextColor(GxEPD_BLACK);
 
-  settingsSectionHeader(g, TOP, "Funk — wirkt sofort");
+  settingsSectionHeader(g, TOP, T(Str::SecRadio));
   for (int r = 0; r < NUM_FUNK; r++)
     settingsRow(g, FUNK_Y + r * ROW_H, rows[r].label, rows[r].value,
                 r == sel, r != 6 /* Name ohne Pfeile */);
 
-  settingsSectionHeader(g, SYS_HDR_Y, "System");
+  settingsSectionHeader(g, SYS_HDR_Y, T(Str::SecSystem));
   for (int r = NUM_FUNK; r < 9; r++)
     settingsRow(g, SYS_Y + (r - NUM_FUNK) * ROW_H, rows[r].label, rows[r].value,
                 r == sel, true);
 
-  gui::drawButton(g, kHome, "Home", false);
+  gui::drawButton(g, kHome, T(Str::BtnHome), false);
   g.setTextSize(1);
+  char bat[40];
+  snprintf(bat, sizeof(bat), T(Str::FmtBattery), 87u, "", 4012u);
   g.setCursor(FOOT_X, 280);
-  gui::print(g, "A/D bzw. Tap ändert");
+  gui::print(g, T(Str::HintChange));
   g.setCursor(FOOT_X, 294);
-  gui::print(g, "Akku 87% (4012 mV)");
+  gui::print(g, bat);
   g.setCursor(FOOT_X, 308);
-  gui::print(g, "Fennek v1.4.0");
+  char ver[32];
+  snprintf(ver, sizeof(ver), "Fennek %s", FENNEK_VERSION);
+  gui::print(g, ver);
 }
 
 // =============================================================================
@@ -317,14 +372,28 @@ static void screenSleep(Adafruit_GFX& g) {
   g.fillRect(0, bannerY, kSleepImgW, kSleepImgH - bannerY, GxEPD_BLACK);
   g.drawFastHLine(0, bannerY, kSleepImgW, GxEPD_WHITE);
   g.setTextColor(GxEPD_WHITE);
-  gui::printAt(g, 120 - 53, bannerY + 6, "Fennek", 3);
-  gui::printAt(g, 120 - 81, bannerY + 31, "Knopf drücken zum Aufwecken", 1);
+  gui::printAt(g, 120 - 53, bannerY + 6, "Fennek", 3);   // Name — nicht übersetzen
+  // Aufweck-Hinweis sprachabhängig zentrieren (Länge variiert pro Sprache).
+  const char* hint = T(Str::SleepWakeHint);
+  g.setTextSize(1);
+  uint16_t hw, hh;
+  gui::textBounds(g, hint, &hw, &hh);
+  gui::printAt(g, 120 - (int)hw / 2, bannerY + 31, hint, 1);
   g.setTextColor(GxEPD_BLACK);
 }
 
 // =============================================================================
 int main(int argc, char** argv) {
   std::string outdir = (argc > 1) ? argv[1] : ".";
+  if (argc > 2) {
+    std::string l = argv[2];
+    if      (l == "de") g_lang = (int)i18n::Lang::DE;
+    else if (l == "it") g_lang = (int)i18n::Lang::IT;
+    else if (l == "sv") g_lang = (int)i18n::Lang::SV;
+    else if (l == "en") g_lang = (int)i18n::Lang::EN;
+    else if (l == "es") g_lang = (int)i18n::Lang::ES;
+    else fprintf(stderr, "unbekannte Sprache '%s' — nutze Englisch\n", l.c_str());
+  }
 
   struct { const char* file; void (*fn)(Adafruit_GFX&); } screens[] = {
     {"launcher.pgm", screenLauncher},

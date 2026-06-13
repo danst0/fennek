@@ -35,15 +35,15 @@ liefert.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (App-Auswahl)</sub></td>
-    <td align="center"><img src="docs/screenshots/music.png" width="240" alt="Musik-Player"><br><sub>Musik – Wiedergabe</sub></td>
+    <td align="center"><img src="docs/screenshots/de/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (App-Auswahl)</sub></td>
+    <td align="center"><img src="docs/screenshots/de/music.png" width="240" alt="Musik-Player"><br><sub>Musik – Wiedergabe</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Spiele – Tic-Tac-Toe</sub></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="240" alt="Einstellungen"><br><sub>Einstellungen (Funk &amp; System)</sub></td>
+    <td align="center"><img src="docs/screenshots/de/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Spiele – Tic-Tac-Toe</sub></td>
+    <td align="center"><img src="docs/screenshots/de/settings.png" width="240" alt="Einstellungen"><br><sub>Einstellungen (Funk &amp; System)</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/sleep.png" width="240" alt="Standby"><br><sub>Standby (schlafender Fennek)</sub></td>
+    <td align="center"><img src="docs/screenshots/de/sleep.png" width="240" alt="Standby"><br><sub>Standby (schlafender Fennek)</sub></td>
     <td></td>
   </tr>
 </table>

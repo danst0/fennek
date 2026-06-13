@@ -2,9 +2,11 @@
 # =============================================================================
 # screenshots.sh — erzeugt die README-Screenshots vollautomatisch (ohne Gerät).
 #
-# Rendert vier Fennek-Bildschirme mit dem Host-Renderer (tools/screenshot.cpp,
+# Rendert fünf Fennek-Bildschirme mit dem Host-Renderer (tools/screenshot.cpp,
 # echter Adafruit-GFX-Zeichencode -> pixelgenau) und exportiert sie als PNG
-# nach docs/screenshots/.
+# nach docs/screenshots/<sprache>/ — eine Sprache pro README.
+#
+#   tools/screenshots.sh [scale] [sprachen...]   (Default: 2, "en de sv")
 #
 # Voraussetzungen: g++, python3 + Pillow, und einmal `pio run -e fennek`
 # (damit die Adafruit-GFX-Lib unter .pio/libdeps/ liegt).
@@ -14,6 +16,9 @@ cd "$(dirname "$0")/.."
 
 OUT="docs/screenshots"
 SCALE="${1:-2}"
+shift || true
+LANGS=("$@")
+[ ${#LANGS[@]} -eq 0 ] && LANGS=(en de sv)
 
 GFX="$(find .pio/libdeps -maxdepth 2 -type d -name 'Adafruit GFX Library' 2>/dev/null | head -1)"
 if [ -z "$GFX" ]; then
@@ -30,10 +35,12 @@ g++ -std=c++17 -O2 -w -DARDUINO=10805 \
   tools/screenshot.cpp src/core/gui.cpp "$GFX/Adafruit_GFX.cpp" \
   -o "$TMP/fennek_shot"
 
-echo "==> rendere Bildschirme ..."
-"$TMP/fennek_shot" "$TMP"
-
-echo "==> exportiere PNGs nach $OUT (Skalierung ${SCALE}x) ..."
-python3 tools/make_screenshots.py "$TMP" "$OUT" "$SCALE"
+for LANG in "${LANGS[@]}"; do
+  echo "==> rendere Bildschirme ($LANG) ..."
+  rm -f "$TMP"/*.pgm
+  "$TMP/fennek_shot" "$TMP" "$LANG"
+  echo "==> exportiere PNGs nach $OUT/$LANG (Skalierung ${SCALE}x) ..."
+  python3 tools/make_screenshots.py "$TMP" "$OUT/$LANG" "$SCALE"
+done
 
 echo "fertig."

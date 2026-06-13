@@ -34,15 +34,15 @@ SPI-buss, och ändå levererar hackfri ljuduppspelning.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (appväljare)</sub></td>
-    <td align="center"><img src="docs/screenshots/music.png" width="240" alt="Musikspelare"><br><sub>Musik – uppspelning</sub></td>
+    <td align="center"><img src="docs/screenshots/sv/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (appväljare)</sub></td>
+    <td align="center"><img src="docs/screenshots/sv/music.png" width="240" alt="Musikspelare"><br><sub>Musik – uppspelning</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/games-ttt.png" width="240" alt="Tre i rad"><br><sub>Spel – Tre i rad</sub></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="240" alt="Inställningar"><br><sub>Inställningar (radio &amp; system)</sub></td>
+    <td align="center"><img src="docs/screenshots/sv/games-ttt.png" width="240" alt="Tre i rad"><br><sub>Spel – Tre i rad</sub></td>
+    <td align="center"><img src="docs/screenshots/sv/settings.png" width="240" alt="Inställningar"><br><sub>Inställningar (radio &amp; system)</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/sleep.png" width="240" alt="Vänteläge"><br><sub>Vänteläge (sovande ökenräv)</sub></td>
+    <td align="center"><img src="docs/screenshots/sv/sleep.png" width="240" alt="Vänteläge"><br><sub>Vänteläge (sovande ökenräv)</sub></td>
     <td></td>
   </tr>
 </table>

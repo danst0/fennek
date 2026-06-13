@@ -10,10 +10,15 @@ Adafruit-GFX-Zeichencode und denselben CP437-Fonts wie die Firmware in einen
 `GFXcanvas1` (240×320, 1 Bit) — das Ergebnis ist **pixelgenau** zur Anzeige,
 nur mit Beispiel-Daten.
 
+Die Texte kommen aus derselben i18n-Tabelle wie die Firmware (`core/i18n.h`),
+die Sprache wählt das 2. Argument des Renderers — `screenshots.sh` erzeugt pro
+Sprache einen Unterordner `docs/screenshots/<sprache>/` (je eine README-Sprache).
+
 ```bash
 pio run -e fennek        # einmalig, damit Adafruit-GFX unter .pio/libdeps/ liegt
-bash tools/screenshots.sh        # -> docs/screenshots/*.png  (Standard 2x skaliert)
-bash tools/screenshots.sh 3      # andere Skalierung
+bash tools/screenshots.sh            # -> docs/screenshots/{en,de,sv}/*.png (2x)
+bash tools/screenshots.sh 3          # andere Skalierung
+bash tools/screenshots.sh 2 en es    # nur bestimmte Sprachen (de/it/sv/en/es)
 ```
 
 Bestandteile:

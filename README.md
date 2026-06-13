@@ -34,15 +34,15 @@ SPI bus, while still delivering stutter-free audio playback.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (app picker)</sub></td>
-    <td align="center"><img src="docs/screenshots/music.png" width="240" alt="Music player"><br><sub>Music – playback</sub></td>
+    <td align="center"><img src="docs/screenshots/en/launcher.png" width="240" alt="Launcher"><br><sub>Launcher (app picker)</sub></td>
+    <td align="center"><img src="docs/screenshots/en/music.png" width="240" alt="Music player"><br><sub>Music – playback</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Games – Tic-Tac-Toe</sub></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="240" alt="Settings"><br><sub>Settings (radio &amp; system)</sub></td>
+    <td align="center"><img src="docs/screenshots/en/games-ttt.png" width="240" alt="Tic-Tac-Toe"><br><sub>Games – Tic-Tac-Toe</sub></td>
+    <td align="center"><img src="docs/screenshots/en/settings.png" width="240" alt="Settings"><br><sub>Settings (radio &amp; system)</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/sleep.png" width="240" alt="Standby"><br><sub>Standby (sleeping fennec)</sub></td>
+    <td align="center"><img src="docs/screenshots/en/sleep.png" width="240" alt="Standby"><br><sub>Standby (sleeping fennec)</sub></td>
     <td></td>
   </tr>
 </table>
