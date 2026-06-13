@@ -50,6 +50,16 @@ constexpr const char* kLogPath = "/meshcore/messages.log";
 constexpr const char* kLogOld  = "/meshcore/messages.old";
 constexpr uint32_t    kLogRotateBytes = 256 * 1024;
 
+// SD-Persistenz für Kontakte + beigetretene Hashtag-Kanäle (12.06.2026).
+// Kontakte: SPIFFS bleibt führend (funktioniert ohne SD); die SD hält einen
+// Spiegel im selben Binärformat — beim Laden hat SD Vorrang (erlaubt Import/
+// Backup über die Web-Dateiverwaltung, analog identity.hex). Geschrieben wird
+// der Spiegel NICHT in den Mesh-Callbacks (laufen unter spiLock!), sondern
+// deferred in mesh_client::loop() — gleiche Technik wie flushLog().
+constexpr const char* kContactsSdPath = "/meshcore/contacts.bin";
+constexpr const char* kChannelsPath   = "/meshcore/channels.txt";
+bool s_contactsSdDirty = false;
+
 // Optionale, vom Nutzer vorgegebene MeshCore-Identität von der SD-Karte.
 // Format (Textdatei): Zeile 1 = Private Key (128 Hex-Zeichen / 64 Byte),
 // Zeile 2 = Public Key (64 Hex-Zeichen / 32 Byte). Ist die Datei vorhanden und
@@ -287,9 +297,18 @@ class MeshClient : public BaseChatMesh {
   AckSlot _acks[kAckSlots];
   int _lastAckSlot;        // jüngst belegter Slot (für onSendTimeout)
 
+  // Läuft unter dem spiLock des Aufrufers (MeshClient::begin) — hier KEIN
+  // eigenes spiLock nehmen (Falle 2)! SD hat Vorrang vor SPIFFS.
   void loadContacts() {
-    if (!_fs->exists("/contacts")) return;
-    File file = _fs->open("/contacts");
+    File file;
+    if (board::sdReady() && SD.exists(kContactsSdPath)) {
+      file = SD.open(kContactsSdPath);
+      if (file) Serial.println("[MESH] Kontakte von SD geladen (/meshcore/contacts.bin)");
+    }
+    if (!file) {
+      if (!_fs->exists("/contacts")) return;
+      file = _fs->open("/contacts");
+    }
     if (!file) return;
     bool full = false;
     while (!full) {
@@ -318,9 +337,7 @@ class MeshClient : public BaseChatMesh {
     file.close();
   }
 
-  void saveContacts() {
-    File file = _fs->open("/contacts", "w", true);
-    if (!file) return;
+  void writeContactRecords(File& file) {
     ContactsIterator iter;
     ContactInfo c;
     uint8_t unused = 0;
@@ -337,7 +354,16 @@ class MeshClient : public BaseChatMesh {
       ok = ok && (file.write(c.out_path, 64) == 64);
       if (!ok) break;
     }
+  }
+
+  // Wird aus Mesh-Callbacks gerufen (unter spiLock): SPIFFS sofort (interner
+  // Flash, kein SPI-Bus), SD-Spiegel nur markieren — flushen macht loop().
+  void saveContacts() {
+    File file = _fs->open("/contacts", "w", true);
+    if (!file) return;
+    writeContactRecords(file);
     file.close();
+    s_contactsSdDirty = true;
   }
 
   int indexOfContact(const ContactInfo& c) {
@@ -368,10 +394,35 @@ protected:
     // Uhr opportunistisch aus (signierten) Adverts synchronisieren — das
     // Gerät hat keine gepufferte RTC; ohne echte Zeit tragen unsere
     // Nachrichten veraltete Timestamps und werden von Bots ignoriert.
-    uint32_t t = contact.last_advert_timestamp;
-    if (t > getRTCClock()->getCurrentTime()) {
-      getRTCClock()->setCurrentTime(t + 1);
-      Serial.printf("[MESH] Uhr aus Advert gesetzt: %lu\n", (unsigned long)t);
+    // Aber NICHT blind auf den größten Timestamp ratschen: ein einzelner
+    // Node mit Zukunfts-Uhr zog uns am 12.06.2026 um +28 h mit. Regeln:
+    //   1. Bootstrap: solange die eigene Uhr vor kSaneEpoch steht, erste
+    //      plausible Advert-Zeit übernehmen.
+    //   2. Danach nur kleine Vorwärts-Korrekturen (< 1 h).
+    //   3. Rückwärts erst, wenn 3 Adverts in Folge > 1 h hinter uns liegen
+    //      (Mehrheit hat recht, der Ausreißer nicht).
+    constexpr uint32_t kSaneEpoch = 1781000000UL;  // ≈ 09.06.2026, Build-Ära
+    uint32_t t   = contact.last_advert_timestamp;
+    uint32_t now = getRTCClock()->getCurrentTime();
+    static uint32_t s_behindMax = 0;
+    static int      s_behindCnt = 0;
+    if (t > kSaneEpoch) {
+      if (now < kSaneEpoch || (t > now && t - now < 3600)) {
+        getRTCClock()->setCurrentTime(t + 1);
+        s_behindCnt = 0;
+        Serial.printf("[MESH] Uhr aus Advert gesetzt: %lu\n", (unsigned long)t);
+      } else if (t + 3600 < now) {
+        if (t > s_behindMax) s_behindMax = t;
+        if (++s_behindCnt >= 3) {
+          getRTCClock()->setCurrentTime(s_behindMax + 1);
+          Serial.printf("[MESH] Uhr zurückgesetzt (3x Advert-Konsens): %lu\n",
+                        (unsigned long)s_behindMax);
+          s_behindCnt = 0;
+          s_behindMax = 0;
+        }
+      } else {
+        s_behindCnt = 0;   // Advert innerhalb ±1 h — Uhr passt
+      }
     }
     saveContacts();
     s_changes++;
@@ -571,6 +622,20 @@ public:
 
   bool getChannelInfo(int i, ChannelDetails& cd) { return getChannel(i, cd); }
 
+  // SD-Spiegel der Kontakte schreiben. Nimmt selbst spiLock — der Aufrufer
+  // darf es NICHT halten (deshalb deferred aus mesh_client::loop()).
+  void saveContactsToSd() {
+    if (!board::sdReady()) return;
+    spiLock();
+    if (!SD.exists(kLogDir)) SD.mkdir(kLogDir);
+    File file = SD.open(kContactsSdPath, FILE_WRITE);
+    if (file) {
+      writeContactRecords(file);
+      file.close();
+    }
+    spiUnlock();
+  }
+
   void sendSelfAdvertNow() {
     auto pkt = createSelfAdvert(_prefs.node_name, _prefs.node_lat, _prefs.node_lon);
     if (pkt) sendZeroHop(pkt);
@@ -664,6 +729,37 @@ bool begin() {
   // Chat-Verlauf vom SD-Log wiederherstellen (falls Karte steckt).
   loadHistoryFromSd();
 
+  // Beigetretene Hashtag-Kanäle wiederherstellen — Joins sind sonst volatil
+  // (12.06.2026: #test/#wetter nach jedem Reboot weg). Erst Namen unter dem
+  // Lock einsammeln, dann joinen (joinHash ist reiner Speicher, loggt aber).
+  if (board::sdReady()) {
+    constexpr int kMaxRestore = 8;   // MAX_GROUP_CHANNELS
+    char names[kMaxRestore][40];
+    int  n = 0;
+    spiLock();
+    if (SD.exists(kChannelsPath)) {
+      File f = SD.open(kChannelsPath);
+      if (f) {
+        while (n < kMaxRestore && f.available()) {
+          String l = f.readStringUntil('\n');
+          l.trim();
+          if (l.length()) {
+            strncpy(names[n], l.c_str(), sizeof(names[n]) - 1);
+            names[n][sizeof(names[n]) - 1] = '\0';
+            n++;
+          }
+        }
+        f.close();
+      }
+    }
+    spiUnlock();
+    for (int i = 0; i < n; i++) {
+      spiLock();
+      s_mesh->joinHash(names[i]);
+      spiUnlock();
+    }
+  }
+
   // Boot-Advert mit etwas Verzögerung (Zero-Hop folgt auf Nutzeraktion).
   spiLock();
   auto pkt = s_mesh->createSelfAdvert(s_mesh->name());
@@ -689,6 +785,14 @@ void loop() {
   s_rtc.tick();
   // Im Mesh-Loop angefallene Nachrichten jetzt (lock-frei) auf SD loggen.
   flushLog();
+  // Kontakt-Spiegel auf SD nachziehen (Callbacks markieren nur; gedrosselt,
+  // damit Advert-Schauer nicht bei jedem Paket ~13 KB auf die SD schreiben).
+  static uint32_t s_lastSdSave = 0;
+  if (s_contactsSdDirty && board::sdReady() && millis() - s_lastSdSave >= 5000) {
+    s_contactsSdDirty = false;
+    s_lastSdSave = millis();
+    s_mesh->saveContactsToSd();
+  }
 }
 
 int msgCount() { return s_msgLen; }
@@ -776,11 +880,31 @@ void sendAdvert() {
   spiUnlock();
 }
 
+// Beigetretene Hashtag-Kanäle auf SD schreiben (Index 0 = Public, fest —
+// wird nicht persistiert). Ein Name pro Zeile; der PSK wird beim Join aus
+// dem Namen abgeleitet, daher reicht die Namensliste.
+void saveChannelsToSd() {
+  if (!s_ready || !board::sdReady()) return;
+  spiLock();
+  if (!SD.exists(kLogDir)) SD.mkdir(kLogDir);
+  File f = SD.open(kChannelsPath, FILE_WRITE);
+  if (f) {
+    ChannelDetails cd;
+    for (int i = 1; s_mesh->getChannelInfo(i, cd) && cd.name[0]; i++) {
+      f.printf("%s\n", cd.name);
+    }
+    f.close();
+  }
+  spiUnlock();
+}
+
 int joinHashChannel(const char* name) {
   if (!s_ready || !name || !name[0]) return -1;
+  int before = channelCount();
   spiLock();
   int idx = s_mesh->joinHash(name);
   spiUnlock();
+  if (idx >= 0 && channelCount() != before) saveChannelsToSd();
   return idx;
 }
 
