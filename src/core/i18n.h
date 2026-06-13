@@ -36,6 +36,7 @@
   X(AppSettings,   "Einstellungen",  "Impostazioni",    "Inställningar",  "Settings",        "Ajustes") \
   X(AppGames,      "Spiele",         "Giochi",          "Spel",           "Games",           "Juegos") \
   X(AppFiles,      "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
+  X(AppNotes,      "Notizen",        "Note",            "Anteckningar",   "Notes",           "Notas") \
   /* --- Launcher-Kacheln (max 8 Zeichen) --- */ \
   X(TileMusic,     "Musik",          "Musica",          "Musik",          "Music",           "Música") \
   X(TileBook,      "Hörbuch",        "Ascolto",         "Ljudbok",        "Listen",          "Escuchar") \
@@ -44,6 +45,7 @@
   X(TileSettings,  "Optionen",       "Opzioni",         "System",         "Settings",        "Ajustes") \
   X(TileGames,     "Spiele",         "Giochi",          "Spel",           "Games",           "Juegos") \
   X(TileFiles,     "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
+  X(TileNotes,     "Notizen",        "Note",            "Anteckn.",       "Notes",           "Notas") \
   X(TileSoon,      "(bald)",         "(presto)",        "(snart)",        "(soon)",          "(pronto)") \
   X(FmtResume,     "Fortsetzen: %s", "Riprendi: %s",    "Fortsätt: %s",   "Resume: %s",      "Continuar: %s") /* fmt: %s */ \
   /* --- Gemeinsame Buttons --- */ \
@@ -90,6 +92,10 @@
   X(ReaderHint,    ".txt/.epub nach /books legen.", "Metti .txt/.epub in /books.", "Lägg .txt/.epub i /books.", "Put .txt/.epub in /books.", "Pon .txt/.epub en /books.") \
   X(FmtReaderFound,"%d gefunden",    "%d trovati",      "%d hittade",     "%d found",        "%d encontrados") /* fmt: %d */ \
   X(ReaderRescan,  "R: neu einlesen","R: riscansiona",  "R: skanna om",   "R: rescan",       "R: reescanear") \
+  /* --- Notizen --- */ \
+  X(NotesToday,    "+ Heute",        "+ Oggi",          "+ Idag",         "+ Today",         "+ Hoy") \
+  X(NotesEmpty,    "Noch keine Notizen", "Ancora nessuna nota", "Inga anteckningar än", "No notes yet", "Aún sin notas") \
+  X(NotesDelQ,     "Löschen? Enter=ja",  "Eliminare? Enter=sì", "Radera? Enter=ja",     "Delete? Enter=yes", "¿Borrar? Enter=sí") \
   /* --- Mesh --- */ \
   X(MeshChannel,   "Mesh-Kanal",     "Canale Mesh",     "Mesh-kanal",     "Mesh channel",    "Canal Mesh") \
   X(MeshChats,     "Chats",          "Chat",            "Chattar",        "Chats",           "Chats") \

@@ -36,6 +36,7 @@
 #include "apps/music_app.h"
 #include "apps/book_app.h"
 #include "apps/reader_app.h"
+#include "apps/notes_app.h"
 #include "apps/mesh_app.h"
 #include "apps/mesh_client.h"
 #include "apps/settings_app.h"
@@ -181,6 +182,7 @@ void setup() {
   appmgr::add(settings_app::get());
   appmgr::add(games_app::get());
   appmgr::add(files_app::get());
+  appmgr::add(notes_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -188,6 +190,7 @@ void setup() {
   launcher::setTile(4, i18n::Str::TileSettings, settings_app::get());
   launcher::setTile(5, i18n::Str::TileGames,    games_app::get());
   launcher::setTile(6, i18n::Str::TileFiles,    files_app::get());
+  launcher::setTile(7, i18n::Str::TileNotes,    notes_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 

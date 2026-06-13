@@ -9,6 +9,7 @@
 #include "core/settings.h"
 #include "apps/mesh_client.h"
 #include "apps/reader_app.h"
+#include "apps/notes_app.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
 #include "services/scrobble.h"
@@ -323,6 +324,7 @@ void handleLine(char* line) {
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
+  if (strcmp(line, "notes") == 0)           { notes_app::debugSmoke(); return; }
   if (strncmp(line, "wifi ssid ", 10) == 0) {
     settings::setWifiSsid(line + 10);
     Serial.printf("[CON] WLAN-SSID gesetzt: '%s'\n", line + 10);
