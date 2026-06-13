@@ -78,6 +78,18 @@ void setWifiSsid(const char* ssid);
 void wifiPass(char* out, size_t n);
 void setWifiPass(const char* pass);
 
+// --- Navidrome/Subsonic-Scrobbling (services/scrobble) ------------------------
+// Server-URL inkl. Schema (http/https), Benutzer + Passwort (Klartext, wie WLAN).
+// Toggle aktiviert das Erfassen + den Pre-Standby-Upload gespielter Tracks.
+bool navEnabled();                               // Default false
+void setNavEnabled(bool on);
+void navUrl(char* out, size_t n);                // "" = nicht konfiguriert
+void setNavUrl(const char* url);
+void navUser(char* out, size_t n);
+void setNavUser(const char* user);
+void navPass(char* out, size_t n);
+void setNavPass(const char* pass);
+
 // --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
 uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)
 void     setLastTime(uint32_t epoch);

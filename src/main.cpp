@@ -30,11 +30,13 @@
 #include "services/audio.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
 #include "apps/book_app.h"
 #include "apps/reader_app.h"
+#include "apps/notes_app.h"
 #include "apps/mesh_app.h"
 #include "apps/mesh_client.h"
 #include "apps/settings_app.h"
@@ -132,6 +134,9 @@ void setup() {
   Serial.printf("[FENNEK] Audio-Engine gestartet (freier PSRAM: %u KB)\n",
                 (unsigned)(ESP.getFreePsram() / 1024));
 
+  // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
+  scrobble::begin();
+
   Serial.printf("[FENNEK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
                 library::artistCount(), library::albumCount(),
                 library::titleCount(), library::playlistCount());
@@ -177,6 +182,7 @@ void setup() {
   appmgr::add(settings_app::get());
   appmgr::add(games_app::get());
   appmgr::add(files_app::get());
+  appmgr::add(notes_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -184,6 +190,7 @@ void setup() {
   launcher::setTile(4, i18n::Str::TileSettings, settings_app::get());
   launcher::setTile(5, i18n::Str::TileGames,    games_app::get());
   launcher::setTile(6, i18n::Str::TileFiles,    files_app::get());
+  launcher::setTile(7, i18n::Str::TileNotes,    notes_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
@@ -259,6 +266,7 @@ void loop() {
   console::poll();   // Serial-Debug-Konsole ('help' über USB)
   webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
   timesync::poll();  // Zeit frisch halten (opportunistisch NTP, NVS-Sicherung)
+  scrobble::poll();  // Scrobble-Queue gedrosselt nach SD persistieren
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
 }

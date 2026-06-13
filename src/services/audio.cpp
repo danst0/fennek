@@ -4,6 +4,8 @@
 #include "audio.h"
 #include "core/board.h"
 #include "config.h"
+#include "services/scrobble.h"
+#include "services/timesync.h"
 
 #include <Arduino.h>
 #include <SD.h>
@@ -72,6 +74,10 @@ volatile uint32_t s_sleepAt = 0;    // millis()-Zeitpunkt; 0 = kein Timer
 // EOF-Flag, gesetzt im audio_eof_mp3-Callback (läuft im Audio-Task).
 volatile bool     s_eof     = false;
 
+// Startzeitpunkt (UTC) des aktuell offenen Tracks für Scrobbling; 0 = nichts
+// abzurechnen / bereits abgerechnet (verhindert Doppelzählung).
+volatile uint32_t s_startEpoch = 0;
+
 enum class Cmd : uint8_t {
   Play, TogglePause, Next, Prev, Stop, SetVolume, SeekRel, SetShuffle, SetRepeat
 };
@@ -111,8 +117,25 @@ void rebuildOrder(bool shuffle) {
   }
 }
 
+// Den eben beendeten Track ggf. zum Scrobbeln vormerken. Läuft im Audio-Task;
+// nur leichte Arbeit + scrobble::enqueue (Mutex+memcpy, keine SD/Netz/Library).
+// Genau einmal pro Track: s_startEpoch wird auf 0 gesetzt. Scrobble-Regel: nur
+// Musik, Track >50 % oder >4 min gespielt.
+void noteTrackEnded() {
+  uint32_t start = s_startEpoch;
+  if (start == 0) return;                       // nichts offen / schon abgerechnet
+  s_startEpoch = 0;
+  if ((audio::Owner)s_owner != audio::Owner::Music) return;
+  uint32_t dur = s_durSec, pos = s_posSec;
+  if (dur == 0) return;
+  if (pos < dur / 2 && pos < 240) return;       // zu kurz gehört
+  if (!s_curPath[0]) return;
+  scrobble::enqueue(s_curPath, start, (uint16_t)pos, (uint16_t)dur);
+}
+
 // Spielt die aktuelle Queue-Position s_qpos (optional ab startSec).
 void startCurrent(uint32_t startSec = 0) {
+  noteTrackEnded();   // vorherigen Track abrechnen, bevor s_curPath überschrieben wird
   xSemaphoreTake(s_qMutex, portMAX_DELAY);
   char p[kPathLen] = "";
   if (s_qpos >= 0 && s_qpos < s_qlen) {
@@ -144,6 +167,7 @@ void startCurrent(uint32_t startSec = 0) {
     s_pos     = s_qpos;
     s_playing = true;
     s_paused  = false;
+    s_startEpoch = (uint32_t)timesync::now();   // Track offen für Scrobbling
   } else {
     board::dacPower(false);
     s_playing = false;
@@ -165,6 +189,7 @@ void advance(int delta, bool wrap) {
   xSemaphoreGive(s_qMutex);
   if (n <= 0) return;
   if (stopAtEnd) {
+    noteTrackEnded();   // Playlist-Ende: letzten Track abrechnen
     s_playing = false;
     s_paused  = false;
     board::dacPower(false);
@@ -174,6 +199,7 @@ void advance(int delta, bool wrap) {
 }
 
 void stopTrack() {
+  noteTrackEnded();   // manueller Stopp/Sleep/Owner-Wechsel: Track abrechnen
   if (s_playing) {
     spiLock();
     s_audio.stopSong();

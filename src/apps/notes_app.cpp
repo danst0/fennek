@@ -1,0 +1,529 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Dr. Daniel Dumke
+
+#include "notes_app.h"
+#include "config.h"
+#include "core/board.h"
+#include "core/display.h"
+#include "core/gui.h"
+#include "core/i18n.h"
+#include "services/timesync.h"
+
+#include <Arduino.h>
+#include <SD.h>
+#include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
+#include <esp_heap_caps.h>
+#include <time.h>
+#include <string.h>
+#include <stdlib.h>
+
+namespace {
+
+using gui::Rect;
+
+constexpr const char* kNotesDir = "/notes";
+constexpr int kFileLen  = 16;    // "YYYY-MM-DD.md" + Reserve
+constexpr int kTitleLen = 40;    // Vorschau (erste Textzeile)
+constexpr int kMaxNotes = 366;   // ein Jahr Tagesnotizen — Überlauf-Schutz
+constexpr int kNoteCap  = 8192;  // RAM-Puffer pro Notiz (längere werden gekappt)
+
+// --- Layout: Liste -----------------------------------------------------------
+constexpr int W = EINK_W;
+constexpr int TOP      = appmgr::CONTENT_Y;
+constexpr int HEADER_Y = TOP + 2;
+constexpr int HEADER_H = TOP + 26;
+constexpr int ROW_H    = 30;
+constexpr int LIST_Y   = HEADER_H + 4;
+constexpr int VISIBLE  = 7;
+constexpr int BAR_Y    = LIST_Y + VISIBLE * ROW_H + 4;
+
+const Rect kBack    {6,   BAR_Y, 72, 44};
+const Rect kUp      {84,  BAR_Y, 72, 44};
+const Rect kDown    {162, BAR_Y, 72, 44};
+const Rect kRetrySD {20, 150, W - 40, 48};
+
+// --- Layout: Editor ----------------------------------------------------------
+// Default-Font Größe 1: 6x8 px. 38 Spalten; Text füllt bis zur Button-Leiste.
+// Kompakte Kopfzeile (Dateiname klein, Größe 1) — der Text beginnt darunter.
+constexpr int EDIT_COLS    = 38;
+constexpr int EDIT_X       = 6;
+constexpr int EDIT_HDR_Y   = TOP + 3;
+constexpr int EDIT_HDR_LN  = TOP + 14;   // Trennlinie unter dem Titel
+constexpr int EDIT_Y       = TOP + 18;   // Textstart, unterhalb der Kopfzeile
+constexpr int EDIT_LINEH   = 10;
+constexpr int EDIT_ROWS    = (BAR_Y - 2 - EDIT_Y) / EDIT_LINEH;
+
+// --- Zustand -----------------------------------------------------------------
+enum Screen { LIST, EDIT, CONFIRM_DEL };
+Screen s_screen = LIST;
+
+struct NoteEntry { char file[kFileLen]; char title[kTitleLen]; };
+NoteEntry* s_notes = nullptr;
+int  s_count = -1;          // -1 = noch nicht gescannt
+int  s_sel = 0, s_off = 0;  // Auswahl/Scroll; Zeile 0 = "+ Heute"
+
+char*    s_buf = nullptr;    // PSRAM, aktueller Notiztext
+int      s_len = 0;
+char     s_curFile[kFileLen] = "";
+bool     s_dirtyBuf = false;
+uint32_t s_lastSave = 0;
+
+void markDirty() { appmgr::markDirty(); }
+
+bool ensureBuffers() {
+  if (!s_notes) {
+    s_notes = (NoteEntry*)heap_caps_malloc(sizeof(NoteEntry) * kMaxNotes, MALLOC_CAP_SPIRAM);
+    if (!s_notes) s_notes = (NoteEntry*)malloc(sizeof(NoteEntry) * kMaxNotes);
+  }
+  if (!s_buf) {
+    s_buf = (char*)heap_caps_malloc(kNoteCap, MALLOC_CAP_SPIRAM);
+    if (!s_buf) s_buf = (char*)malloc(kNoteCap);
+  }
+  return s_notes && s_buf;
+}
+
+bool hasExt(const char* n, const char* e) {
+  size_t ln = strlen(n), le = strlen(e);
+  return ln > le && strcasecmp(n + ln - le, e) == 0;
+}
+
+// Neueste oben: Datumsname lexikographisch absteigend.
+int cmpNote(const void* a, const void* b) {
+  return strcmp(((const NoteEntry*)b)->file, ((const NoteEntry*)a)->file);
+}
+
+// Dateiname der heutigen Notiz aus der lokalen Systemzeit (Zeitzone via timesync).
+void todayFile(char* out, size_t n) {
+  time_t t = (time_t)timesync::now();
+  struct tm tmv;
+  localtime_r(&t, &tmv);
+  strftime(out, n, "%Y-%m-%d.md", &tmv);
+}
+
+// Erste Textzeile einer Notiz als Vorschau lesen (kurzer Read unter spiLock).
+void readPreview(const char* path, char* out, size_t n) {
+  out[0] = '\0';
+  spiLock();
+  File f = SD.open(path);
+  if (f) {
+    size_t i = 0;
+    while (i + 1 < n && f.available()) {
+      int c = f.read();
+      if (c < 0 || c == '\n' || c == '\r') break;
+      out[i++] = (char)c;
+    }
+    out[i] = '\0';
+    f.close();
+  }
+  spiUnlock();
+}
+
+// /notes scannen: .md-Dateien sammeln, Vorschau lesen, nach Datum sortieren.
+// Tagesnotizen sind wenige Dateien — je Datei ein kurzer Lock, kein Audio-Stau.
+void scanNotes() {
+  if (!ensureBuffers() || !board::sdReady()) { s_count = -1; return; }
+  s_count = 0;
+  spiLock();
+  if (!SD.exists(kNotesDir)) SD.mkdir(kNotesDir);
+  File dir = SD.open(kNotesDir);
+  bool ok = dir && dir.isDirectory();
+  spiUnlock();
+  if (!ok) { if (dir) { spiLock(); dir.close(); spiUnlock(); } s_count = 0; return; }
+
+  while (s_count < kMaxNotes) {
+    spiLock();
+    bool isDir = false;
+    String entry = dir.getNextFileName(&isDir);   // readdir, kein fopen
+    spiUnlock();
+    if (entry.length() == 0) break;
+    const char* full = entry.c_str();
+    const char* nm = strrchr(full, '/');
+    nm = nm ? nm + 1 : full;
+    if (isDir || nm[0] == '.' || !hasExt(nm, ".md")) continue;
+    NoteEntry& e = s_notes[s_count];
+    strncpy(e.file, nm, kFileLen - 1); e.file[kFileLen - 1] = '\0';
+    readPreview(full, e.title, kTitleLen);
+    if (!e.title[0]) strncpy(e.title, i18n::tr(i18n::Str::EmptyList), kTitleLen - 1);
+    s_count++;
+  }
+  spiLock(); dir.close(); spiUnlock();
+  qsort(s_notes, s_count, sizeof(NoteEntry), cmpNote);
+  Serial.printf("[NOTES] %d Tagesnotiz(en) unter %s\n", s_count, kNotesDir);
+}
+
+// --- Datei-I/O ---------------------------------------------------------------
+void notePath(const char* file, char* out, size_t n) {
+  snprintf(out, n, "%s/%s", kNotesDir, file);
+}
+
+// Aktuelle Datei in s_buf laden (Cursor ans Ende → Anhänge-Modus).
+void loadCurrent() {
+  s_len = 0;
+  s_buf[0] = '\0';
+  char path[40];
+  notePath(s_curFile, path, sizeof(path));
+  spiLock();
+  bool exists = SD.exists(path);
+  spiUnlock();
+  if (!exists) return;
+  spiLock();
+  File f = SD.open(path);
+  if (f) {
+    while (s_len < kNoteCap - 1) {
+      int want = kNoteCap - 1 - s_len;
+      if (want > 512) want = 512;
+      int rd = f.read((uint8_t*)(s_buf + s_len), want);
+      if (rd <= 0) break;
+      s_len += rd;
+    }
+    s_buf[s_len] = '\0';
+    f.close();
+  }
+  spiUnlock();
+  if (s_len >= kNoteCap - 1)
+    Serial.printf("[NOTES] %s gekappt auf %d Bytes\n", s_curFile, s_len);
+}
+
+// s_buf nach SD schreiben (gechunkt). Leere Notiz → Datei entfernen/gar nicht anlegen.
+void saveCurrent() {
+  if (!s_dirtyBuf || !board::sdReady() || !s_curFile[0]) return;
+  char path[40];
+  notePath(s_curFile, path, sizeof(path));
+  if (s_len == 0) {
+    spiLock();
+    if (SD.exists(path)) SD.remove(path);
+    spiUnlock();
+    s_dirtyBuf = false;
+    return;
+  }
+  spiLock();
+  if (!SD.exists(kNotesDir)) SD.mkdir(kNotesDir);
+  File f = SD.open(path, FILE_WRITE);   // ganze Notiz neu schreiben
+  bool ok = (bool)f;
+  spiUnlock();
+  for (int i = 0; ok && i < s_len; ) {
+    int n = (s_len - i > 512) ? 512 : s_len - i;
+    spiLock();
+    ok = f.write((const uint8_t*)(s_buf + i), n) == (size_t)n;
+    spiUnlock();
+    i += n;
+  }
+  spiLock();
+  if (f) f.close();
+  spiUnlock();
+  s_dirtyBuf = false;
+  s_lastSave = millis();
+  Serial.printf("[NOTES] %s gespeichert (%s, %d B)\n",
+                s_curFile, ok ? "ok" : "FEHLER", s_len);
+}
+
+// --- Navigation --------------------------------------------------------------
+void openEditor(const char* file) {
+  strncpy(s_curFile, file, kFileLen - 1); s_curFile[kFileLen - 1] = '\0';
+  loadCurrent();
+  s_dirtyBuf = false;
+  s_lastSave = millis();
+  s_screen = EDIT;
+  markDirty();
+}
+
+void openToday() {
+  char today[kFileLen];
+  todayFile(today, sizeof(today));
+  openEditor(today);
+}
+
+void backToList() {
+  saveCurrent();
+  scanNotes();
+  s_screen = LIST;
+  markDirty();
+}
+
+void retrySD() {
+  if (board::initSD()) scanNotes();
+  markDirty();
+}
+
+// s_sel: 0 = "+ Heute", 1..s_count = Notizen.
+int rowCount() { return s_count > 0 ? s_count + 1 : 1; }
+
+void moveSel(int delta) {
+  int n = rowCount();
+  int ns = s_sel + delta;
+  if (ns < 0) ns = n - 1;
+  if (ns >= n) ns = 0;
+  s_sel = ns;
+  if (s_sel < s_off) s_off = s_sel;
+  if (s_sel >= s_off + VISIBLE) s_off = s_sel - VISIBLE + 1;
+  markDirty();
+}
+
+void openSel() {
+  if (s_sel == 0) { openToday(); return; }
+  int idx = s_sel - 1;
+  if (idx >= 0 && idx < s_count) openEditor(s_notes[idx].file);
+}
+
+void deleteSel() {
+  if (s_sel < 1 || s_sel - 1 >= s_count) return;
+  char path[40];
+  notePath(s_notes[s_sel - 1].file, path, sizeof(path));
+  spiLock();
+  if (SD.exists(path)) SD.remove(path);
+  spiUnlock();
+  scanNotes();
+  if (s_sel >= rowCount()) s_sel = rowCount() - 1;
+  s_screen = LIST;
+  markDirty();
+}
+
+// --- Zeichnen: Liste ---------------------------------------------------------
+void drawList(Adafruit_GFX& g) {
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppNotes), 2);
+  g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
+
+  if (!board::sdReady()) {
+    gui::printAt(g, 10, 80, i18n::tr(i18n::Str::NoSdCard), 2);
+    gui::printAt(g, 10, 110, i18n::tr(i18n::Str::InsertCard), 1);
+    gui::drawButton(g, kRetrySD, i18n::tr(i18n::Str::BtnRetrySD), false);
+    return;
+  }
+
+  for (int r = 0; r < VISIBLE && s_off + r < rowCount(); r++) {
+    int gi = s_off + r;
+    char lbl[80];
+    if (gi == 0) {
+      snprintf(lbl, sizeof(lbl), "%s", i18n::tr(i18n::Str::NotesToday));
+    } else {
+      const NoteEntry& e = s_notes[gi - 1];
+      char date[kFileLen];
+      strncpy(date, e.file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
+      char* dot = strrchr(date, '.');
+      if (dot) *dot = '\0';   // ".md" abschneiden
+      snprintf(lbl, sizeof(lbl), "%s  %s", date, e.title);
+    }
+    gui::drawRowText(g, LIST_Y + r * ROW_H, ROW_H, lbl, false);
+  }
+  int cr = s_sel - s_off;
+  if (cr >= 0 && cr < VISIBLE) {
+    int y = LIST_Y + cr * ROW_H;
+    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
+    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+  }
+  if (s_count == 0)
+    gui::printAt(g, 10, LIST_Y + ROW_H + 12, i18n::tr(i18n::Str::NotesEmpty), 1);
+
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  if (s_off > 0)                    gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
+  if (s_off + VISIBLE < rowCount()) gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
+}
+
+// --- Zeichnen: Editor --------------------------------------------------------
+// Puffer in Zeilen umbrechen (an '\n' und an EDIT_COLS) und nur die letzten
+// EDIT_ROWS Zeilen rendern (Anhänge-Modus → Cursor bleibt unten sichtbar).
+void drawEditor(Adafruit_GFX& g) {
+  // Titel klein (Größe 1) und mit ".md" — spart Platz, Text beginnt darunter.
+  gui::printAt(g, EDIT_X, EDIT_HDR_Y, s_curFile, 1);
+  g.drawFastHLine(0, EDIT_HDR_LN, W, GxEPD_BLACK);
+
+  static char ring[EDIT_ROWS][EDIT_COLS + 2];
+  int total = 0;   // Index der aktuellen (Teil-)Zeile im Ring
+  int col = 0;
+  ring[0][0] = '\0';
+  for (int i = 0; i < s_len; i++) {
+    char c = s_buf[i];
+    if (c == '\r') continue;
+    if (c == '\n') {
+      ring[total % EDIT_ROWS][col] = '\0';
+      total++; col = 0;
+      ring[total % EDIT_ROWS][0] = '\0';
+      continue;
+    }
+    if (col >= EDIT_COLS) {
+      ring[total % EDIT_ROWS][col] = '\0';
+      total++; col = 0;
+    }
+    ring[total % EDIT_ROWS][col++] = c;
+  }
+  // Cursor an die aktuelle Zeile hängen.
+  ring[total % EDIT_ROWS][col++] = '_';
+  ring[total % EDIT_ROWS][col]   = '\0';
+
+  int linesPresent = total + 1;
+  int firstGi = linesPresent > EDIT_ROWS ? linesPresent - EDIT_ROWS : 0;
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(1);
+  int y = EDIT_Y;
+  for (int gi = firstGi; gi < linesPresent; gi++) {
+    g.setCursor(EDIT_X, y);
+    gui::print(g, ring[gi % EDIT_ROWS]);
+    y += EDIT_LINEH;
+  }
+
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
+}
+
+void drawConfirmDel(Adafruit_GFX& g) {
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppNotes), 2);
+  g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
+  if (s_sel >= 1 && s_sel - 1 < s_count) {
+    char date[kFileLen];
+    strncpy(date, s_notes[s_sel - 1].file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
+    char* dot = strrchr(date, '.'); if (dot) *dot = '\0';
+    gui::printAt(g, 10, 90, date, 2);
+  }
+  gui::printAt(g, 10, 130, i18n::tr(i18n::Str::NotesDelQ), 2);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
+}
+
+// --- Interaktion -------------------------------------------------------------
+void onListTouch(int x, int y) {
+  if (kBack.hit(x, y)) { appmgr::goHome(); return; }
+  if (!board::sdReady()) { if (kRetrySD.hit(x, y)) retrySD(); return; }
+  if (kUp.hit(x, y)) {
+    if (s_off > 0) { s_off = (s_off > VISIBLE) ? s_off - VISIBLE : 0; markDirty(); }
+    return;
+  }
+  if (kDown.hit(x, y)) {
+    if (s_off + VISIBLE < rowCount()) { s_off += VISIBLE; markDirty(); }
+    return;
+  }
+  if (y >= LIST_Y && y < LIST_Y + VISIBLE * ROW_H) {
+    int r = (y - LIST_Y) / ROW_H;
+    if (s_off + r < rowCount()) { s_sel = s_off + r; openSel(); }
+  }
+}
+
+void onListKey(char k) {
+  switch (k) {
+    case 'w': case 'W': moveSel(-1); break;
+    case 's': case 'S': moveSel(+1); break;
+    case '\r':          openSel(); break;
+    case 'x': case 'X':
+      if (s_sel >= 1) { s_screen = CONFIRM_DEL; markDirty(); }
+      break;
+    case '\b':
+    case 'q': case 'Q': appmgr::goHome(); break;
+    default: break;
+  }
+}
+
+void onEditKey(char k) {
+  if (k == '\b') {
+    if (s_len == 0) { backToList(); return; }
+    s_len--; s_buf[s_len] = '\0';
+    s_dirtyBuf = true; markDirty();
+    return;
+  }
+  char c = (k == '\r') ? '\n' : k;
+  if (c != '\n' && (k < 32 || k > 126)) return;   // Tastatur liefert ASCII
+  if (s_len < kNoteCap - 1) {
+    s_buf[s_len++] = c;
+    s_buf[s_len] = '\0';
+    s_dirtyBuf = true; markDirty();
+  }
+}
+
+// --- App-Klasse --------------------------------------------------------------
+class NotesApp : public App {
+ public:
+  const char* id()   const override { return "Notizen"; }
+  const char* name() const override { return i18n::tr(i18n::Str::AppNotes); }
+
+  void onEnter() override {
+    if (!board::sdReady()) { s_screen = LIST; return; }
+    scanNotes();
+    s_sel = 0; s_off = 0;
+    s_screen = LIST;
+  }
+
+  void onLeave() override {
+    saveCurrent();   // ungesicherten Editor-Text vor App-Wechsel sichern
+  }
+
+  void handleInput(const InputEvent& e) override {
+    if (e.type == InputEvent::TAP) {
+      switch (s_screen) {
+        case LIST: onListTouch(e.x, e.y); break;
+        case EDIT: if (kBack.hit(e.x, e.y)) backToList(); break;
+        case CONFIRM_DEL:
+          if (kBack.hit(e.x, e.y)) { s_screen = LIST; markDirty(); }
+          break;
+      }
+    } else {
+      switch (s_screen) {
+        case LIST: onListKey(e.key); break;
+        case EDIT: onEditKey(e.key); break;
+        case CONFIRM_DEL:
+          if (e.key == '\r') deleteSel();
+          else if (e.key == '\b' || e.key == 'q' || e.key == 'Q') { s_screen = LIST; markDirty(); }
+          break;
+      }
+    }
+  }
+
+  void tick() override {
+    // Autosave im Editor: alle 30 s, wenn ungesicherte Änderungen vorliegen.
+    if (s_screen == EDIT && s_dirtyBuf && millis() - s_lastSave >= 30000)
+      saveCurrent();
+  }
+
+  void draw(Adafruit_GFX& g) override {
+    g.setTextColor(GxEPD_BLACK);
+    switch (s_screen) {
+      case LIST:        drawList(g); break;
+      case EDIT:        drawEditor(g); break;
+      case CONFIRM_DEL: drawConfirmDel(g); break;
+    }
+  }
+};
+
+NotesApp s_app;
+
+}  // namespace
+
+namespace notes_app {
+
+App* get() { return &s_app; }
+
+// Konsole `notes`: vollen SD-Pfad ohne UI prüfen — schreiben, zurücklesen,
+// scannen, sortieren, wieder aufräumen. Nutzt eine Testdatei mit Datum in der
+// Vergangenheit, damit die heutige echte Notiz unberührt bleibt.
+void debugSmoke() {
+  if (!ensureBuffers() || !board::sdReady()) {
+    Serial.println("[NOTES] SMOKE: keine SD / kein Puffer");
+    return;
+  }
+  const char* kTest = "1970-01-02.md";
+  const char* kBody = "Smoke-Test äöü ß\nZweite Zeile.";
+  strncpy(s_curFile, kTest, kFileLen - 1); s_curFile[kFileLen - 1] = '\0';
+  strncpy(s_buf, kBody, kNoteCap - 1); s_buf[kNoteCap - 1] = '\0';
+  s_len = (int)strlen(s_buf);
+  s_dirtyBuf = true;
+  saveCurrent();
+
+  s_buf[0] = '\0'; s_len = 0;
+  loadCurrent();
+  bool roundtrip = (strcmp(s_buf, kBody) == 0);
+  Serial.printf("[NOTES] SMOKE: Roundtrip %s (%d B zurückgelesen)\n",
+                roundtrip ? "OK" : "FEHLER", s_len);
+
+  scanNotes();
+  bool found = false;
+  for (int i = 0; i < s_count; i++)
+    if (strcmp(s_notes[i].file, kTest) == 0) { found = true;
+      Serial.printf("[NOTES] SMOKE: gelistet '%s' Vorschau='%s'\n",
+                    s_notes[i].file, s_notes[i].title); }
+  Serial.printf("[NOTES] SMOKE: %d Notiz(en) gescannt, Testdatei %s\n",
+                s_count, found ? "gefunden" : "FEHLT");
+
+  char path[40];
+  notePath(kTest, path, sizeof(path));
+  spiLock(); if (SD.exists(path)) SD.remove(path); spiUnlock();
+  s_curFile[0] = '\0'; s_buf[0] = '\0'; s_len = 0; s_dirtyBuf = false;
+  scanNotes();
+  Serial.printf("[NOTES] SMOKE: aufgeräumt, jetzt %d Notiz(en)\n", s_count);
+}
+
+}  // namespace notes_app
