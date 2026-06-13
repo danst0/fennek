@@ -254,7 +254,7 @@ void drawList(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
   if (s_off > 0)                       gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
   if (s_off + VISIBLE < s_bookCount)   gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }

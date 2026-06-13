@@ -311,10 +311,9 @@ void drawChannelOrDm(Adafruit_GFX& g) {
 
   drawCompose(g);
 
-  // In jeder Konversation: zurück zur Chat-Liste, Advert, Home.
+  // In jeder Konversation: zurück zur Chat-Liste (kBtn1), Advert. Home = Statuszeile.
   gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnBackShort), false);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
-  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
 // Auswahl-Rahmen (doppeltes Rechteck) um die Cursor-Zeile zeichnen.
@@ -374,7 +373,7 @@ void drawChats(Adafruit_GFX& g) {
 
   gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnContacts), false);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
-  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnBack), false);   // Mesh-Top: zurück zum Launcher
 }
 
 void drawContacts(Adafruit_GFX& g) {
@@ -412,7 +411,6 @@ void drawContacts(Adafruit_GFX& g) {
 
   gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnBackShort), false);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnAdvert), false);
-  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
 void drawJoinChannel(Adafruit_GFX& g) {
@@ -421,7 +419,6 @@ void drawJoinChannel(Adafruit_GFX& g) {
   drawComposeChannel(g);
   gui::drawButton(g, kBtn1, i18n::tr(i18n::Str::BtnBackShort), false);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnJoin), false);
-  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
 }
 
 void drawError(Adafruit_GFX& g) {
@@ -430,7 +427,7 @@ void drawError(Adafruit_GFX& g) {
   gui::printAt(g, 10, 124, i18n::tr(i18n::Str::MeshInitFail), 1);
   gui::printAt(g, 10, 138, i18n::tr(i18n::Str::MeshSeeLog), 1);
   gui::drawButton(g, kBtn2, i18n::tr(i18n::Str::BtnRetry), false);
-  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnHome), false);
+  gui::drawButton(g, kBtn3, i18n::tr(i18n::Str::BtnBack), false);
 }
 
 // --- Interaktion --------------------------------------------------------------------
@@ -555,7 +552,8 @@ void onTouch(int x, int y) {
     if (kBtn3.hit(x, y)) appmgr::goHome();
     return;
   }
-  if (kBtn3.hit(x, y)) { appmgr::goHome(); return; }
+  // Home läuft jetzt über die Statuszeile; nur der Mesh-Top (CHATS) hat kBtn3 = Zurück.
+  if (s_screen == CHATS && kBtn3.hit(x, y)) { appmgr::goHome(); return; }
 
   if (s_screen == CHATS || s_screen == CONTACTS) {
     if (kBtn1.hit(x, y)) { (s_screen == CHATS) ? goContacts() : backToChats(); return; }
@@ -579,7 +577,7 @@ void onTouch(int x, int y) {
   if (s_screen == JOIN_CHANNEL) {
     if (kBtn1.hit(x, y)) { backToChats();   return; }
     if (kBtn2.hit(x, y)) { doJoinChannel(); return; }
-    return;   // kBtn3 (Home) oben behandelt; Tippen sonst ignorieren
+    return;   // Home über die Statuszeile; Tippen sonst ignorieren
   }
 
   // CHANNEL / DM: zurück zur Liste, Advert, Scrollback.

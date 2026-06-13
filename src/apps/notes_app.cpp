@@ -314,7 +314,7 @@ void drawList(Adafruit_GFX& g) {
   if (s_count == 0)
     gui::printAt(g, 10, LIST_Y + ROW_H + 12, i18n::tr(i18n::Str::NotesEmpty), 1);
 
-  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
   if (s_off > 0)                    gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
   if (s_off + VISIBLE < rowCount()) gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }

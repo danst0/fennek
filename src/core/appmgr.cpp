@@ -67,7 +67,16 @@ void drawStatusBar(Adafruit_GFX& g) {
   g.fillRect(0, 0, EINK_W, appmgr::STATUS_H, GxEPD_WHITE);
   g.setTextColor(GxEPD_BLACK);
   g.setTextSize(1);
-  g.setCursor(6, 7);
+  // Außerhalb des Launchers ein Haus-Glyph (CP437 0x7F = ⌂) als sichtbarer
+  // Home-Hinweis; die ganze Statuszeile ist tap-bar (s. handleTouch → goHome).
+  bool homeHint = (s_cur && s_count > 0 && s_cur != s_apps[0]);
+  if (homeHint) {
+    g.setCursor(6, 7);
+    g.write((uint8_t)0x7F);
+    g.setCursor(20, 7);
+  } else {
+    g.setCursor(6, 7);
+  }
   gui::print(g, s_cur ? s_cur->name() : "");
 
   // Tastensperre: Schloss + "Gesperrt" (mittig, vor Audio/Akku).

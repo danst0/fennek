@@ -17,6 +17,7 @@ namespace {
 using gui::Rect;
 
 constexpr Rect kBtnStart = {70, 150, 100, 40};
+constexpr Rect kBack     = {6, 286, 72, 28};   // „Zurück" (eine Ebene): Server aus bzw. Launcher
 
 // Letzter gezeichneter Zustand (tick() erkennt Änderungen -> markDirty).
 webfm::State s_shownState = webfm::State::OFF;
@@ -73,7 +74,7 @@ void drawRunning(Adafruit_GFX& g) {
   snprintf(line, sizeof(line), i18n::tr(i18n::Str::FmtRequests),
            (unsigned long)webfm::requestCount());
   centered(g, 190, line, 1);
-  centered(g, 290, i18n::tr(i18n::Str::FilesStopHint), 1);
+  centered(g, 230, i18n::tr(i18n::Str::FilesStopHint), 1);
 }
 
 void drawFailed(Adafruit_GFX& g) {
@@ -95,6 +96,13 @@ class FilesApp : public App {
   void onLeave() override { webfm::stop(); }
 
   void handleInput(const InputEvent& e) override {
+    // Sichtbarer „Zurück"-Knopf = wie Q/Backspace: läuft der Server, erst stoppen;
+    // sonst zum Launcher.
+    if (e.type == InputEvent::TAP && kBack.hit(e.x, e.y)) {
+      if (webfm::state() != webfm::State::OFF) { webfm::stop(); appmgr::markDirty(); }
+      else appmgr::goHome();
+      return;
+    }
     bool activate = false;
     if (e.type == InputEvent::TAP) {
       activate = (webfm::state() == webfm::State::OFF) ? kBtnStart.hit(e.x, e.y)
@@ -151,6 +159,7 @@ class FilesApp : public App {
       case webfm::State::RUNNING:    drawRunning(g); break;
       case webfm::State::FAILED:     drawFailed(g); break;
     }
+    gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
   }
 };
 

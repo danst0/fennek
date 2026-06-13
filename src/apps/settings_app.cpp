@@ -512,8 +512,11 @@ void onKey(char k) {
 }
 
 void onTouch(int x, int y) {
+  // Unterer Eckknopf = „Zurück" (genau eine Ebene): Bearbeitung verlassen →
+  // Kategorie-Liste → Launcher. Home global über die Statuszeile.
   if (kHome.hit(x, y)) {
-    if (s_edit >= 0) finishEdit(true);
+    if (s_edit >= 0) { finishEdit(true); return; }
+    if (s_cat >= 0) { s_sel = s_cat; s_cat = -1; markDirty(); return; }
     appmgr::goHome();
     return;
   }
@@ -579,7 +582,7 @@ class SettingsApp : public App {
       }
     }
 
-    gui::drawButton(g, kHome, i18n::tr(Str::BtnHome), false);
+    gui::drawButton(g, kHome, i18n::tr(Str::BtnBack), false);
     g.setTextSize(1);
     g.setCursor(FOOT_X, 278);
     if (s_edit >= 0)                gui::print(g, i18n::tr(Str::HintEnterSave));

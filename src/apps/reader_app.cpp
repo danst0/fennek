@@ -398,7 +398,7 @@ void drawList(Adafruit_GFX& g) {
     char found[32];
     snprintf(found, sizeof(found), i18n::tr(i18n::Str::FmtReaderFound), s_fileCount);
     gui::printAt(g, 10, 110, found, 1);
-    gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+    gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
     return;
   }
   if (s_fileCount <= 0) {
@@ -428,7 +428,7 @@ void drawList(Adafruit_GFX& g) {
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
   }
 
-  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnHome), false);
+  gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
   if (s_off > 0)                      gui::drawButton(g, kUp,   i18n::tr(i18n::Str::BtnUp), false);
   if (s_off + VISIBLE < s_fileCount)  gui::drawButton(g, kDown, i18n::tr(i18n::Str::BtnDown), false);
 }
@@ -498,12 +498,17 @@ void drawRead(Adafruit_GFX& g) {
     p = nl ? nl + 1 : p + l;
   }
 
-  // Fußzeile: Seite x/y.
+  // Fußzeile: links ◄ Liste (die ganze Fußzeile ist tap-bar → zurück zur Liste),
+  // mittig Seite x/y.
   g.drawFastHLine(0, FOOT_Y, W, GxEPD_BLACK);
+  g.setTextSize(1);
+  g.setCursor(6, FOOT_Y + 4);
+  g.write((uint8_t)0x11);   // CP437 ◄
+  g.setCursor(16, FOOT_Y + 4);
+  gui::print(g, i18n::tr(i18n::Str::BtnList));
   char foot[24];
   snprintf(foot, sizeof(foot), "%d / %d", s_page + 1, textdoc::pageCount());
   uint16_t bw, bh;
-  g.setTextSize(1);
   gui::textBounds(g, foot, &bw, &bh);
   g.setCursor((W - (int)bw) / 2, FOOT_Y + 4);
   g.print(foot);
