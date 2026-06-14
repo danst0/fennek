@@ -11,6 +11,7 @@
 #include "core/settings.h"
 #include "core/sleep_img.h"
 #include "services/audio.h"
+#include "services/battlog.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
@@ -129,6 +130,11 @@ void enterStandby() {
   //     gestoppt, Radio aus) und die Peripherie noch versorgt ist — so bleibt
   //     /fennek.ini aktuell und der Boot-Import überschreibt keine Änderung.
   settingsfile::exportToSd();
+
+  // 1c) Debug-Akku-Logger: Standby-Zeile schreiben und Ring sofort nach SD
+  //     spülen (Bus ist ruhig, Peripherie noch versorgt) — „vor Standby".
+  BATTLOG_EVENT("Standby", "Akku %u%%", (unsigned)battery::percent());
+  BATTLOG_FLUSH("Standby");
 
   // 2) Schlafender Fennek aufs E-Ink (bleibt stromlos stehen) — vorher den
   //    Akkustand lesen (I2C-Peripherie ist hier noch versorgt).

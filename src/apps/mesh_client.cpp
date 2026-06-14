@@ -7,6 +7,7 @@
 #include "core/battery.h"
 #include "core/settings.h"
 
+#include "services/battlog.h"
 #include "services/timesync.h"
 
 #include <Arduino.h>
@@ -819,6 +820,7 @@ bool begin() {
   spiUnlock();
 
   s_ready = true;
+  BATTLOG_EVENT("Mesh", "Radio an");   // Debug-Akku-Logger (no-op ohne BATTLOG)
 
   // Funkparameter aus den Settings anwenden (std_init nutzte die Compile-Defaults).
   applyRadioParams();

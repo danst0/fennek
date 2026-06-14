@@ -6,6 +6,7 @@
 #include "core/board.h"
 #include "core/settings.h"
 #include "services/audio.h"
+#include "services/battlog.h"
 #include "apps/mesh_client.h"
 
 #include <Arduino.h>
@@ -330,6 +331,7 @@ bool start() {
   s_requests = 0;
   s_ip[0] = '\0';
   s_state = State::CONNECTING;
+  BATTLOG_EVENT("WLAN", "an (%s)", s_ssid);   // Debug-Akku-Logger (no-op ohne BATTLOG)
   Serial.printf("[WEBFM] Verbinde mit '%s' ... (freier Heap: %u KB)\n",
                 s_ssid, (unsigned)(ESP.getFreeHeap() / 1024));
   return true;
@@ -344,6 +346,7 @@ void stop() {
   mesh_client::setSuspended(false);
   s_state = State::OFF;
   s_ip[0] = '\0';
+  BATTLOG_EVENT("WLAN", "aus");   // Debug-Akku-Logger (no-op ohne BATTLOG)
   Serial.printf("[WEBFM] WiFi aus (freier Heap: %u KB)\n",
                 (unsigned)(ESP.getFreeHeap() / 1024));
 }

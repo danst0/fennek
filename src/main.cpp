@@ -32,6 +32,7 @@
 #include "services/timesync.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
+#include "services/battlog.h"
 #include "apps/launcher.h"
 #include "apps/music_app.h"
 #include "apps/book_app.h"
@@ -136,6 +137,12 @@ void setup() {
 
   // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
   scrobble::begin();
+
+  // Debug-Akku-Logger (nur mit -D BATTLOG): braucht SD + Akku + Uhr. Die
+  // Aufwach-/Boot-Ursache als erste Aktivität festhalten (= „nach Standby").
+  BATTLOG_BEGIN();
+  BATTLOG_EVENT("Wake", "Reset=%d Wake=%d", (int)esp_reset_reason(),
+                (int)esp_sleep_get_wakeup_cause());
 
   Serial.printf("[FENNEK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
                 library::artistCount(), library::albumCount(),
@@ -267,6 +274,7 @@ void loop() {
   webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
   timesync::poll();  // Zeit frisch halten (opportunistisch NTP, NVS-Sicherung)
   scrobble::poll();  // Scrobble-Queue gedrosselt nach SD persistieren
+  BATTLOG_POLL();    // Debug-Akku-Logger (no-op ohne -D BATTLOG)
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
 }

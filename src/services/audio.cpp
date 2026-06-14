@@ -4,6 +4,7 @@
 #include "audio.h"
 #include "core/board.h"
 #include "config.h"
+#include "services/battlog.h"
 #include "services/scrobble.h"
 #include "services/timesync.h"
 
@@ -168,6 +169,12 @@ void startCurrent(uint32_t startSec = 0) {
     s_playing = true;
     s_paused  = false;
     s_startEpoch = (uint32_t)timesync::now();   // Track offen für Scrobbling
+    // Debug-Akku-Logger (no-op ohne BATTLOG): Owner + Dateiname festhalten.
+    {
+      const char* bn  = strrchr(p, '/');
+      const char* own = ((audio::Owner)s_owner == audio::Owner::Book) ? "Hoerbuch" : "Musik";
+      BATTLOG_EVENT("Audio", "%s: %s", own, bn ? bn + 1 : p);
+    }
   } else {
     board::dacPower(false);
     s_playing = false;

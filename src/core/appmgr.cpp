@@ -12,6 +12,7 @@
 #include "core/settings.h"
 #include "core/touch.h"
 #include "services/audio.h"
+#include "services/battlog.h"
 #include "services/library.h"
 #include "services/timesync.h"
 
@@ -165,6 +166,7 @@ void launch(App* a) {
   s_cur = a;
   s_cur->onEnter();
   settings::setLastApp(a->id());
+  BATTLOG_EVENT("App", "%s", a->id());   // Debug-Akku-Logger (no-op ohne BATTLOG)
   s_dirty = true;
 }
 

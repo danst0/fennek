@@ -27,6 +27,7 @@ Debug-Flags (als `-D` ergänzen):
 - `MESH_SMOKE_TEST` — initialisiert das Mesh-Radio beim Boot (Verifikation ohne UI).
 - `GAMES_SMOKE_TEST` — klickt beim Boot alle vier Spiele synthetisch durch (Draw-Pfade + Schach-KI-Task; Verifikation ohne Hand am Gerät).
 - `SLEEP_WAKE_TEST` — verkürzt den Standby-Timer-Wake (Akku-% aufs Schlafbild) von 1 h auf 60 s.
+- `BATTLOG` — Debug-Akku-/Aktivitäts-Logger (`services/battlog.*`): schreibt pro Ereignis (App-Wechsel, Audio-Track, Mesh-Radio an, WLAN an/aus, Standby/Wake) **und** alle 60 s eine Akku-Probe nach `/.fennek/battery.log` (Zeitstempel + %/mV/lädt? + WLAN-/Mesh-Status; PSRAM-Ring, gedrosselt + vor dem Standby nach SD, über WebFM herunterladbar). Bewusst abschaltbar: ohne das Flag kompilieren alle `BATTLOG_*`-Aufrufe zu Nichts; zum Ausbau die `platformio.ini`-Zeile entfernen und `battlog.*` + die Aufrufe löschen.
 
 ## Toolchain ist bewusst gepinnt — nicht aktualisieren
 
