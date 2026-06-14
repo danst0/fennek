@@ -191,9 +191,9 @@ void saveCurrent() {
   notePath(s_curFile, path, sizeof(path));
   if (s_len == 0) {
     spiLock();
-    if (SD.exists(path)) SD.remove(path);
+    bool gone = !SD.exists(path) || SD.remove(path);
     spiUnlock();
-    s_dirtyBuf = false;
+    if (gone) s_dirtyBuf = false;   // bei Remove-Fehler dirty lassen, später erneut versuchen
     return;
   }
   spiLock();
@@ -211,8 +211,13 @@ void saveCurrent() {
   spiLock();
   if (f) f.close();
   spiUnlock();
-  s_dirtyBuf = false;
-  s_lastSave = millis();
+  // Dirty-Flag nur bei vollständigem Erfolg löschen — sonst geht die Notiz beim
+  // nächsten openEditor (s_buf-Überschreibung) verloren, obwohl sie nie sicher
+  // auf der SD landete. So bleibt sie für den nächsten Autosave-Versuch dirty.
+  if (ok) {
+    s_dirtyBuf = false;
+    s_lastSave = millis();
+  }
   Serial.printf("[NOTES] %s gespeichert (%s, %d B)\n",
                 s_curFile, ok ? "ok" : "FEHLER", s_len);
 }

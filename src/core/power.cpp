@@ -228,6 +228,13 @@ void poll() {
     // das Gerät mit frischer Uhr ein. No-op sonst. (Beim manuellen Langdruck
     // bewusst nicht — der Knopf soll sofort reagieren.)
     timesync::syncBeforeStandby();
+    // Audio jetzt stoppen, damit der gerade pausierte/laufende Track via
+    // noteTrackEnded() noch in die Scrobble-Queue geht — sonst sieht der
+    // folgende Flush eine leere Queue (pendingCount()==0) und enterStandby()
+    // legt den Track erst danach in den PSRAM-Ring, der im Deep Sleep verloren
+    // geht (weder hochgeladen noch nach scrobbles.tsv gesichert).
+    audio::stop();
+    delay(60);                 // Audio-Task das Stop-Kommando abarbeiten lassen
     // Gespielte Tracks gesammelt an Navidrome scrobbeln (verwaltet WLAN selbst,
     // mit Back-off). No-op ohne offene Einträge bzw. ohne Konfiguration.
     scrobble::flushBeforeStandby();
