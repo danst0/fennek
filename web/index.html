@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fennek — alternative open-source firmware for the LilyGO T-Deck Pro</title>
+<meta name="description" content="Fennek turns the LilyGO T-Deck Pro into a real handheld: music, audiobooks, eBooks and LoRa mesh chat in one device. Open-source (GPL-3.0+), ESP32-S3, E-Ink.">
+<meta name="author" content="Daniel Dumke">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦊</text></svg>">
+
+<!-- Open Graph / social cards -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="🦊 Fennek — alternative firmware for the LilyGO T-Deck Pro">
+<meta property="og:description" content="Music, audiobooks, eBooks and LoRa mesh chat — in one handheld. Open-source, ESP32-S3, E-Ink.">
+<meta property="og:image" content="https://fennek.dumke.me/assets/sleep.png">
+<meta property="og:url" content="https://fennek.dumke.me/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== Hero: the sleeping fennec ===== -->
+<header class="hero">
+  <div class="hero-inner">
+    <figure class="hero-art">
+      <img src="assets/sleep.png" alt="A sleeping fennec fox rendered on the T-Deck Pro E-Ink standby screen" width="492" height="654">
+    </figure>
+    <div class="hero-copy">
+      <h1>🦊&nbsp;Fennek</h1>
+      <p class="tagline">An alternative open-source firmware for the<br>
+        <a href="https://www.lilygo.cc/products/t-deck-pro">LilyGO&nbsp;T-Deck&nbsp;Pro</a>.</p>
+      <p class="lede">Music, audiobooks, eBooks and LoRa mesh chat&nbsp;— in one handheld.
+        Like the desert fox: small, frugal, big&nbsp;ears.</p>
+      <nav class="cta">
+        <a class="btn btn-primary" href="https://github.com/danst0/fennek">View on GitHub</a>
+        <a class="btn" href="https://github.com/danst0/fennek/releases/latest">Latest release</a>
+      </nav>
+      <p class="badges">
+        <span class="chip">GPL-3.0-or-later</span>
+        <span class="chip">ESP32-S3</span>
+        <span class="chip">E-Ink 240×320</span>
+        <span class="chip">LoRa&nbsp;/&nbsp;MeshCore</span>
+      </p>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===== Intro ===== -->
+  <section class="band">
+    <div class="wrap prose">
+      <p><strong>Fennek</strong> turns the LilyGO T-Deck Pro (ESP32-S3, E-Ink, LoRa)
+      into a real handheld: listen to music, resume audiobooks, read eBooks and
+      chat over the LoRa mesh via <a href="https://github.com/ripplebiz/MeshCore">MeshCore</a>
+      — with a homescreen launcher, touch&nbsp;+ physical keyboard, and background
+      audio that keeps playing across app switches.</p>
+      <p>It is a <strong>standalone alternative</strong> to the factory firmware —
+      built around the hardware's defining quirk, that E-Ink, the SD card and LoRa
+      all share <strong>one</strong> SPI bus, while still delivering stutter-free
+      audio playback.</p>
+    </div>
+  </section>
+
+  <!-- ===== Apps ===== -->
+  <section class="wrap" id="apps">
+    <h2>Apps</h2>
+    <div class="tiles">
+      <article class="tile"><h3>🎵 Music</h3><p>MP3/AAC/FLAC/WAV from SD, artist/album/playlist browser, ID3 tags (cached), shuffle &amp; repeat, sleep timer, resume after reboot.</p></article>
+      <article class="tile"><h3>🎧 Audiobook</h3><p>Books as folders under <code>/audiobooks</code>, chapters natural-sorted, per-book bookmark, ±30&nbsp;s jumps, sleep timer.</p></article>
+      <article class="tile"><h3>📖 Reading</h3><p><code>.txt</code> and <code>.epub</code> from <code>/books</code>, on-device EPUB conversion, page-index cache, per-book reading position.</p></article>
+      <article class="tile"><h3>📡 Mesh</h3><p>Lean MeshCore client: public &amp; hashtag channels, DMs with delivery status, contacts from adverts, message log on SD with history reload.</p></article>
+      <article class="tile"><h3>🎮 Games</h3><p>2048, Minesweeper, Chess (Negamax AI) and Tic-Tac-Toe — game logic host-tested.</p></article>
+      <article class="tile"><h3>📝 Notes</h3><p>One note per day under <code>/notes</code>. "+ Today" opens or appends; list shows every day newest-first with a preview.</p></article>
+      <article class="tile"><h3>⚙️ Options</h3><p>Radio presets (EU Narrow), individual LoRa parameters, node name, battery info, firmware version.</p></article>
+      <article class="tile tile-muted"><h3>＋ More</h3><p>Status line (battery, playback), key-lock &amp; standby via the button, and a serial debug console over USB.</p></article>
+    </div>
+  </section>
+
+  <!-- ===== Screenshots ===== -->
+  <section class="band" id="screens">
+    <div class="wrap">
+      <h2>On the device</h2>
+      <p class="sub">Rendered pixel-accurately from the real drawing code (240×320 E-Ink).</p>
+      <div class="gallery">
+        <figure><img src="assets/launcher.png" alt="Launcher app picker" loading="lazy"><figcaption>Launcher</figcaption></figure>
+        <figure><img src="assets/music.png" alt="Music playback screen" loading="lazy"><figcaption>Music — playback</figcaption></figure>
+        <figure><img src="assets/games-ttt.png" alt="Tic-Tac-Toe game" loading="lazy"><figcaption>Games — Tic-Tac-Toe</figcaption></figure>
+        <figure><img src="assets/settings.png" alt="Settings screen" loading="lazy"><figcaption>Settings — radio &amp; system</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== The quirk ===== -->
+  <section class="wrap" id="engineering">
+    <h2>The defining quirk</h2>
+    <div class="prose quirk">
+      <p>On the T-Deck Pro, <strong>E-Ink, the SD card and LoRa share one SPI bus.</strong>
+      The entire architecture revolves around audio never stuttering despite that,
+      and inputs responding instantly:</p>
+      <ul>
+        <li>A dedicated audio-decode task on core&nbsp;0, with a 256&nbsp;KB PSRAM read-ahead.</li>
+        <li>Every SPI access (SD, E-Ink, LoRa) serialized behind one mutex.</li>
+        <li>The SPI bus is released during the E-Ink BUSY phase so the I2S DMA never runs dry.</li>
+        <li>E-Ink refreshes only on real change; progress shown as a narrow region strip.</li>
+      </ul>
+      <p class="sub">The full set of anti-stutter invariants lives in
+      <a href="https://github.com/danst0/fennek/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a>.</p>
+    </div>
+  </section>
+
+  <!-- ===== Hardware + Build ===== -->
+  <section class="band" id="hardware">
+    <div class="wrap two-col">
+      <div class="prose">
+        <h2>Hardware</h2>
+        <p>LilyGO <strong>T-Deck Pro V1.1</strong>:</p>
+        <ul>
+          <li>ESP32-S3 — 16&nbsp;MB flash, 8&nbsp;MB PSRAM</li>
+          <li>E-Ink GDEQ031T10, 240×320</li>
+          <li>CST328 touch (I2C), TCA8418 keyboard</li>
+          <li>PCM5102A DAC (I2S, 3.5&nbsp;mm jack)</li>
+          <li>SX1262 LoRa, BQ27220 fuel gauge, microSD</li>
+        </ul>
+      </div>
+      <div class="prose">
+        <h2>Build &amp; flash</h2>
+        <p>Prerequisite: <a href="https://platformio.org/">PlatformIO</a>. Connect via USB-C, then:</p>
+<pre><code>pio run -e fennek              # build
+pio run -e fennek -t upload    # flash (USB-C)
+pio device monitor -b 115200   # log + debug console</code></pre>
+        <p class="sub">Runs even without an SD card. Custom firmware replaces the
+        factory software — flash at your own risk.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer>
+  <div class="wrap">
+    <p class="foot-fox">🦊</p>
+    <p><strong>Fennek</strong> <span class="ver">v1.9.2</span> — licensed under
+      <a href="https://github.com/danst0/fennek/blob/main/LICENSE">GPL-3.0-or-later</a>.</p>
+    <p class="sub">Inspired by the <a href="https://github.com/pelgraine/Meck">Meck</a> fork,
+      rebuilt as a standalone multi-app firmware. Mesh stack based on
+      <a href="https://github.com/ripplebiz/MeshCore">MeshCore</a> by Scott Powell.</p>
+    <p class="sub"><a href="https://github.com/danst0/fennek">github.com/danst0/fennek</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

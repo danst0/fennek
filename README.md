@@ -8,6 +8,8 @@ Music, audiobooks, eBooks and LoRa mesh chat — in one handheld.
 
 🇬🇧 English · [🇩🇪 Deutsch](README.de.md) · [🇸🇪 Svenska](README.sv.md)
 
+🌐 **[fennek.dumke.me](https://fennek.dumke.me)**
+
 [![License: GPL v3+](https://img.shields.io/badge/License-GPLv3+-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/danst0/fennek?sort=semver&color=success)](https://github.com/danst0/fennek/releases/latest)
 [![Release date](https://img.shields.io/github/release-date/danst0/fennek)](https://github.com/danst0/fennek/releases)
