@@ -196,13 +196,20 @@ void loop() {
       s_cur->handleInput(e);
     }
   }
-  char k = keyboard::poll();
-  if (k && !locked && s_cur) {
-    power::noteActivity();
-    InputEvent e;
-    e.type = InputEvent::KEY;
-    e.x = e.y = 0; e.key = k;
-    s_cur->handleInput(e);
+  // Gepufferte Tastendrücke in EINEM Durchlauf abarbeiten und erst danach
+  // (Schritt 6 bzw. App-tick()) neu zeichnen. Sonst verarbeitet die Loop nur
+  // eine Taste pro Iteration und jeder Tastendruck kostet einen eigenen
+  // ~650-ms-Refresh — spürbar zähes Tippen/Löschen z. B. in der Notizen-App.
+  if (!locked && s_cur) {
+    for (int n = 0; n < 16; n++) {
+      char k = keyboard::poll();
+      if (!k) break;
+      power::noteActivity();
+      InputEvent e;
+      e.type = InputEvent::KEY;
+      e.x = e.y = 0; e.key = k;
+      s_cur->handleInput(e);
+    }
   }
 
   // 1b) Ausschaltknopf (Langdruck = Standby) + Auto-Standby nach Inaktivität.

@@ -35,6 +35,11 @@ void    setStandbyMinutes(uint8_t m);  // schreibt nur bei Änderung
 uint8_t language();
 void    setLanguage(uint8_t lang);     // schreibt nur bei Änderung
 
+// Schriftgröße fürs Lesen (eBooks/TXT) und den Notizen-Editor: 1 = klein
+// (Default), 2 = groß. Klassischer 6x8-Font, ganzzahlige Skalierung.
+uint8_t fontScale();
+void    setFontScale(uint8_t s);       // 1..2; schreibt nur bei Änderung
+
 // --- Musik: zuletzt gespielter Track (für Resume) ----------------------------
 // Pfad + Position; leerer Pfad = nichts gespeichert.
 void    lastTrack(char* pathOut, size_t n, uint32_t* posSec);
