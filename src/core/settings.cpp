@@ -19,6 +19,7 @@ bool        s_open = false;
 uint8_t  s_volume = 255;        // 255 = noch nicht geladen
 uint8_t  s_standby = 5;         // Auto-Standby-Minuten (0 = aus)
 uint8_t  s_lang = 0;            // UI-Sprache (0 = Deutsch, s. i18n::Lang)
+uint8_t  s_fontScale = 1;       // Schriftgröße Lesen/Notizen (1 = klein, 2 = groß)
 char     s_lastApp[24] = "";
 char     s_lastTrack[TRACK_PATH_LEN] = "";
 uint32_t s_lastPos = 0;
@@ -75,6 +76,8 @@ void begin() {
   s_volume = s_prefs.getUChar("vol", 255);
   s_standby = s_prefs.getUChar("stdby", 5);
   s_lang = s_prefs.getUChar("lang", 0);
+  s_fontScale = s_prefs.getUChar("fscale", 1);
+  if (s_fontScale < 1 || s_fontScale > 2) s_fontScale = 1;
   if (s_prefs.isKey("lastapp")) s_prefs.getString("lastapp", s_lastApp, sizeof(s_lastApp));
   if (s_prefs.isKey("trkpath")) s_prefs.getString("trkpath", s_lastTrack, sizeof(s_lastTrack));
   s_lastPos = s_prefs.getULong("trkpos", 0);
@@ -102,6 +105,16 @@ void setLanguage(uint8_t lang) {
   if (!s_open || lang == s_lang) return;
   s_lang = lang;
   s_prefs.putUChar("lang", lang);
+}
+
+uint8_t fontScale() { return s_fontScale; }
+
+void setFontScale(uint8_t s) {
+  if (s < 1) s = 1;
+  if (s > 2) s = 2;
+  if (!s_open || s == s_fontScale) return;
+  s_fontScale = s;
+  s_prefs.putUChar("fscale", s);
 }
 
 void lastApp(char* out, size_t n) {
@@ -578,6 +591,7 @@ size_t exportIni(char* out, size_t cap) {
     "standby_minutes = %u\n"    // 0 = aus
     "language = %u\n"           // 0 = Deutsch
     "timezone = %s\n"
+    "font_scale = %u\n"         // 1 = klein, 2 = groß (Lesen/Notizen)
     "\n[mesh]\n"
     "freq_mhz = %.3f\n"
     "bw_khz = %.1f\n"
@@ -608,6 +622,7 @@ size_t exportIni(char* out, size_t cap) {
     "last_time = %lu\n"
     "clock_ppm = %u\n",
     (unsigned)volume(), (unsigned)standbyMinutes(), (unsigned)language(), tz,
+    (unsigned)fontScale(),
     m.freqMhz, m.bwKhz, (unsigned)m.sf, (unsigned)m.cr, (unsigned)m.txDbm, name,
     ssid,
     (unsigned)(navEnabled() ? 1 : 0), nurl, nuser,
@@ -682,6 +697,7 @@ int importIni(const char* text) {
       else if (strcmp(key, "standby_minutes") == 0) { setStandbyMinutes((uint8_t)atoi(val)); applied++; }
       else if (strcmp(key, "language") == 0)        { setLanguage((uint8_t)atoi(val)); applied++; }
       else if (strcmp(key, "timezone") == 0)        { setTzString(val); applied++; }
+      else if (strcmp(key, "font_scale") == 0)      { setFontScale((uint8_t)atoi(val)); applied++; }
     } else if (strcmp(section, "mesh") == 0) {
       MeshParams m = meshParams();
       if      (strcmp(key, "freq_mhz") == 0)  { m.freqMhz = atof(val); setMeshParams(m); applied++; }

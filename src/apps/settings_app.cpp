@@ -37,7 +37,7 @@ constexpr int FOOT_X = 120;                               // Textspalte rechts v
 // --- Zeilen ---------------------------------------------------------------------
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
-  ROW_LANG, ROW_STANDBY, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
+  ROW_LANG, ROW_STANDBY, ROW_FONT, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
   ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_COUNT
 };
@@ -46,7 +46,7 @@ enum RowId {
 enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_COUNT };
 
 const RowId kRadioRows[]  = {ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME};
-const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY};
+const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY, ROW_FONT};
 const RowId kTimeRows[]   = {ROW_TZ, ROW_TIME};
 const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
 const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
@@ -166,6 +166,12 @@ void changeRow(int row, int dir) {
     markDirty();
     return;
   }
+  if (row == ROW_FONT) {
+    // Nur zwei Stufen (klein/groß) — jede Richtung toggelt.
+    settings::setFontScale(settings::fontScale() >= 2 ? 1 : 2);
+    markDirty();
+    return;
+  }
   if (row == ROW_NAVON) {
     settings::setNavEnabled(!settings::navEnabled());
     markDirty();
@@ -214,6 +220,7 @@ const char* rowName(int row) {
     case ROW_NAME:     return i18n::tr(Str::LblName);
     case ROW_LANG:     return i18n::tr(Str::SettingsLang);
     case ROW_STANDBY:  return i18n::tr(Str::LblStandby);
+    case ROW_FONT:     return i18n::tr(Str::LblFontSize);
     case ROW_TZ:       return "Zeitzone";
     case ROW_TIME:     return "Zeit";
     case ROW_WSSID:    return i18n::tr(Str::LblWifiSsid);
@@ -254,6 +261,10 @@ void rowValue(int row, char* v, size_t n) {
       else        snprintf(v, n, "%u min", m);
       break;
     }
+    case ROW_FONT:
+      snprintf(v, n, "%s", settings::fontScale() >= 2 ? i18n::tr(i18n::Str::FontLarge)
+                                                      : i18n::tr(i18n::Str::FontSmall));
+      break;
     case ROW_TZ: {
       char tz[48];
       settings::tzString(tz, sizeof(tz));

@@ -131,6 +131,9 @@
   X(LblName,       "Name",           "Nome",            "Namn",           "Name",            "Nombre") \
   X(LblStandby,    "Auto-Standby",   "Auto-standby",    "Auto-standby",   "Auto-standby",    "Auto-standby") \
   X(StandbyOff,    "Aus",            "No",              "Av",             "Off",             "No") \
+  X(LblFontSize,   "Schriftgröße",   "Dim. testo",      "Textstorlek",    "Font size",       "Tamaño texto") \
+  X(FontSmall,     "Klein",          "Piccolo",         "Liten",          "Small",           "Pequeño") \
+  X(FontLarge,     "Groß",           "Grande",          "Stor",           "Large",           "Grande") \
   X(HintEnterSave, "Enter speichert","Enter salva",     "Enter sparar",   "Enter saves",     "Enter guarda") /* max 19 Z. */ \
   X(HintNameEdit,  "Enter: Name ändern", "Enter: cambia nome", "Enter: byt namn", "Enter: edit name", "Enter: renombrar") /* max 19 Z. */ \
   X(HintEdit,      "Enter: eingeben","Enter: modifica", "Enter: redigera","Enter: edit",     "Enter: editar") /* max 19 Z. */ \

@@ -156,7 +156,16 @@ void enterStandby() {
     delay(10);
   }
 
-  // 5) Wake-Quellen = Knopf + Stunden-Timer (Akku-%), dann schlafen
+  // 5) SPI-CS sauber deselektieren und alle Abschalt-/Deselect-Pegel über den
+  //    Deep Sleep einfrieren. Ohne dieses Hold floaten GPIO10/41/46 hochohmig,
+  //    die Rails (Peripherie/DAC/LoRa) kommen zurück → ~50 mA Standby-Drain
+  //    (gemessen: 94 %→5 % in ~29 h, battery.log 14./15.06.2026).
+  digitalWrite(PIN_EINK_CS, HIGH);
+  digitalWrite(PIN_LORA_CS, HIGH);
+  digitalWrite(PIN_SD_CS,   HIGH);
+  board::holdSleepPins();
+
+  // 6) Wake-Quellen = Knopf + Stunden-Timer (Akku-%), dann schlafen
   //    (kehrt nicht zurück).
   armWakeups();
   esp_deep_sleep_start();
@@ -191,7 +200,14 @@ bool handleTimerWake() {
   // aufwecken: Peripherie anlassen und normal weiterbooten.
   if (btnPressed()) return false;
 
+  // Peripherie aus und — wie in enterStandby() — die Pegel über den Deep Sleep
+  // einfrieren. powerOn() oben hat die Holds gelöst; ohne erneutes Hold würden
+  // die Rails nach diesem ersten Stunden-Wake wieder floaten und Strom ziehen.
   board::perfPower(false);
+  digitalWrite(PIN_EINK_CS, HIGH);
+  digitalWrite(PIN_LORA_CS, HIGH);
+  digitalWrite(PIN_SD_CS,   HIGH);
+  board::holdSleepPins();
   armWakeups();
   esp_deep_sleep_start();    // kehrt nicht zurück
   return true;               // nie erreicht (beruhigt den Compiler)

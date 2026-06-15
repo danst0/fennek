@@ -45,13 +45,29 @@ const Rect kRetrySD {20, 150, W - 40, 48};
 const Rect kCancel  {20, 200, W - 40, 48};
 
 // --- Layout: Lesen ---------------------------------------------------------------
-// Default-Font Größe 1: 6x8 px. 38 Spalten, 27 Zeilen, Fußzeile mit Seite x/y.
-constexpr int READ_COLS  = 38;
-constexpr int READ_ROWS  = 27;
+// Klassischer 6x8-Font, ganzzahlig skaliert über settings::fontScale (1/2).
+// Rand links + Textstart + Fußzeile bleiben fix; Spalten/Zeilen/Zeilenhöhe
+// ergeben sich aus der Schriftgröße (s. applyFontScale). Bei Größe 1 fallen
+// 38 Spalten / 27 Zeilen heraus — identisch zum bisherigen Layout, sodass
+// vorhandene Seiten-Indizes im Cache (cols/rows-geprüft) gültig bleiben.
 constexpr int READ_X     = 6;
 constexpr int READ_Y     = TOP + 4;       // 28
-constexpr int READ_LINEH = 10;
-constexpr int FOOT_Y     = READ_Y + READ_ROWS * READ_LINEH + 2;  // 300
+constexpr int FOOT_Y     = 300;           // Fußzeile fix unten (schriftgrößen-unabhängig)
+
+int s_scale = 1;
+int s_cols  = 38;     // Spalten pro Zeile (an textdoc::open übergeben)
+int s_rows  = 27;     // Zeilen pro Seite
+int s_lineh = 10;     // Pixel pro Textzeile
+
+void applyFontScale() {
+  s_scale = (int)settings::fontScale();
+  if (s_scale < 1) s_scale = 1;
+  s_lineh = 10 * s_scale;                        // 8 px Glyph + Luft
+  s_cols  = (W - READ_X - 2) / (6 * s_scale);    // 6 px/Zeichen * Skala
+  s_rows  = (FOOT_Y - READ_Y) / s_lineh;
+  if (s_cols < 1) s_cols = 1;
+  if (s_rows < 1) s_rows = 1;
+}
 
 // --- Zustand -----------------------------------------------------------------------
 enum Screen { LIST, CONVERTING, INDEXING, READ };
@@ -310,7 +326,8 @@ void enterRead() {
 
 // TXT öffnen (nach evtl. EPUB-Konvertierung): Index laden oder bauen.
 void openTxt() {
-  if (!textdoc::open(s_txtPath, READ_COLS, READ_ROWS)) {
+  applyFontScale();   // aktuelle Schriftgröße -> Spalten/Zeilen (vor textdoc::open)
+  if (!textdoc::open(s_txtPath, s_cols, s_rows)) {
     s_screen = LIST;
     markDirty();
     return;
@@ -480,13 +497,13 @@ void drawScanCount(Adafruit_GFX& g) {
 void drawRead(Adafruit_GFX& g) {
   if (!s_pageBuf) return;
   g.setTextColor(GxEPD_BLACK);
-  g.setTextSize(1);
+  g.setTextSize(s_scale);
 
   // Seitenzeilen ausgeben.
   const char* p = s_pageBuf;
   int y = READ_Y;
   char line[200];
-  while (*p && y < FOOT_Y - READ_LINEH + 2) {
+  while (*p && y < FOOT_Y - s_lineh + 2) {
     const char* nl = strchr(p, '\n');
     size_t l = nl ? (size_t)(nl - p) : strlen(p);
     if (l >= sizeof(line)) l = sizeof(line) - 1;
@@ -494,7 +511,7 @@ void drawRead(Adafruit_GFX& g) {
     line[l] = '\0';
     g.setCursor(READ_X, y);
     gui::print(g, line);
-    y += READ_LINEH;
+    y += s_lineh;
     p = nl ? nl + 1 : p + l;
   }
 

@@ -7,6 +7,7 @@
 #include "core/display.h"
 #include "core/gui.h"
 #include "core/i18n.h"
+#include "core/settings.h"
 #include "services/timesync.h"
 
 #include <Arduino.h>
@@ -43,15 +44,34 @@ const Rect kDown    {162, BAR_Y, 72, 44};
 const Rect kRetrySD {20, 150, W - 40, 48};
 
 // --- Layout: Editor ----------------------------------------------------------
-// Default-Font Größe 1: 6x8 px. 38 Spalten; Text füllt bis zur Button-Leiste.
-// Kompakte Kopfzeile (Dateiname klein, Größe 1) — der Text beginnt darunter.
-constexpr int EDIT_COLS    = 38;
+// Klassischer 6x8-Font, ganzzahlig skaliert über settings::fontScale (1/2). Der
+// Textkörper nutzt die Schriftgröße; die Kopfzeile (Dateiname) bleibt klein.
+// Die MAX-Werte (Größe 1) dimensionieren den statischen Zeilen-Ring; die
+// effektiven Spalten/Zeilen/Zeilenhöhe stehen in s_edit* (s. applyFontScale).
 constexpr int EDIT_X       = 6;
 constexpr int EDIT_HDR_Y   = TOP + 3;
 constexpr int EDIT_HDR_LN  = TOP + 14;   // Trennlinie unter dem Titel
 constexpr int EDIT_Y       = TOP + 18;   // Textstart, unterhalb der Kopfzeile
-constexpr int EDIT_LINEH   = 10;
-constexpr int EDIT_ROWS    = (BAR_Y - 2 - EDIT_Y) / EDIT_LINEH;
+constexpr int EDIT_COLS_MAX  = 38;
+constexpr int EDIT_LINEH_MIN = 10;
+constexpr int EDIT_ROWS_MAX  = (BAR_Y - 2 - EDIT_Y) / EDIT_LINEH_MIN;
+
+int s_scale     = 1;
+int s_editCols  = EDIT_COLS_MAX;
+int s_editRows  = EDIT_ROWS_MAX;
+int s_editLineh = EDIT_LINEH_MIN;
+
+void applyFontScale() {
+  s_scale = (int)settings::fontScale();
+  if (s_scale < 1) s_scale = 1;
+  s_editLineh = 10 * s_scale;                          // 8 px Glyph + Luft
+  s_editCols  = (W - EDIT_X - 2) / (6 * s_scale);      // 6 px/Zeichen * Skala
+  s_editRows  = (BAR_Y - 2 - EDIT_Y) / s_editLineh;
+  if (s_editCols < 1) s_editCols = 1;
+  if (s_editRows < 1) s_editRows = 1;
+  if (s_editCols > EDIT_COLS_MAX) s_editCols = EDIT_COLS_MAX;
+  if (s_editRows > EDIT_ROWS_MAX) s_editRows = EDIT_ROWS_MAX;
+}
 
 // --- Zustand -----------------------------------------------------------------
 enum Screen { LIST, EDIT, CONFIRM_DEL };
@@ -67,6 +87,15 @@ int      s_len = 0;
 char     s_curFile[kFileLen] = "";
 bool     s_dirtyBuf = false;
 uint32_t s_lastSave = 0;
+
+// Editor-Schnellrefresh: gesammelte Tastendrücke (s_needEdit), zuletzt
+// gezeichnetes Zeilen-Layout (für Struktur-/Scroll-Erkennung) und Zähler für
+// den periodischen Sauber-Refresh gegen Ghosting.
+bool s_needEdit     = false;
+int  s_layLines     = 0;
+int  s_layFirst     = 0;
+int  s_layLastY     = 0;
+int  s_fastRefreshes = 0;   // Schnell-Refreshes seit letztem Sauber-Durchlauf
 
 void markDirty() { appmgr::markDirty(); }
 
@@ -224,12 +253,15 @@ void saveCurrent() {
 
 // --- Navigation --------------------------------------------------------------
 void openEditor(const char* file) {
+  applyFontScale();   // aktuelle Schriftgröße -> Spalten/Zeilen/Zeilenhöhe
   strncpy(s_curFile, file, kFileLen - 1); s_curFile[kFileLen - 1] = '\0';
   loadCurrent();
   s_dirtyBuf = false;
   s_lastSave = millis();
+  s_needEdit = false;
+  s_fastRefreshes = 0;
   s_screen = EDIT;
-  markDirty();
+  markDirty();   // erster Voll-Redraw zeichnet Titel + Body, setzt Layout-Basis
 }
 
 void openToday() {
@@ -325,48 +357,89 @@ void drawList(Adafruit_GFX& g) {
 }
 
 // --- Zeichnen: Editor --------------------------------------------------------
-// Puffer in Zeilen umbrechen (an '\n' und an EDIT_COLS) und nur die letzten
-// EDIT_ROWS Zeilen rendern (Anhänge-Modus → Cursor bleibt unten sichtbar).
+// Puffer in den Zeilen-Ring umbrechen (an '\n' und an s_editCols) und das
+// sichtbare Fenster (letzte s_editRows Zeilen, Anhänge-Modus) festhalten:
+// Zeilenzahl/erste sichtbare Zeile/y der untersten Zeile. Die Drei dienen dem
+// Schnellrefresh, um Struktur-/Scroll-Wechsel von reinem Tippen zu trennen.
+// Ring auf die MAX-Werte (Schriftgröße 1) dimensioniert; aktiv genutzt werden
+// nur s_editRows/s_editCols (s. applyFontScale).
+char s_ring[EDIT_ROWS_MAX][EDIT_COLS_MAX + 2];
+
+void computeLayout() {
+  int total = 0;   // Index der aktuellen (Teil-)Zeile im Ring
+  int col = 0;
+  s_ring[0][0] = '\0';
+  for (int i = 0; i < s_len; i++) {
+    char c = s_buf[i];
+    if (c == '\r') continue;
+    if (c == '\n') {
+      s_ring[total % s_editRows][col] = '\0';
+      total++; col = 0;
+      s_ring[total % s_editRows][0] = '\0';
+      continue;
+    }
+    if (col >= s_editCols) {
+      s_ring[total % s_editRows][col] = '\0';
+      total++; col = 0;
+    }
+    s_ring[total % s_editRows][col++] = c;
+  }
+  // Cursor an die aktuelle Zeile hängen.
+  s_ring[total % s_editRows][col++] = '_';
+  s_ring[total % s_editRows][col]   = '\0';
+
+  s_layLines = total + 1;
+  s_layFirst = s_layLines > s_editRows ? s_layLines - s_editRows : 0;
+  s_layLastY = EDIT_Y + (s_layLines - 1 - s_layFirst) * s_editLineh;
+}
+
 void drawEditor(Adafruit_GFX& g) {
   // Titel klein (Größe 1) und mit ".md" — spart Platz, Text beginnt darunter.
   gui::printAt(g, EDIT_X, EDIT_HDR_Y, s_curFile, 1);
   g.drawFastHLine(0, EDIT_HDR_LN, W, GxEPD_BLACK);
 
-  static char ring[EDIT_ROWS][EDIT_COLS + 2];
-  int total = 0;   // Index der aktuellen (Teil-)Zeile im Ring
-  int col = 0;
-  ring[0][0] = '\0';
-  for (int i = 0; i < s_len; i++) {
-    char c = s_buf[i];
-    if (c == '\r') continue;
-    if (c == '\n') {
-      ring[total % EDIT_ROWS][col] = '\0';
-      total++; col = 0;
-      ring[total % EDIT_ROWS][0] = '\0';
-      continue;
-    }
-    if (col >= EDIT_COLS) {
-      ring[total % EDIT_ROWS][col] = '\0';
-      total++; col = 0;
-    }
-    ring[total % EDIT_ROWS][col++] = c;
-  }
-  // Cursor an die aktuelle Zeile hängen.
-  ring[total % EDIT_ROWS][col++] = '_';
-  ring[total % EDIT_ROWS][col]   = '\0';
-
-  int linesPresent = total + 1;
-  int firstGi = linesPresent > EDIT_ROWS ? linesPresent - EDIT_ROWS : 0;
+  computeLayout();
   g.setTextColor(GxEPD_BLACK);
-  g.setTextSize(1);
+  g.setTextSize(s_scale);
   int y = EDIT_Y;
-  for (int gi = firstGi; gi < linesPresent; gi++) {
+  for (int gi = s_layFirst; gi < s_layLines; gi++) {
     g.setCursor(EDIT_X, y);
-    gui::print(g, ring[gi % EDIT_ROWS]);
-    y += EDIT_LINEH;
+    gui::print(g, s_ring[gi % s_editRows]);
+    y += s_editLineh;
   }
 
   gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
+}
+
+// Schnellrefresh-Streifen: nur die unterste (aktuelle) Zeile neu zeichnen.
+// Setzt voraus, dass computeLayout() den Ring + s_layLastY frisch gefüllt hat.
+void drawEditorLastLine(Adafruit_GFX& g) {
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(s_scale);
+  g.setCursor(EDIT_X, s_layLastY);
+  gui::print(g, s_ring[(s_layLines - 1) % s_editRows]);
+}
+
+// Nach (gesammelten) Tastendrücken im Editor neu zeichnen. Schnellpfad: bleibt
+// das Zeilen-Layout gleich (Tippen/Löschen auf der aktuellen Zeile), reicht ein
+// schmaler Streifen-Refresh der untersten Zeile — spürbar flüssiger als der
+// ~650-ms-Vollausschnitt. Strukturwechsel (Umbruch/Scroll) und alle paar
+// Refreshes ein Sauber-Durchlauf laufen über den vollen Redraw (markDirty), der
+// auch das Ghosting-Management (alle 10 Partials ein Vollrefresh) bedient.
+constexpr int kEditorClean = 8;   // nach so vielen Schnell-Refreshes einmal sauber
+
+void flushEditorRefresh() {
+  s_needEdit = false;
+  if (appmgr::isDirty()) return;   // ein Vollredraw steht ohnehin an
+  int oldLines = s_layLines, oldFirst = s_layFirst;
+  computeLayout();
+  bool structural = (s_layLines != oldLines) || (s_layFirst != oldFirst);
+  if (structural || ++s_fastRefreshes >= kEditorClean) {
+    s_fastRefreshes = 0;
+    markDirty();   // voller Redraw, räumt periodisch das Ghosting auf
+  } else {
+    display::renderRegion(drawEditorLastLine, s_layLastY, s_editLineh + 4);
+  }
 }
 
 void drawConfirmDel(Adafruit_GFX& g) {
@@ -414,11 +487,14 @@ void onListKey(char k) {
   }
 }
 
+// Editor-Tasten ändern nur den Puffer und markieren s_needEdit; den (gesammelten)
+// Refresh erledigt flushEditorRefresh() in tick() — so kostet ein Tipp-Burst nur
+// EINEN Bildschirm-Refresh statt einen pro Zeichen.
 void onEditKey(char k) {
   if (k == '\b') {
     if (s_len == 0) { backToList(); return; }
     s_len--; s_buf[s_len] = '\0';
-    s_dirtyBuf = true; markDirty();
+    s_dirtyBuf = true; s_needEdit = true;
     return;
   }
   char c = (k == '\r') ? '\n' : k;
@@ -426,7 +502,7 @@ void onEditKey(char k) {
   if (s_len < kNoteCap - 1) {
     s_buf[s_len++] = c;
     s_buf[s_len] = '\0';
-    s_dirtyBuf = true; markDirty();
+    s_dirtyBuf = true; s_needEdit = true;
   }
 }
 
@@ -469,6 +545,8 @@ class NotesApp : public App {
   }
 
   void tick() override {
+    // Gesammelte Tastendrücke nach dem Eingabe-Drain einmal zeichnen.
+    if (s_screen == EDIT && s_needEdit) flushEditorRefresh();
     // Autosave im Editor: alle 30 s, wenn ungesicherte Änderungen vorliegen.
     if (s_screen == EDIT && s_dirtyBuf && millis() - s_lastSave >= 30000)
       saveCurrent();
