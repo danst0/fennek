@@ -6,18 +6,32 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <driver/gpio.h>   // gpio_hold_en/dis, gpio_deep_sleep_hold_en/dis
 
 SPIClass         g_spi(HSPI);
 SemaphoreHandle_t g_spiMutex = nullptr;
 
 namespace {
 bool s_sdReady = false;
+
+// Pins, deren Pegel über den Deep Sleep eingefroren werden müssen, damit die
+// Rails (Peripherie/DAC/LoRa) aus bleiben und die SPI-CS deselektiert. GPIO10/16
+// sind RTC-fähig, 41/46/34/3/48 nicht — gpio_deep_sleep_hold_en() deckt beide ab.
+const gpio_num_t kHoldPins[] = {
+  (gpio_num_t)PIN_PERF_POWERON, (gpio_num_t)PIN_DAC_EN, (gpio_num_t)PIN_LORA_EN,
+  (gpio_num_t)PIN_EINK_CS, (gpio_num_t)PIN_LORA_CS, (gpio_num_t)PIN_SD_CS,
+  (gpio_num_t)PIN_EINK_RST,
+};
 }
 
 namespace board {
 
 void powerOn() {
   if (!g_spiMutex) g_spiMutex = xSemaphoreCreateMutex();
+
+  // 0) Etwaige Deep-Sleep-Holds lösen (sonst lassen sich die eingefrorenen
+  //    Enable-/CS-Pins unten nicht neu treiben). Beim Kaltstart ein No-op.
+  releaseSleepPins();
 
   // 1) Peripherie-Power (Keyboard/Touch/Sensoren) — muss zuerst kommen.
   pinMode(PIN_PERF_POWERON, OUTPUT);
@@ -80,6 +94,19 @@ void dacPower(bool on) {
 void loraPower(bool on) {
   digitalWrite(PIN_LORA_EN, on ? HIGH : LOW);
   if (on) delay(10);   // Modul hochfahren lassen
+}
+
+void holdSleepPins() {
+  // Aktuellen Pegel jedes Pins latchen, dann das Latch über den Deep Sleep
+  // aktiv halten. gpio_hold_en deckt die RTC-Pads (10/16) ab, der
+  // deep_sleep_hold zusätzlich die digitalen (41/46/34/3/48).
+  for (gpio_num_t p : kHoldPins) gpio_hold_en(p);
+  gpio_deep_sleep_hold_en();
+}
+
+void releaseSleepPins() {
+  gpio_deep_sleep_hold_dis();
+  for (gpio_num_t p : kHoldPins) gpio_hold_dis(p);
 }
 
 }  // namespace board

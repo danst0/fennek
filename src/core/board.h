@@ -42,6 +42,17 @@ void dacPower(bool on);
 // LoRa-Modul-Versorgung (SX1262) schalten — vor dem Radio-Init aufrufen.
 void loraPower(bool on);
 
+// Enable-/Deselect-Pins (Peripherie/DAC/LoRa-Power + alle CS + E-Ink-RST) über
+// den Deep Sleep EINFRIEREN. Ohne das floaten die digitalen Pads beim
+// esp_deep_sleep_start() hochohmig, die Rails kommen zurück (~50 mA Standby).
+// MUSS vor jedem esp_deep_sleep_start() laufen — auch im Timer-Wake-Pfad.
+void holdSleepPins();
+
+// Die mit holdSleepPins() gesetzten Holds wieder lösen, damit die Pins nach dem
+// Wake neu getrieben werden können. Läuft am Anfang von powerOn() (no-op beim
+// Kaltstart, da dann nichts gehalten ist).
+void releaseSleepPins();
+
 }  // namespace board
 
 // Komfort-Lock für den SPI-Bus.
