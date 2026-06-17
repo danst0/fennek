@@ -43,7 +43,7 @@ SPI-buss, och ändå levererar hackfri ljuduppspelning.
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/sv/sleep.png" width="240" alt="Vänteläge"><br><sub>Vänteläge (sovande ökenräv)</sub></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/sv/maps.png" width="240" alt="Kartor"><br><sub>Kartor – offline SD-rutor + GPS</sub></td>
   </tr>
 </table>
 

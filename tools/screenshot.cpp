@@ -16,7 +16,9 @@
 // =============================================================================
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <string>
 
 #include <Adafruit_GFX.h>
@@ -127,11 +129,11 @@ static void screenLauncher(Adafruit_GFX& g) {
   static constexpr int kRowY0 = CONTENT_Y + 6;   // 30
   static constexpr int kRowGap = 52;
   static constexpr int kHintY = 296;
-  // Slot-Belegung 1:1 aus main.cpp (setTile 0..8); Slot 9 leer (None).
+  // Slot-Belegung 1:1 aus main.cpp (setTile 0..9).
   const Str labels[kTiles] = {
     Str::TileMusic, Str::TileBook,  Str::TileReader, Str::TileMesh,
     Str::TileSettings, Str::TileGames, Str::TileFiles, Str::TileNotes,
-    Str::TileAlarm, Str::None
+    Str::TileAlarm, Str::TileMaps
   };
   const int cursor = 0;
   const char* nowPlaying = "Nuvole Bianche";   // Titel — nicht übersetzen
@@ -387,6 +389,77 @@ static void screenSleep(Adafruit_GFX& g) {
 }
 
 // =============================================================================
+// Karten — gespiegelt aus apps/maps_app.cpp (draw + drawMarker/drawFooter) und
+// services/maps_tiles.cpp (Slippy-Math + blitViewport). Lädt echte 1-bit-Kacheln
+// aus einem lokalen /maps-Baum (FENNEK_TILES, Default /tmp/fennek_sd/maps), damit
+// das Bild pixelgenau dem Gerät entspricht; fehlt eine Kachel -> Punktraster.
+// =============================================================================
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+static double lonToTileXf(double lon, int z) { return (lon + 180.0) / 360.0 * (double)(1 << z); }
+static double latToTileYf(double lat, int z) {
+  double r = lat * M_PI / 180.0;
+  return (1.0 - log(tan(r) + 1.0 / cos(r)) / M_PI) / 2.0 * (double)(1 << z);
+}
+
+static void screenMaps(Adafruit_GFX& g) {
+  static constexpr int OX = 0, OY = CONTENT_Y, VW = EINK_W, VH = EINK_H - CONTENT_Y;
+  static constexpr int FOOT_H = 28, TILE = 256;
+  const double cLat = 51.4818, cLon = 7.2162;   // Dortmund (am Gerät verifiziert)
+  const int z = 15;
+  const int sats = 9; const double hdop = 0.8;
+
+  const char* base = getenv("FENNEK_TILES");
+  std::string root = base ? base : "/tmp/fennek_sd/maps";
+
+  drawStatusBar(g, T(Str::AppMaps), 87, false, 1);
+
+  // --- Kacheln blitten (mirror maps_tiles::blitViewport) ---
+  double cpx = lonToTileXf(cLon, z) * TILE, cpy = latToTileYf(cLat, z) * TILE;
+  double leftPx = cpx - VW / 2.0, topPx = cpy - VH / 2.0;
+  int tx0 = (int)floor(leftPx / TILE), ty0 = (int)floor(topPx / TILE);
+  int tx1 = (int)floor((leftPx + VW - 1) / TILE), ty1 = (int)floor((topPx + VH - 1) / TILE);
+  static uint8_t buf[TILE * TILE / 8];
+  for (int ty = ty0; ty <= ty1; ty++) {
+    for (int tx = tx0; tx <= tx1; tx++) {
+      int sx = OX + (int)lround(tx * (double)TILE - leftPx);
+      int sy = OY + (int)lround(ty * (double)TILE - topPx);
+      char path[256];
+      snprintf(path, sizeof(path), "%s/%d/%d/%d.bin", root.c_str(), z, tx, ty);
+      FILE* f = fopen(path, "rb");
+      if (f && fread(buf, 1, sizeof(buf), f) == sizeof(buf)) {
+        g.drawBitmap(sx, sy, buf, TILE, TILE, GxEPD_BLACK);
+      } else {
+        for (int yy = 8; yy < TILE; yy += 16)
+          for (int xx = 8; xx < TILE; xx += 16) g.drawPixel(sx + xx, sy + yy, GxEPD_BLACK);
+      }
+      if (f) fclose(f);
+    }
+  }
+
+  // --- eigener GPS-Marker (Bildmitte bei Follow) ---
+  int mx = OX + VW / 2, my = OY + VH / 2;
+  g.fillCircle(mx, my, 6, GxEPD_WHITE);
+  g.drawCircle(mx, my, 6, GxEPD_BLACK);
+  g.drawCircle(mx, my, 5, GxEPD_BLACK);
+  g.fillCircle(mx, my, 2, GxEPD_BLACK);
+
+  // --- Footer (mirror drawFooter) ---
+  int fy = EINK_H - FOOT_H;
+  g.fillRect(0, fy, EINK_W, FOOT_H, GxEPD_WHITE);
+  g.drawFastHLine(0, fy, EINK_W, GxEPD_BLACK);
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(1);
+  char l1[40], l2[48];
+  snprintf(l1, sizeof(l1), "Z%d  Folgt GPS", z);
+  g.setCursor(4, fy + 5); gui::print(g, l1);
+  snprintf(l2, sizeof(l2), "%.5f, %.5f  Sat %d", cLat, cLon, sats);
+  (void)hdop;
+  g.setCursor(4, fy + 16); gui::print(g, l2);
+}
+
+// =============================================================================
 int main(int argc, char** argv) {
   std::string outdir = (argc > 1) ? argv[1] : ".";
   if (argc > 2) {
@@ -404,6 +477,7 @@ int main(int argc, char** argv) {
     {"games-ttt.pgm", screenTtt},
     {"music.pgm", screenMusic},
     {"settings.pgm", screenSettings},
+    {"maps.pgm", screenMaps},
     {"sleep.pgm", screenSleep},
   };
 

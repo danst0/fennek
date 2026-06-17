@@ -44,7 +44,7 @@ liefert.
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/de/sleep.png" width="240" alt="Standby"><br><sub>Standby (schlafender Fennek)</sub></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/de/maps.png" width="240" alt="Karten"><br><sub>Karten – Offline-SD-Kacheln + GPS</sub></td>
   </tr>
 </table>
 

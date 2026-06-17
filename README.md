@@ -45,7 +45,7 @@ SPI bus, while still delivering stutter-free audio playback.
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/en/sleep.png" width="240" alt="Standby"><br><sub>Standby (sleeping fennec)</sub></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/en/maps.png" width="240" alt="Maps"><br><sub>Maps – offline SD tiles + GPS</sub></td>
   </tr>
 </table>
 
