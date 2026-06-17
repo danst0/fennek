@@ -57,7 +57,7 @@ Diese Invarianten dürfen nicht brechen:
 ## Module (`src/`)
 
 - `config.h` — alle Pins & Konstanten (aus `archive_legacy/variants/lilygo_tdeck_pro/variant.h`).
-- `core/board.*` — Power, geteilter SPI-Bus, SD-Mount (+`sdReady`), `loraPower`, `g_spiMutex`.
+- `core/board.*` — Power, geteilter SPI-Bus, SD-Mount (+`sdReady`), `loraPower`, `g_spiMutex`. **GPS:** die T-Deck Pro hat ein GPS-Modul (UART RX44/TX43, Enable `PIN_GPS_EN`=GPIO39 active-high), das Fennek NICHT nutzt — `powerOn()` treibt GPIO39 LOW und `kHoldPins` hält den Pegel über den Deep Sleep, damit der Empfänger nicht ungenutzt Strom zieht. Die eigene Mesh-Position (`pos`/`settings::meshPos`) ist davon unabhängig — ein manuell gesetzter Wert, NICHT vom GPS.
 - `core/display.*` — GxEPD2-E-Ink, `render(fn, full)`/`renderRegion(fn, y, h)`, BUSY-Callback, `cp437(true)`.
 - `core/gui.*` — `toCp437`/`cp437For`/`print`/`printAt`/`textBounds`, `drawButton`, `drawRowText`, `Rect`.
 - `core/touch.*` + `core/hyn/` — CST328 (I2C 13/14, nie vom SPI blockiert); hyn/ nicht refactoren.
