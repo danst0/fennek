@@ -5,10 +5,12 @@
 #include "config.h"
 #include "services/audio.h"
 #include "services/library.h"
+#include "core/board.h"
 #include "core/power.h"
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <SD.h>
 #include <time.h>
 #include <string.h>
 
@@ -20,6 +22,17 @@ constexpr uint32_t kValidClock   = 1700000000UL;
 constexpr uint32_t kSnoozeMinutes = 9;
 constexpr uint32_t kRingMaxMs    = 5UL * 60UL * 1000UL;  // Auto-Quittung nach 5 min
 
+// Generierter Wecker-Piepton auf SD (lauter, durchdringender als ein Lied). Wird
+// einmalig erzeugt, wenn er fehlt; der Nutzer kann mit `alarm sound <pfad>` einen
+// eigenen Klingelton setzen (dann wird dieser statt des Pieptons gespielt).
+const char*        kBeepPath     = "/.fennek/alarm.wav";
+constexpr uint32_t kBeepRate     = 22050;   // Hz, 16-bit mono
+constexpr uint32_t kBeepToneHz   = 2500;    // durchdringender Pfeifton
+constexpr int16_t  kBeepAmp      = 22000;   // laut, ohne zu clippen
+constexpr uint32_t kBeepSegMs    = 200;     // 200 ms Ton / 200 ms Pause
+constexpr uint32_t kBeepLenMs    = 3000;    // 3-s-Schleife (Repeat One loopt)
+constexpr uint32_t kBlinkMs      = 400;     // Tastatur-Backlight-Blinktakt
+
 alarmclock::Alarm s_alarms[alarmclock::kMaxAlarms] = {};
 char        s_soundPath[TRACK_PATH_LEN] = "";
 bool        s_loaded = false;
@@ -27,6 +40,9 @@ bool        s_loaded = false;
 bool     s_ringing      = false;
 uint32_t s_ringStartMs  = 0;
 uint32_t s_lastFireMin  = 0;   // Epoche/60 des letzten Auslösens (Entprellung)
+uint8_t  s_savedVol     = AUDIO_VOL_DEFAULT;   // Lautstärke vor dem Klingeln
+bool     s_blinkOn      = false;
+uint32_t s_blinkMs      = 0;   // letzter Backlight-Umschaltzeitpunkt
 
 // Schlummer-Ziel im RTC-RAM, damit ein Standby während des Schlummerns ihn
 // trotzdem aufweckt (nextDueEpoch bezieht ihn ein).
@@ -72,33 +88,95 @@ bool dowMatches(const alarmclock::Alarm& a, const struct tm& lt) {
   return a.dowMask == 0 || (a.dowMask & (1 << monIndex(lt)));
 }
 
-// Klingeln starten: Klingelton (oder erster Bibliothekstitel) in Dauerschleife.
+// Tastatur-Backlight (GPIO42) schalten. Auf Boards ohne bestücktes Backlight
+// gefahrlos (GPIO42 ist dort frei).
+void kbBacklight(bool on) {
+  pinMode(PIN_KB_BL, OUTPUT);
+  digitalWrite(PIN_KB_BL, on ? HIGH : LOW);
+}
+
+// Erzeugt einmalig einen lauten Wecker-Piepton als 16-bit-Mono-WAV auf der SD
+// (Beep/Pause-Rechteckmuster). UI-Thread; SD gechunkt unter spiLock. No-op, wenn
+// die Datei schon existiert oder keine SD da ist. Eine offene File über
+// spiUnlock-Lücken zu halten ist ok — in der Lücke passiert kein SD-I/O.
+void ensureBeepWav() {
+  if (!board::sdReady()) return;
+  spiLock();
+  bool exists = SD.exists(kBeepPath);
+  spiUnlock();
+  if (exists) return;
+
+  const uint32_t nSamples   = kBeepRate * kBeepLenMs / 1000;
+  const uint32_t dataBytes  = nSamples * 2;
+  const uint32_t segSamples = kBeepRate * kBeepSegMs / 1000;
+  const uint32_t halfPeriod = kBeepRate / (2 * kBeepToneHz);
+
+  spiLock();
+  File f = SD.open(kBeepPath, FILE_WRITE);
+  if (!f) { spiUnlock(); Serial.println("[ALARM] Piepton: SD-Open fehlgeschlagen"); return; }
+  uint8_t hdr[44];
+  auto p32 = [](uint8_t* d, uint32_t v){ d[0]=v; d[1]=v>>8; d[2]=v>>16; d[3]=v>>24; };
+  auto p16 = [](uint8_t* d, uint16_t v){ d[0]=v; d[1]=v>>8; };
+  memcpy(hdr, "RIFF", 4);       p32(hdr+4, 36 + dataBytes);  memcpy(hdr+8,  "WAVE", 4);
+  memcpy(hdr+12, "fmt ", 4);    p32(hdr+16, 16);
+  p16(hdr+20, 1);               p16(hdr+22, 1);               p32(hdr+24, kBeepRate);
+  p32(hdr+28, kBeepRate * 2);   p16(hdr+32, 2);               p16(hdr+34, 16);
+  memcpy(hdr+36, "data", 4);    p32(hdr+40, dataBytes);
+  f.write(hdr, 44);
+  spiUnlock();
+
+  int16_t buf[512];
+  uint32_t i = 0;
+  while (i < nSamples) {
+    int n = 0;
+    while (n < 512 && i < nSamples) {
+      bool beep = ((i / segSamples) & 1) == 0;                      // gerade Segmente = Ton
+      buf[n++] = beep ? (((i / halfPeriod) & 1) ? kBeepAmp : (int16_t)-kBeepAmp) : 0;
+      i++;
+    }
+    spiLock();
+    f.write((const uint8_t*)buf, n * 2);
+    spiUnlock();
+  }
+  spiLock(); f.close(); spiUnlock();
+  Serial.printf("[ALARM] Piepton erzeugt: %s (%lu Samples)\n", kBeepPath, (unsigned long)nSamples);
+}
+
+// Klingeln starten: voll aufdrehen, Piepton (oder eigener Klingelton) in
+// Dauerschleife, Tastatur-Backlight als Sichtsignal. Lautstärke wird gemerkt
+// und beim Quittieren/Schlummern wiederhergestellt (kein NVS-Schreiben).
 void startRing(const char* why) {
   char path[TRACK_PATH_LEN];
   strncpy(path, s_soundPath, sizeof(path) - 1);
   path[sizeof(path) - 1] = '\0';
-  if (!path[0]) {
-    if (library::count() > 0) library::path(0, path, sizeof(path));
+  if (!path[0]) {                                  // kein eigener Ton → Piepton
+    ensureBeepWav();
+    if (board::sdReady()) { strncpy(path, kBeepPath, sizeof(path) - 1); path[sizeof(path) - 1] = '\0'; }
   }
+  if (!path[0] && library::count() > 0) library::path(0, path, sizeof(path));  // Notfall
   if (!path[0]) {
-    Serial.println("[ALARM] Kein Klingelton + leere Bibliothek — klingelt nicht");
-    return;
+    Serial.println("[ALARM] Kein Klingelton + keine SD — klingelt nicht (Backlight blinkt)");
+  } else {
+    s_savedVol = audio::status().volume;           // Lautstärke merken ...
+    audio::setVolume(AUDIO_VOL_MAX);               // ... und voll aufdrehen
+    audio::queueBegin(audio::Owner::Music);
+    audio::queueAdd(path);
+    audio::queueCommit(0);
+    audio::setRepeat(audio::Repeat::One);
   }
-  audio::queueBegin(audio::Owner::Music);
-  audio::queueAdd(path);
-  audio::queueCommit(0);
-  audio::setRepeat(audio::Repeat::One);
   s_ringing = true;
   s_ringStartMs = millis();
+  s_blinkOn = true; s_blinkMs = millis();
+  kbBacklight(true);
   power::noteActivity();   // Auto-Standby nicht mitten ins Klingeln grätschen
-  Serial.printf("[ALARM] Klingelt (%s): %s\n", why, path);
+  Serial.printf("[ALARM] Klingelt (%s): %s\n", why, path[0] ? path : "(nur Backlight)");
 }
 
 }  // namespace
 
 namespace alarmclock {
 
-void begin() { ensureLoaded(); }
+void begin() { ensureLoaded(); ensureBeepWav(); }   // Piepton einmalig vorab erzeugen
 
 int   count() { return kMaxAlarms; }
 Alarm get(int i) { ensureLoaded(); return (i >= 0 && i < kMaxAlarms) ? s_alarms[i] : Alarm{}; }
@@ -150,9 +228,16 @@ bool ringing() { return s_ringing; }
 
 void fireNow() { startRing("Test"); }
 
+// Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight aus.
+void stopRingOutput() {
+  audio::stop();
+  audio::setVolume(s_savedVol);
+  kbBacklight(false);
+}
+
 void snooze() {
   if (!s_ringing) return;
-  audio::stop();
+  stopRingOutput();
   s_ringing = false;
   uint32_t now = (uint32_t)time(nullptr);
   s_snoozeEpoch = now + kSnoozeMinutes * 60;
@@ -160,7 +245,7 @@ void snooze() {
 }
 
 void dismiss() {
-  if (s_ringing) audio::stop();
+  if (s_ringing) stopRingOutput();
   s_ringing = false;
   s_snoozeEpoch = 0;
   Serial.println("[ALARM] Quittiert");
@@ -171,7 +256,11 @@ void poll() {
 
   if (s_ringing) {
     power::noteActivity();                       // wach bleiben, solange es klingelt
-    if (millis() - s_ringStartMs >= kRingMaxMs) {
+    uint32_t ms = millis();
+    if (ms - s_blinkMs >= kBlinkMs) {            // Tastatur-Backlight blinken
+      s_blinkMs = ms; s_blinkOn = !s_blinkOn; kbBacklight(s_blinkOn);
+    }
+    if (ms - s_ringStartMs >= kRingMaxMs) {
       Serial.println("[ALARM] Auto-Quittung nach 5 min");
       dismiss();
     }
