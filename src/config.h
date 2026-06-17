@@ -95,8 +95,9 @@
 #define PIN_I2S_DOUT       8
 #define PIN_I2S_LRC        9
 
-// PDM-Mikrofon (Audionotizen). Eigener I2S-Controller (I2S_NUM_1), damit es den
-// DAC-Ausgang (I2S_NUM_0) nicht stört. CLK = GPIO18, DATA = GPIO17 (variant.h).
+// PDM-Mikrofon (Audionotizen). PDM geht laut IDF nur auf I2S0 — das belegt sonst
+// der DAC, daher der Handover in audio::beginMic/endMic (gibt I2S0 frei, nimmt es
+// danach zurück). CLK = GPIO18, DATA = GPIO17 (variant.h).
 #define PIN_MIC_CLK       18
 #define PIN_MIC_DATA      17
 
