@@ -26,9 +26,10 @@ constexpr uint32_t kRingMaxMs    = 5UL * 60UL * 1000UL;  // Auto-Quittung nach 5
 // einmalig erzeugt, wenn er fehlt; der Nutzer kann mit `alarm sound <pfad>` einen
 // eigenen Klingelton setzen (dann wird dieser statt des Pieptons gespielt).
 const char*        kBeepPath     = "/.fennek/alarm.wav";
+constexpr uint8_t  kBeepVersion  = 2;       // Inhalts-Version (NVS „bv"); bei Änderung erhöhen → Neuerzeugung
 constexpr uint32_t kBeepRate     = 22050;   // Hz, 16-bit mono
-constexpr uint32_t kBeepToneHz   = 2500;    // durchdringender Pfeifton
-constexpr int16_t  kBeepAmp      = 22000;   // laut, ohne zu clippen
+constexpr uint32_t kBeepToneHz   = 3000;    // durchdringender Pfeifton (kleine Lautsprecher effizient ~3 kHz)
+constexpr int16_t  kBeepAmp      = 32000;   // Vollaussteuerung (max. mögliche Lautstärke)
 constexpr uint32_t kBeepSegMs    = 200;     // 200 ms Ton / 200 ms Pause
 constexpr uint32_t kBeepLenMs    = 3000;    // 3-s-Schleife (Repeat One loopt)
 constexpr uint32_t kBlinkMs      = 400;     // Tastatur-Backlight-Blinktakt
@@ -101,10 +102,11 @@ void kbBacklight(bool on) {
 // spiUnlock-Lücken zu halten ist ok — in der Lücke passiert kein SD-I/O.
 void ensureBeepWav() {
   if (!board::sdReady()) return;
+  ensureLoaded();                                  // s_prefs offen (NVS-Versionsmarke)
   spiLock();
   bool exists = SD.exists(kBeepPath);
   spiUnlock();
-  if (exists) return;
+  if (exists && s_prefs.getUChar("bv", 0) == kBeepVersion) return;  // aktuell → fertig
 
   const uint32_t nSamples   = kBeepRate * kBeepLenMs / 1000;
   const uint32_t dataBytes  = nSamples * 2;
@@ -139,7 +141,9 @@ void ensureBeepWav() {
     spiUnlock();
   }
   spiLock(); f.close(); spiUnlock();
-  Serial.printf("[ALARM] Piepton erzeugt: %s (%lu Samples)\n", kBeepPath, (unsigned long)nSamples);
+  s_prefs.putUChar("bv", kBeepVersion);            // Inhalts-Version vermerken
+  Serial.printf("[ALARM] Piepton erzeugt (v%u): %s (%lu Samples)\n",
+                (unsigned)kBeepVersion, kBeepPath, (unsigned long)nSamples);
 }
 
 // Klingeln starten: voll aufdrehen, Piepton (oder eigener Klingelton) in
