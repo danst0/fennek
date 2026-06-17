@@ -36,8 +36,20 @@ void poll();
 // webfm kurz selbst WLAN hochfahren, NTP holen, wieder aus. No-op sonst.
 void syncBeforeStandby();
 
+// Ebenfalls nur aus dem Auto-Standby-Pfad, VOR syncBeforeStandby(): bei veralteter
+// Uhr kurz das GPS hochfahren (mit Aiding), auf einen echten Positionsfix warten
+// (Timeout ~30 s, RTC-Back-off bei Misserfolg) und die satellitengenaue UTC
+// übernehmen — kein WLAN nötig. Gelingt das, ist der nachfolgende NTP-Sync via
+// gpsFresh() ein No-op. true = GPS-Zeit übernommen. No-op wenn Uhr schon gut.
+bool gpsSyncBeforeStandby();
+
 // Von mesh_client gemeldet, wenn ein Advert die Uhr gesetzt hat (Freshness).
 void onExternalSync(uint32_t epoch, const char* src);
+
+// GPS-UTC (aus der Maps-App, RMC) melden — HÖCHSTE Priorität: setzt die Uhr und
+// schaltet NTP/Mesh als Quelle für ~10 min stumm (satellitengenau). No-op bei
+// unplausibler Epoche oder Abweichung <=2 s (dann nur Freshness-Stempel).
+void gpsSync(uint32_t epochUtc);
 
 // Zeitzone (settings::tzString) auf die libc anwenden (setenv TZ + tzset), damit
 // localtime_r() lokale Zeit liefert. In begin() und nach Settings-Änderung rufen.

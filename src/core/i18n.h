@@ -38,6 +38,7 @@
   X(AppFiles,      "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
   X(AppNotes,      "Notizen",        "Note",            "Anteckningar",   "Notes",           "Notas") \
   X(AppAlarm,      "Wecker",         "Sveglia",         "Alarm",          "Alarm",           "Alarma") \
+  X(AppMaps,       "Karten",         "Mappe",           "Kartor",         "Maps",            "Mapas") \
   /* --- Launcher-Kacheln (max 8 Zeichen) --- */ \
   X(TileMusic,     "Musik",          "Musica",          "Musik",          "Music",           "Música") \
   X(TileBook,      "Hörbuch",        "Ascolto",         "Ljudbok",        "Listen",          "Escuchar") \
@@ -48,6 +49,7 @@
   X(TileFiles,     "Dateien",        "File",            "Filer",          "Files",           "Archivos") \
   X(TileNotes,     "Notizen",        "Note",            "Anteckn.",       "Notes",           "Notas") \
   X(TileAlarm,     "Wecker",         "Sveglia",         "Alarm",          "Alarm",           "Alarma") \
+  X(TileMaps,      "Karten",         "Mappe",           "Kartor",         "Maps",            "Mapas") \
   X(TileSoon,      "(bald)",         "(presto)",        "(snart)",        "(soon)",          "(pronto)") \
   X(FmtResume,     "Fortsetzen: %s", "Riprendi: %s",    "Fortsätt: %s",   "Resume: %s",      "Continuar: %s") /* fmt: %s */ \
   /* --- Gemeinsame Buttons --- */ \

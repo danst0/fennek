@@ -4,6 +4,7 @@
 #include "timesync.h"
 #include "apps/mesh_client.h"
 #include "services/webfm.h"
+#include "services/gps.h"
 #include "core/settings.h"
 
 #include <Arduino.h>
@@ -46,10 +47,23 @@ constexpr uint8_t  kBackoffMaxShift = 6;          // 30min … 32h → gedeckelt
 RTC_DATA_ATTR uint8_t  s_failCount        = 0;
 RTC_DATA_ATTR uint32_t s_lastAttemptEpoch = 0;    // Systemzeit des letzten Versuchs
 
+// Eigener Back-off für den GPS-Pre-Standby-Sync: ein fix-loser Standort (drinnen)
+// soll nicht bei jedem Auto-Standby ~30 s GPS-Strom kosten. RTC-RAM (übersteht Schlaf).
+RTC_DATA_ATTR uint8_t  s_gpsFailCount     = 0;
+RTC_DATA_ATTR uint32_t s_gpsLastAttempt   = 0;
+constexpr uint32_t kGpsSyncTimeoutMs = 30000;     // max. Wartezeit auf einen Fix
+
 uint32_t    s_lastSyncEpoch = 0;          // Epoche des letzten bestätigten Syncs
 bool        s_lastSyncWasNtp = false;     // war der letzte Sync ein präzises NTP?
 const char* s_source        = "—";
 uint16_t    s_driftPpm      = kDefaultPpm;
+
+// GPS hat höchste Priorität: solange es kürzlich die Uhr gesetzt hat, werden
+// NTP (poll + Pre-Standby) und Mesh-Adverts als Quelle übergangen. GPS-UTC ist
+// satellitengenau; NTP lernt aber weiter die Drift (s. handleNtpSynced).
+constexpr uint32_t kGpsFreshMs = 600000;  // 10 min
+uint32_t           s_lastGpsMs = 0;       // millis() des letzten GPS-Syncs (0 = nie)
+bool gpsFresh() { return s_lastGpsMs != 0 && (millis() - s_lastGpsMs) < kGpsFreshMs; }
 
 // SNTP-Callback feuert, sobald die Systemzeit neu gesetzt wurde.
 volatile bool s_ntpFresh = false;
@@ -185,7 +199,8 @@ void begin() {
 
 void poll() {
   webfm::State w = webfm::state();
-  if (w == webfm::State::RUNNING) {
+  // GPS-Vorrang: liefert GPS gerade die Zeit, kein opportunistisches NTP.
+  if (w == webfm::State::RUNNING && !gpsFresh()) {
     if (!s_sessionSynced) {
       if (s_ntpState == IDLE) {
         beginNtpAttempt();
@@ -215,6 +230,7 @@ void poll() {
 }
 
 void syncBeforeStandby() {
+  if (gpsFresh()) return;                          // GPS hat die Uhr frisch gesetzt
   if (!isStale()) return;                          // Qualität reicht — nichts tun
   if (webfm::state() != webfm::State::OFF) return; // WLAN schon in Benutzung
   char ssid[33];
@@ -242,12 +258,80 @@ void syncBeforeStandby() {
   else if (s_failCount < 0xFF)  s_failCount++;
 }
 
+bool gpsSyncBeforeStandby() {
+  if (!isStale()) return false;          // Uhr noch gut genug — kein GPS nötig
+  if (gpsFresh())  return false;         // GPS hat eben erst gesetzt (z.B. Maps-App)
+
+  // Back-off: wenn der Empfänger keinen Fix bekommt (drinnen), nicht bei jedem
+  // Standby erneut ~30 s funken. now() = ESP32-Systemzeit, auch ohne gute Uhr
+  // monoton — der Delta-Vergleich stimmt.
+  uint32_t cur = now();
+  if (s_gpsFailCount > 0 && s_gpsLastAttempt != 0 && cur >= s_gpsLastAttempt) {
+    uint8_t  shift = s_gpsFailCount > kBackoffMaxShift ? kBackoffMaxShift : s_gpsFailCount;
+    uint32_t wait  = kBackoffBaseSecs << shift;
+    if (wait > kBackoffMaxSecs) wait = kBackoffMaxSecs;
+    if (cur - s_gpsLastAttempt < wait) {
+      Serial.printf("[TIME] Pre-Standby-GPS übersprungen (Back-off: %u Fehlschläge)\n",
+                    (unsigned)s_gpsFailCount);
+      return false;
+    }
+  }
+  s_gpsLastAttempt = cur;
+
+  Serial.println("[TIME] Pre-Standby: GPS-Zeit holen ...");
+  gps::begin();                          // Power on + UBX-Aiding (Systemzeit/Pos)
+  bool got = false;
+  uint32_t t0 = millis();
+  while (millis() - t0 < kGpsSyncTimeoutMs) {
+    gps::poll();
+    const gps::Fix& f = gps::current();
+    // Erst bei echtem Positionsfix ist die UTC satellitengenau (nicht die
+    // injizierte Zeit) — dann übernehmen. gpsSync setzt nur bei Abweichung >2 s.
+    if (f.valid && f.epochUtc > kSaneEpoch) { gpsSync(f.epochUtc); got = true; break; }
+    delay(20);
+  }
+  gps::end();
+
+  if (got) {
+    s_gpsFailCount = 0;
+    Serial.println("[TIME] Pre-Standby: GPS-Zeit übernommen");
+  } else if (s_gpsFailCount < 0xFF) {
+    s_gpsFailCount++;
+    Serial.println("[TIME] Pre-Standby: kein GPS-Fix (Timeout)");
+  }
+  return got;
+}
+
 void onExternalSync(uint32_t epoch, const char* src) {
+  // GPS hat Vorrang: kürzlich per GPS gesetzte Uhr nicht durch Mesh verschieben.
+  if (gpsFresh()) return;
   // Die Uhr wurde bereits vom Aufrufer (mesh_client) gesetzt — hier nur Freshness.
   if (!plausibleEpoch(epoch)) return;
   s_lastSyncEpoch  = epoch;
   s_lastSyncWasNtp = false;
   s_source         = src;
+}
+
+// GPS-Zeit (UTC aus RMC) — höchste Priorität, satellitengenau. Setzt die Uhr
+// direkt (wie ein bestätigter Sync) und schaltet über gpsFresh() für ~10 min
+// NTP/Mesh als Quelle stumm. Nicht fürs Drift-Lernen genutzt (kein NTP-Intervall).
+void gpsSync(uint32_t utc) {
+  if (!plausibleEpoch(utc)) return;
+  s_lastGpsMs = millis();
+  // Nur setzen, wenn die Uhr spürbar abweicht (>2 s) — sonst nur Freshness-Stempel,
+  // damit nicht jede Sekunde settimeofday/NVS läuft.
+  uint32_t cur = now();
+  uint32_t diff = (cur > utc) ? cur - utc : utc - cur;
+  s_lastSyncEpoch  = utc;
+  s_lastSyncWasNtp = false;
+  s_source         = "GPS";
+  s_failCount      = 0;
+  if (diff > 2) {
+    mesh_client::setRtcTime(utc, true);
+    settings::setLastTime(utc);
+    Serial.printf("[TIME] GPS-Sync: %lu UTC (Korrektur %lus)\n",
+                  (unsigned long)utc, (unsigned long)diff);
+  }
 }
 
 void applyTimezone() {

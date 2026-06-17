@@ -52,9 +52,9 @@ RTC_DATA_ATTR uint32_t s_snoozeEpoch = 0;
 
 Preferences s_prefs;
 
-// byte0: bit0=enabled, bits1-2=signal (1..3). hour/minute/dowMask folgen.
+// byte0: bit0=enabled, bits1-3=signal (1..7, Bitmaske Ton/Blink/Vibra).
 uint32_t packAlarm(const alarmclock::Alarm& a) {
-  uint8_t sig = (a.signal >= 1 && a.signal <= 3) ? a.signal : alarmclock::SIG_BOTH;
+  uint8_t sig = (a.signal >= 1 && a.signal <= 7) ? a.signal : alarmclock::SIG_BOTH;
   uint8_t b0  = (uint8_t)((a.enabled ? 1 : 0) | (sig << 1));
   return (uint32_t)b0 | ((uint32_t)a.hour << 8) |
          ((uint32_t)a.minute << 16) | ((uint32_t)a.dowMask << 24);
@@ -62,7 +62,7 @@ uint32_t packAlarm(const alarmclock::Alarm& a) {
 alarmclock::Alarm unpackAlarm(uint32_t v) {
   alarmclock::Alarm a;
   a.enabled = (v & 0x01) != 0;
-  uint8_t sig = (v >> 1) & 0x03;
+  uint8_t sig = (v >> 1) & 0x07;
   a.signal  = sig ? sig : alarmclock::SIG_BOTH;   // Altdaten (0) → beides
   a.hour    = (v >> 8) & 0xFF;
   a.minute  = (v >> 16) & 0xFF;
@@ -179,9 +179,12 @@ void startRing(const char* why, uint8_t signal) {
       Serial.println("[ALARM] Kein Klingelton + keine SD — nur Backlight");
     }
   }
+  const bool wantVibra = (s_ringSignal & alarmclock::SIG_VIBRA) != 0;
   s_ringing = true;
   s_ringStartMs = millis();
-  if (wantBlink) { s_blinkOn = true; s_blinkMs = millis(); kbBacklight(true); }
+  s_blinkOn = true; s_blinkMs = millis();
+  if (wantBlink) kbBacklight(true);
+  if (wantVibra) { board::vibraEnable(true); board::vibrate(true); }
   power::noteActivity();   // Auto-Standby nicht mitten ins Klingeln grätschen
   Serial.printf("[ALARM] Klingelt (%s) [%s%s]: %s\n", why,
                 wantTone ? "Ton " : "", wantBlink ? "Blink" : "", path[0] ? path : "-");
@@ -245,11 +248,12 @@ uint32_t snoozeMinutes() { return kSnoozeMinutes; }
 
 void fireNow() { startRing("Test", alarmclock::SIG_BOTH); }
 
-// Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight aus.
+// Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight + Motor aus.
 void stopRingOutput() {
   audio::stop();
   audio::setVolume(s_savedVol);
   kbBacklight(false);
+  board::vibraEnable(false);   // Motor aus + Treiber zurück in Shutdown
 }
 
 void snooze() {
@@ -274,8 +278,10 @@ void poll() {
   if (s_ringing) {
     power::noteActivity();                       // wach bleiben, solange es klingelt
     uint32_t ms = millis();
-    if ((s_ringSignal & alarmclock::SIG_BLINK) && ms - s_blinkMs >= kBlinkMs) {
-      s_blinkMs = ms; s_blinkOn = !s_blinkOn; kbBacklight(s_blinkOn);   // Backlight blinken
+    if (ms - s_blinkMs >= kBlinkMs) {            // Backlight + Motor im Takt pulsen
+      s_blinkMs = ms; s_blinkOn = !s_blinkOn;
+      if (s_ringSignal & alarmclock::SIG_BLINK) kbBacklight(s_blinkOn);
+      if (s_ringSignal & alarmclock::SIG_VIBRA) board::vibrate(s_blinkOn);
     }
     if (ms - s_ringStartMs >= kRingMaxMs) {
       Serial.println("[ALARM] Auto-Quittung nach 5 min");

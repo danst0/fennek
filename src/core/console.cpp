@@ -15,6 +15,7 @@
 #include "services/scrobble.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
+#include "services/gps.h"
 
 #include <time.h>
 
@@ -50,11 +51,12 @@ void cmdHelp() {
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
   Serial.println("[CON]   alarm             - Wecker auflisten");
   Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: taeglich|mo,di,..)");
-  Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|beides / sound <pfad> / test / stop / snooze");
+  Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|vibra|beides|alle / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
   Serial.println("[CON]   advert flood      - Flood-Advert (mehrhopfaehig, erreicht entfernte Nodes)");
   Serial.println("[CON]   pos [<lat> <lon>] - Node-Position zeigen/setzen (Standortbake im Advert)");
+  Serial.println("[CON]   gps [sek] / off   - GPS-Test: rohe NMEA + Fix lesen (Default 10 s), Modul aus");
   Serial.println("[CON]   public <text>     - Nachricht an Public-Channel");
   Serial.println("[CON]   dm <idx> <text>   - Direktnachricht an Kontakt #idx");
   Serial.println("[CON]   contacts          - Kontaktliste");
@@ -391,8 +393,10 @@ void alarmPrintList() {
     if (a.dowMask == 0) strcpy(days, "taeglich");
     else for (int d = 0; d < 7; d++)
       if (a.dowMask & (1 << d)) { strcat(days, dn[d]); strcat(days, " "); }
-    const char* sig = a.signal == alarmclock::SIG_TONE ? "Ton"
-                    : a.signal == alarmclock::SIG_BLINK ? "Blink" : "Ton+Blink";
+    char sig[24] = "";
+    if (a.signal & alarmclock::SIG_TONE)  strcat(sig, "Ton ");
+    if (a.signal & alarmclock::SIG_BLINK) strcat(sig, "Blink ");
+    if (a.signal & alarmclock::SIG_VIBRA) strcat(sig, "Vibra ");
     Serial.printf("[CON]   [%d] %02u:%02u  %-9s  %s\n", i, a.hour, a.minute, days, sig);
   }
   char snd[TRACK_PATH_LEN];
@@ -435,10 +439,12 @@ void cmdAlarm(const char* arg) {
   }
   if (strncmp(sp, "mode ", 5) == 0) {                  // Signal-Modus pro Wecker
     const char* m = sp + 5;
-    uint8_t v = strstr(m, "ton") ? alarmclock::SIG_TONE
+    uint8_t v = strstr(m, "vibr") ? alarmclock::SIG_VIBRA
+              : strstr(m, "alle") ? (uint8_t)(alarmclock::SIG_TONE | alarmclock::SIG_BLINK | alarmclock::SIG_VIBRA)
+              : strstr(m, "ton") ? alarmclock::SIG_TONE
               : strstr(m, "blink") ? alarmclock::SIG_BLINK
               : (strstr(m, "beid") || strstr(m, "both")) ? alarmclock::SIG_BOTH : 0;
-    if (!v) { Serial.println("[CON] alarm <i> mode ton|blink|beides"); return; }
+    if (!v) { Serial.println("[CON] alarm <i> mode ton|blink|vibra|beides|alle"); return; }
     alarmclock::Alarm a = alarmclock::get(i);
     a.signal = v;
     alarmclock::set(i, a);
@@ -475,6 +481,108 @@ void cmdMsgs() {
     Serial.printf("[CON]   %s %lu %s%s%s%s\n", kind, (unsigned long)m.timestamp,
                   m.from[0] ? m.from : "", m.from[0] ? ": " : "", m.text, ack);
   }
+}
+
+// GPS headless testen: Modul an, N s rohe NMEA + dekodierten Fix loggen, aus.
+// Bestätigt Verkabelung/Enable/Baudrate ohne Display (wie Mesh-/Wecker-Tests).
+void cmdGps(const char* arg) {
+  if (arg && strncmp(arg, "off", 3) == 0) {
+    gps::end();
+    Serial.println("[GPS] Modul aus");
+    return;
+  }
+  if (arg && strncmp(arg, "scan", 4) == 0) {
+    // Gängige GPS-Baudraten durchprobieren und gültige NMEA-Zeilen zählen.
+    pinMode(PIN_GPS_EN, OUTPUT);
+    digitalWrite(PIN_GPS_EN, HIGH);
+    delay(50);
+    const long bauds[] = {9600, 38400, 115200, 57600, 4800};
+    Serial.println("[GPS] Baudraten-Scan (je 3 s) ...");
+    for (long b : bauds) {
+      Serial1.begin(b, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+      delay(80);
+      while (Serial1.available()) Serial1.read();   // Puffer leeren
+      char line[100]; int len = 0;
+      unsigned long bytes = 0, good = 0;
+      char sample[100]; sample[0] = '\0';
+      uint32_t t0 = millis();
+      while (millis() - t0 < 3000) {
+        while (Serial1.available()) {
+          char c = (char)Serial1.read();
+          bytes++;
+          if (c == '\n' || c == '\r') {
+            if (len > 0) {
+              line[len] = '\0';
+              if (line[0] == '$' && strchr(line, '*')) {
+                good++;
+                if (!sample[0]) strncpy(sample, line, sizeof(sample) - 1);
+              }
+              len = 0;
+            }
+          } else if (len < (int)sizeof(line) - 1) line[len++] = c;
+          else len = 0;
+        }
+        power::noteActivity();
+        delay(2);
+      }
+      Serial1.end();
+      Serial.printf("[GPS]   %6ld Baud: %lu Bytes, %lu NMEA-Zeilen%s%s\n",
+                    b, bytes, good, sample[0] ? "  z.B. " : "", sample);
+    }
+    digitalWrite(PIN_GPS_EN, LOW);
+    Serial.println("[GPS] Scan fertig — Baud mit NMEA-Zeilen = GPS_BAUD setzen.");
+    return;
+  }
+  int secs = 10;
+  if (arg && *arg) { int v = atoi(arg); if (v > 0 && v <= 120) secs = v; }
+  Serial.printf("[GPS] Modul an (Baud %d), lese %d s rohe NMEA ...\n", GPS_BAUD, secs);
+  gps::begin();
+
+  gps::Fix fix = {};
+  char line[100];
+  int  len = 0;
+  uint32_t t0 = millis();
+  unsigned long bytes = 0, lines = 0;
+  while (millis() - t0 < (uint32_t)secs * 1000) {
+    while (Serial1.available()) {
+      char c = (char)Serial1.read();
+      bytes++;
+      if (c == '\n' || c == '\r') {
+        if (len > 0) {
+          line[len] = '\0'; len = 0; lines++;
+          Serial.printf("[GPS] %s\n", line);
+          gps::parseLine(line, fix);
+        }
+      } else if (len < (int)sizeof(line) - 1) {
+        line[len++] = c;
+      } else {
+        len = 0;   // Überlauf (Müll) — Zeile verwerfen
+      }
+    }
+    power::noteActivity();   // Auto-Standby während des Tests verhindern
+    delay(5);
+  }
+
+  Serial.printf("[GPS] %lu Bytes, %lu Zeilen empfangen\n", bytes, lines);
+  if (bytes == 0)
+    Serial.println("[GPS] KEINE Daten — Verkabelung/Enable (GPIO39) prüfen.");
+  else if (lines == 0)
+    Serial.println("[GPS] Bytes, aber keine gültigen Zeilen — vermutlich falsche Baudrate (GPS_BAUD).");
+  // Zeit kommt oft vor dem Positionsfix (RMC-Datum+Zeit) — als Uhr-Sync melden.
+  if (fix.epochUtc > 1700000000UL) {
+    timesync::gpsSync(fix.epochUtc);
+    Serial.printf("[GPS] UTC=%lu an timesync gemeldet (Quelle jetzt '%s')\n",
+                  (unsigned long)fix.epochUtc, timesync::source());
+  }
+  if (fix.valid)
+    Serial.printf("[GPS] FIX: %.6f, %.6f  Sat=%u HDOP=%.1f Alt=%.0fm v=%.1fkm/h\n",
+                  fix.lat, fix.lon, (unsigned)fix.sats, (double)fix.hdop,
+                  (double)fix.altM, (double)fix.speedKmh);
+  else
+    Serial.printf("[GPS] noch kein Positionsfix (zuletzt Sat=%u) — unter freiem Himmel erneut testen.\n",
+                  (unsigned)fix.sats);
+  gps::end();
+  Serial.println("[GPS] Modul aus");
 }
 
 void handleLine(char* line) {
@@ -626,6 +734,8 @@ void handleLine(char* line) {
   }
   if (strcmp(line, "pos") == 0)             { cmdPos(nullptr); return; }
   if (strncmp(line, "pos ", 4) == 0)        { cmdPos(line + 4); return; }
+  if (strcmp(line, "gps") == 0)             { cmdGps(nullptr); return; }
+  if (strncmp(line, "gps ", 4) == 0)        { cmdGps(line + 4); return; }
   if (strcmp(line, "alarm") == 0)           { cmdAlarm(""); return; }
   if (strncmp(line, "alarm ", 6) == 0)      { cmdAlarm(line + 6); return; }
   if (strncmp(line, "public ", 7) == 0) {

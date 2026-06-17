@@ -68,12 +68,20 @@ void cycleDays(int dir) {
   s_buf.dowMask = kDays[idx].mask;
 }
 
+// Signal-Presets, durch die das „Signal"-Feld im Editor zykelt.
+struct SigPreset { uint8_t mask; const char* name; };
+const SigPreset kSig[] = {
+  {alarmclock::SIG_TONE,                                                         "Ton"},
+  {alarmclock::SIG_BLINK,                                                        "Blinken"},
+  {alarmclock::SIG_VIBRA,                                                        "Vibration"},
+  {(uint8_t)(alarmclock::SIG_TONE | alarmclock::SIG_BLINK),                      "Ton+Blink"},
+  {(uint8_t)(alarmclock::SIG_TONE | alarmclock::SIG_BLINK | alarmclock::SIG_VIBRA), "Alle"},
+};
+constexpr int kNumSig = (int)(sizeof(kSig) / sizeof(kSig[0]));
+
 const char* signalLabel(uint8_t sig) {
-  switch (sig) {
-    case alarmclock::SIG_TONE:  return "Ton";
-    case alarmclock::SIG_BLINK: return "Blinken";
-    default:                    return "Beides";
-  }
+  for (int i = 0; i < kNumSig; i++) if (kSig[i].mask == sig) return kSig[i].name;
+  return "Ton+Blink";
 }
 
 // Ziffer ins fokussierte Zeit-Feld tippen (Telefon-Uhr-Logik): zwei Ziffern pro
@@ -201,8 +209,10 @@ void changeField(int f, int dir) {
     case F_MIN:     s_buf.minute = (uint8_t)((s_buf.minute + dir + 60) % 60); break;
     case F_DAYS:    cycleDays(dir); break;
     case F_SIGNAL: {
-      int m = (s_buf.signal >= 1 && s_buf.signal <= 3) ? s_buf.signal : alarmclock::SIG_BOTH;
-      s_buf.signal = (uint8_t)(((m - 1 + dir + 3) % 3) + 1);
+      int idx = 0;
+      for (int i = 0; i < kNumSig; i++) if (kSig[i].mask == s_buf.signal) idx = i;
+      idx = (idx + dir + kNumSig) % kNumSig;
+      s_buf.signal = kSig[idx].mask;
       break;
     }
     case F_ENABLED: s_buf.enabled = !s_buf.enabled; break;

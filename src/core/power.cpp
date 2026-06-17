@@ -151,6 +151,7 @@ void enterStandby() {
   delay(60);                 // Audio-Task das Kommando abarbeiten lassen
   board::dacPower(false);
   board::loraPower(false);
+  board::gpsPower(false);    // falls die Maps-App das GPS noch versorgt hatte
 
   // 1b) Einstellungen auf die SD spiegeln, solange der Bus ruhig ist (Audio
   //     gestoppt, Radio aus) und die Peripherie noch versorgt ist — so bleibt
@@ -300,10 +301,12 @@ void poll() {
     return;
   }
   if (now - s_lastActivity >= (uint32_t)mins * 60000UL) {
-    // Vor dem Auto-Standby (Gerät idle, Audio aus): wenn die Uhr-Qualität
-    // schlecht ist und WLAN-Daten existieren, kurz NTP nachziehen — so schläft
-    // das Gerät mit frischer Uhr ein. No-op sonst. (Beim manuellen Langdruck
-    // bewusst nicht — der Knopf soll sofort reagieren.)
+    // Vor dem Auto-Standby (Gerät idle, Audio aus): bei veralteter Uhr zuerst
+    // GPS-Zeit holen (genau, kein WLAN) — gelingt das, schläft das Gerät mit
+    // satellitengenauer Uhr ein und der folgende NTP-Sync ist via gpsFresh() ein
+    // No-op. Sonst NTP nachziehen, falls WLAN-Daten existieren. No-op bei guter
+    // Uhr. (Beim manuellen Langdruck bewusst nicht — der Knopf reagiert sofort.)
+    timesync::gpsSyncBeforeStandby();
     timesync::syncBeforeStandby();
     // Audio jetzt stoppen, damit der gerade pausierte/laufende Track via
     // noteTrackEnded() noch in die Scrobble-Queue geht — sonst sieht der
