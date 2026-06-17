@@ -119,8 +119,17 @@ async function post(url){
 }
 
 async function del(p){
-  if (!confirm('Wirklich löschen?\n' + p)) return;
-  try { await post('/api/delete?path=' + enc(p)); } catch (e){ alert('Fehler: ' + e.message); }
+  try {
+    // Erst ohne Rückfrage versuchen — Dateien und flache Ordner sind sofort weg.
+    const r = await fetch('/api/delete?path=' + enc(p), {method:'POST'});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.err || r.status);
+    // Server verlangt Bestätigung nur bei Ordnern mit Unterordnern (rekursiv).
+    if (j.confirm){
+      if (!confirm('Ordner mit Unterordnern rekursiv löschen?\n' + p)) return;
+      await post('/api/delete?path=' + enc(p) + '&force=1');
+    }
+  } catch (e){ alert('Fehler: ' + e.message); }
   load();
 }
 

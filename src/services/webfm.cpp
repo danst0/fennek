@@ -253,11 +253,54 @@ void handleUploadDone() {
   else        sendJsonErr(s_upErrCode, s_upErr);
 }
 
+// Hat das Verzeichnis (eine Ebene) mindestens ein Unterverzeichnis? Caller hält
+// spiLock. Entscheidet, ob das Löschen eine Rückfrage braucht.
+bool hasSubdir(const char* path) {
+  File d = SD.open(path);
+  if (!d) return false;
+  bool found = false;
+  File c;
+  while ((c = d.openNextFile())) {
+    bool dir = c.isDirectory();
+    c.close();
+    if (dir) { found = true; break; }
+  }
+  d.close();
+  return found;
+}
+
+// Löscht Datei oder Verzeichnis rekursiv. Caller hält spiLock (während des
+// WLAN-Betriebs ist Audio eh gestoppt, s. webfm-Regel — langes Lock-Halten ok).
+// Robust gegen Iterator-Invalidierung: das Verzeichnis wird pro Kind neu geöffnet
+// und immer das erste Element gegriffen, statt während openNextFile() zu löschen.
+bool rmRecursive(const char* path) {
+  File f = SD.open(path);
+  if (!f) return false;
+  bool isDir = f.isDirectory();
+  f.close();
+  if (!isDir) return SD.remove(path);
+
+  for (;;) {
+    File d = SD.open(path);
+    File c = d.openNextFile();
+    if (!c) { d.close(); break; }
+    char cp[kMaxPath];
+    const char* sep = path[strlen(path) - 1] == '/' ? "" : "/";
+    snprintf(cp, sizeof(cp), "%s%s%s", path, sep, c.name());
+    bool childDir = c.isDirectory();
+    c.close();
+    d.close();
+    if (!(childDir ? rmRecursive(cp) : SD.remove(cp))) return false;
+  }
+  return SD.rmdir(path);
+}
+
 void handleDelete() {
   s_requests++;
   char p[kMaxPath];
   if (!argPath(p, sizeof(p), true)) return;
   if (!board::sdReady()) { sendJsonErr(503, "keine SD-Karte"); return; }
+  bool force = s_server->arg("force") == "1";
 
   spiLock();
   File f = SD.open(p);
@@ -268,12 +311,20 @@ void handleDelete() {
   }
   bool isDir = f.isDirectory();
   f.close();
-  bool ok = isDir ? SD.rmdir(p) : SD.remove(p);   // rmdir nur wenn leer
+
+  // Ordner mit Unterordnern brauchen eine kurze Bestätigung (force=1); Dateien
+  // und flache Ordner (leer oder nur Dateien) werden ohne Rückfrage gelöscht.
+  if (isDir && !force && hasSubdir(p)) {
+    spiUnlock();
+    s_server->send(200, "application/json", "{\"ok\":false,\"confirm\":true}");
+    return;
+  }
+
+  bool ok = rmRecursive(p);
   spiUnlock();
 
   if (ok) { Serial.printf("[WEBFM] Gelöscht: %s\n", p); sendJsonOk(); }
-  else if (isDir) sendJsonErr(409, "Verzeichnis nicht leer");
-  else            sendJsonErr(500, "Loeschen fehlgeschlagen");
+  else    sendJsonErr(500, "Loeschen fehlgeschlagen");
 }
 
 void handleMkdir() {
