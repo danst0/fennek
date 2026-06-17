@@ -54,6 +54,7 @@ bool sendDirectMsg(int contactIdx, const char* text);
 // false, wenn keine fehlgeschlagene DM existiert. Setzt ackState wieder auf "ausstehend".
 bool resendDirect(int contactIdx);
 void sendAdvert();                      // Zero-Hop-Advert ("ich bin hier")
+void sendAdvertFlood();                 // Flood-Advert (mehrhopfähig, erreicht entfernte Nodes)
 
 // --- Hashtag-Channels (Mesh-Rheinland-Konvention) ---------------------------------
 // PSK = sha256("#<name>")[:16] — öffentlich bekannter Schlüssel aus dem Namen.

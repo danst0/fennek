@@ -784,6 +784,13 @@ public:
     if (pkt) sendZeroHop(pkt);
   }
 
+  // Wie sendSelfAdvertNow, aber als Flood (mehrhopfähig) — erreicht auch Nodes,
+  // die nicht direkter Funknachbar sind (z. B. eine Bridge 1 Hop entfernt).
+  void sendSelfAdvertFlood() {
+    auto pkt = buildSelfAdvert();
+    if (pkt) sendFlood(pkt);
+  }
+
   bool sendPublic(const char* text) {
     if (!_public) return false;
     mesh::GroupChannel ch = _public->channel;
@@ -1026,6 +1033,13 @@ void sendAdvert() {
   if (!s_ready) return;
   spiLock();
   s_mesh->sendSelfAdvertNow();
+  spiUnlock();
+}
+
+void sendAdvertFlood() {
+  if (!s_ready) return;
+  spiLock();
+  s_mesh->sendSelfAdvertFlood();
   spiUnlock();
 }
 

@@ -20,8 +20,8 @@ using gui::Rect;
 constexpr int W      = EINK_W;
 constexpr int TOP    = appmgr::CONTENT_Y;     // 24
 constexpr int ROW_H  = 26;
-constexpr int kSoundRow = alarmclock::kMaxAlarms;       // Klingelton-Zeile (= unterste)
-constexpr int kLastRow  = kSoundRow;
+constexpr int kLastRow  = alarmclock::kMaxAlarms - 1;   // nur die Wecker-Zeilen
+// Klingelton bleibt per Konsole `alarm sound <pfad>` setzbar; Default = Piepton.
 
 const Rect kBack    {6, 270, 104, 42};
 const Rect kSnooze  {12, 232, 100, 56};       // Klingel-Bildschirm
@@ -44,8 +44,6 @@ int  s_sel     = 0;              // LIST: 0..kSoundRow ; EDIT: 0..F_COUNT-1
 int  s_editIdx = -1;             // welcher Wecker editiert wird
 alarmclock::Alarm s_buf = {};    // Arbeitskopie im Editor
 
-bool s_textEdit = false;         // Klingelton-Pfad tippen
-char s_text[TRACK_PATH_LEN] = "";
 int  s_typeCount = 0;            // getippte Ziffern im aktuellen Zeit-Feld (0..2)
 
 bool s_wasRinging = false;       // Flankenerkennung fürs Auto-Aufpoppen
@@ -153,33 +151,22 @@ void drawListRow(Adafruit_GFX& g, int i, int y) {
   bool sel = (s_sel == i);
   g.setTextSize(2);
   char line[48];
-  if (i == kSoundRow) {
-    char snd[TRACK_PATH_LEN];
-    alarmclock::soundPath(snd, sizeof(snd));
-    const char* base = snd[0] ? (strrchr(snd, '/') ? strrchr(snd, '/') + 1 : snd) : "erster Titel";
+  alarmclock::Alarm a = alarmclock::get(i);
+  if (a.enabled) {
+    char days[32];
+    daysLabel(a.dowMask, days, sizeof(days));
+    snprintf(line, sizeof(line), "%02u:%02u", (unsigned)a.hour, (unsigned)a.minute);
     g.setCursor(10, y + 6);
-    gui::print(g, "Ton:");
+    gui::print(g, line);
     g.setTextSize(1);
-    g.setCursor(74, y + 11);
-    gui::print(g, base);
+    g.setCursor(96, y + 11);
+    gui::print(g, days);
   } else {
-    alarmclock::Alarm a = alarmclock::get(i);
-    if (a.enabled) {
-      char days[32];
-      daysLabel(a.dowMask, days, sizeof(days));
-      snprintf(line, sizeof(line), "%02u:%02u", (unsigned)a.hour, (unsigned)a.minute);
-      g.setCursor(10, y + 6);
-      gui::print(g, line);
-      g.setTextSize(1);
-      g.setCursor(96, y + 11);
-      gui::print(g, days);
-    } else {
-      g.setCursor(10, y + 6);
-      gui::print(g, "--:--");
-      g.setTextSize(1);
-      g.setCursor(96, y + 11);
-      gui::print(g, i18n::tr(i18n::Str::StandbyOff));   // "Aus"
-    }
+    g.setCursor(10, y + 6);
+    gui::print(g, "--:--");
+    g.setTextSize(1);
+    g.setCursor(96, y + 11);
+    gui::print(g, i18n::tr(i18n::Str::StandbyOff));   // "Aus"
   }
   g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
   if (sel) {
@@ -254,28 +241,10 @@ void onRingKey(char k) {
 }
 
 void onListKey(char k) {
-  if (s_textEdit) {
-    if (k == '\r') { alarmclock::setSoundPath(s_text); s_textEdit = false; markDirty(); return; }
-    if (k == 0x02) { s_textEdit = false; markDirty(); return; }   // Mic = abbrechen
-    if (k == '\b') {
-      int len = strlen(s_text);
-      if (len > 0) s_text[len - 1] = '\0'; else s_textEdit = false;
-      markDirty();
-      return;
-    }
-    if (k >= 32 && k < 127) {
-      int len = strlen(s_text);
-      if (len < (int)sizeof(s_text) - 1) { s_text[len] = k; s_text[len + 1] = '\0'; markDirty(); }
-    }
-    return;
-  }
   switch (k) {
     case 'w': case 'W': s_sel = (s_sel + kLastRow) % (kLastRow + 1); markDirty(); break;
     case 's': case 'S': s_sel = (s_sel + 1) % (kLastRow + 1); markDirty(); break;
-    case '\r':
-      if (s_sel == kSoundRow) { alarmclock::soundPath(s_text, sizeof(s_text)); s_textEdit = true; markDirty(); }
-      else openEdit(s_sel);
-      break;
+    case '\r':          openEdit(s_sel); break;
     case '\b': case 'q': case 'Q': appmgr::goHome(); break;
     default: break;
   }
@@ -301,13 +270,11 @@ void onRingTouch(int x, int y) {
 }
 
 void onListTouch(int x, int y) {
-  if (s_textEdit) return;
   if (kBack.hit(x, y)) { appmgr::goHome(); return; }
   int row = (y - TOP) / ROW_H;
   if (row < 0 || row > kLastRow) return;
   if (row != s_sel) { s_sel = row; markDirty(); return; }   // erster Tap wählt
-  if (row == kSoundRow) { alarmclock::soundPath(s_text, sizeof(s_text)); s_textEdit = true; markDirty(); }
-  else openEdit(row);
+  openEdit(row);
 }
 
 void onEditTouch(int x, int y) {
@@ -324,7 +291,7 @@ class AlarmsApp : public App {
   const char* name() const override { return i18n::tr(i18n::Str::AppAlarm); }
 
   void onEnter() override {
-    if (!alarmclock::ringing()) { s_screen = LIST; s_sel = 0; s_textEdit = false; }
+    if (!alarmclock::ringing()) { s_screen = LIST; s_sel = 0; }
   }
 
   void onLeave() override {
@@ -375,8 +342,7 @@ class AlarmsApp : public App {
     gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
     g.setTextSize(1);
     g.setCursor(120, 286);
-    if (s_textEdit) gui::print(g, i18n::tr(i18n::Str::HintEnterSave));
-    else            gui::print(g, "Enter: bearbeiten");
+    gui::print(g, "Enter: bearbeiten");
     g.setCursor(120, 300);
     gui::print(g, "Fennek " FENNEK_VERSION);
   }
