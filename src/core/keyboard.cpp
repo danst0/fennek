@@ -29,9 +29,13 @@ constexpr uint32_t kReptRateMs  = 150;
 
 bool s_ready = false;
 
-// Sticky-Modifier (Verhalten aus dem Legacy-Treiber übernommen)
+// Sticky-Modifier (Verhalten aus dem Legacy-Treiber übernommen). Wie Shift haben
+// auch Alt und Sym ein „gehalten"-Tracking: kurz getippt = sticky für EINE Taste,
+// gehalten = wirkt auf ALLE Tasten bis zum Loslassen (z. B. „073" mit gehaltenem
+// Alt für mehrere Ziffern, ohne Alt zwischendurch loszulassen).
 bool s_shiftActive = false, s_shiftHeld = false, s_shiftUsed = false;
-bool s_altActive = false, s_symActive = false;
+bool s_altActive = false, s_altHeld = false, s_altUsed = false;
+bool s_symActive = false, s_symHeld = false, s_symUsed = false;
 
 // Repeat-Zustand: zuletzt gedrückte (noch gehaltene) Taste
 uint8_t  s_heldCode   = 0;
@@ -98,14 +102,24 @@ char processEvent(uint8_t ev) {
       if (s_shiftUsed) s_shiftActive = false; // gehaltenes Shift verbraucht
       s_shiftUsed = false;
     }
+    if (code == 30) {                         // Alt losgelassen
+      s_altHeld = false;
+      if (s_altUsed) s_altActive = false;
+      s_altUsed = false;
+    }
+    if (code == 32) {                         // Sym losgelassen
+      s_symHeld = false;
+      if (s_symUsed) s_symActive = false;
+      s_symUsed = false;
+    }
     if (code == s_heldCode) s_heldCode = 0;   // Repeat beenden
     return 0;
   }
 
-  // Modifier setzen (sticky).
+  // Modifier setzen (sticky + Held-Tracking).
   if (code == 35 || code == 31) { s_shiftActive = true; s_shiftHeld = true; s_shiftUsed = false; return 0; }
-  if (code == 30) { s_altActive = true; return 0; }
-  if (code == 32) { s_symActive = true; return 0; }
+  if (code == 30) { s_altActive = true; s_altHeld = true; s_altUsed = false; return 0; }
+  if (code == 32) { s_symActive = true; s_symHeld = true; s_symUsed = false; return 0; }
 
   char c = 0;
   if (code == 22) {                            // $-Taste
@@ -116,9 +130,11 @@ char processEvent(uint8_t ev) {
     else c = 0x02;
   } else if (s_altActive || s_symActive) {     // Alt wirkt wie Sym (Aufdruck)
     c = symChar(code);
-    s_altActive = false;
-    s_symActive = false;
     if (!c) c = baseChar(code);
+    // Modifier verbrauchen — gehalten bleibt aktiv (gilt für Folgetasten),
+    // getippt wird nach dieser einen Taste gelöscht.
+    if (s_altActive) { if (s_altHeld) s_altUsed = true; else s_altActive = false; }
+    if (s_symActive) { if (s_symHeld) s_symUsed = true; else s_symActive = false; }
   } else {
     c = baseChar(code);
     if (c && s_shiftActive) {

@@ -24,8 +24,8 @@ constexpr int kSoundRow = alarmclock::kMaxAlarms;       // Klingelton-Zeile (= u
 constexpr int kLastRow  = kSoundRow;
 
 const Rect kBack    {6, 270, 104, 42};
-const Rect kSnooze  {12, 232, 100, 56};       // Klingel-Bildschirm
-const Rect kStop    {128, 232, 100, 56};
+const Rect kSnooze  {6, 232, 130, 56};        // Klingel-Bildschirm („Schlummer" = 9 Zeichen)
+const Rect kStop    {142, 232, 92, 56};
 
 // Wiederholungs-Presets; eigene (per Konsole gesetzte) Masken zeigen "eigen".
 struct DayPreset { const char* name; uint8_t mask; };
