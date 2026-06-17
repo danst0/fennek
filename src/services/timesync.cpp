@@ -18,6 +18,11 @@ namespace {
 // Untergrenze für plausible Echtzeit (≈ 09.06.2026, Build-Ära) — alles davor ist
 // Kaltstart-Müll (ESP32 startet ohne gesetzte Zeit ~1970).
 constexpr uint32_t kSaneEpoch       = 1781000000UL;
+// Obergrenze gegen korrupte Zukunfts-Zeitstempel (Mesh-Advert mit defekter Uhr,
+// Falle #3) UND den 2038-Signed-Overflow von time_t: ab ~2038 ist jede Zeit für
+// dieses Gerät implausibel. Solche Werte werden verworfen, nie übernommen oder
+// ins NVS gesichert (sonst verewigt sich ein Müllwert über den NVS-Fallback).
+constexpr uint32_t kMaxSaneEpoch    = 2145916800UL;  // 2038-01-01 UTC
 constexpr uint32_t kStaleSeconds    = 300;        // ~5 min ⇒ "schlecht"
 constexpr uint16_t kDefaultPpm      = 2000;       // konservativ, bis gemessen
 constexpr uint16_t kMinPpm          = 5;
@@ -138,6 +143,11 @@ bool blockingNtp() {
 
 }  // namespace
 
+// Liegt eine Epoche im plausiblen Echtzeit-Fenster (≈ jetzt … 2038)?
+static inline bool plausibleEpoch(uint32_t e) {
+  return e > kSaneEpoch && e < kMaxSaneEpoch;
+}
+
 namespace timesync {
 
 void begin() {
@@ -147,15 +157,23 @@ void begin() {
   s_driftPpm = ppm ? ppm : kDefaultPpm;
 
   uint32_t sys = (uint32_t)time(nullptr);
-  if (sys < kSaneEpoch) {
-    // Kaltstart (Stromausfall/Reset/Reflash): aus NVS wiederherstellen.
+  if (!plausibleEpoch(sys)) {
+    // Kaltstart (Stromausfall/Reset/Reflash, sys ~1970) ODER korrupter Zukunfts-
+    // wert (≥2038, z. B. von einem defekten Advert): in beiden Fällen NICHT
+    // übernehmen, sondern aus NVS wiederherstellen — und einen impliziten
+    // Müll-Systemwert auf 0 zurücksetzen, damit poll()/Wecker ihn nicht nutzen.
+    if (sys >= kMaxSaneEpoch) {
+      Serial.printf("[TIME] Implausible Systemzeit %lu (>=2038) verworfen\n", (unsigned long)sys);
+      struct timeval tv = { (time_t)0, 0 };
+      settimeofday(&tv, nullptr);
+    }
     uint32_t saved = settings::lastTime();
-    if (saved > kSaneEpoch) {
+    if (plausibleEpoch(saved)) {
       mesh_client::setRtcTime(saved, false);   // nicht autoritativ — darf korrigiert werden
       s_source = "NVS";
       Serial.printf("[TIME] Uhr aus NVS wiederhergestellt: %lu\n", (unsigned long)saved);
     } else {
-      Serial.println("[TIME] Kaltstart ohne gespeicherte Zeit — warte auf Mesh/NTP");
+      Serial.println("[TIME] Kaltstart ohne plausible gespeicherte Zeit — warte auf Mesh/NTP");
     }
   } else {
     // Systemzeit hat (Deep Sleep) überlebt — übernehmen, aber als unbestätigt
@@ -190,7 +208,7 @@ void poll() {
 
   // NVS-Fallback gedrosselt sichern.
   uint32_t cur = now();
-  if (cur > kSaneEpoch && millis() - s_lastNvsMs > kNvsSaveMs) {
+  if (plausibleEpoch(cur) && millis() - s_lastNvsMs > kNvsSaveMs) {
     s_lastNvsMs = millis();
     settings::setLastTime(cur);
   }
@@ -226,7 +244,7 @@ void syncBeforeStandby() {
 
 void onExternalSync(uint32_t epoch, const char* src) {
   // Die Uhr wurde bereits vom Aufrufer (mesh_client) gesetzt — hier nur Freshness.
-  if (epoch <= kSaneEpoch) return;
+  if (!plausibleEpoch(epoch)) return;
   s_lastSyncEpoch  = epoch;
   s_lastSyncWasNtp = false;
   s_source         = src;
@@ -240,7 +258,7 @@ void applyTimezone() {
 }
 
 void setManualTime(uint32_t utc) {
-  if (utc <= kSaneEpoch) return;
+  if (!plausibleEpoch(utc)) return;
   mesh_client::setRtcTime(utc, true);
   s_lastSyncEpoch  = utc;
   s_lastSyncWasNtp = false;          // manuell ist nicht für Drift-Lernen tauglich

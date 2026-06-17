@@ -282,8 +282,8 @@ void meshEnsure() {
   s_mesh.cr    = s_prefs.getUChar("mcr", kMeshDefaults.cr);
   s_mesh.txDbm = s_prefs.getUChar("mtx", kMeshDefaults.txDbm);
   if (s_prefs.isKey("mname")) s_prefs.getString("mname", s_meshName, sizeof(s_meshName));
-  s_meshLat = s_prefs.getDouble("mlat", 0.0);
-  s_meshLon = s_prefs.getDouble("mlon", 0.0);
+  if (s_prefs.isKey("mlat")) s_meshLat = s_prefs.getDouble("mlat", 0.0);
+  if (s_prefs.isKey("mlon")) s_meshLon = s_prefs.getDouble("mlon", 0.0);
 }
 
 }  // namespace

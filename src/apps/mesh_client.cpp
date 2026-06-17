@@ -319,6 +319,13 @@ class SystemRTCClock : public mesh::RTCClock {
 public:
   uint32_t getCurrentTime() override { return (uint32_t)time(nullptr); }
   void setCurrentTime(uint32_t t) override {
+    // Obergrenze gegen korrupte Zukunfts-Zeitstempel (defekter Advert, Falle #3)
+    // und den 2038-Signed-Overflow von time_t: implausible Zeiten (>=2038) nie
+    // übernehmen — sonst verewigt sich der Müll über den NVS-Fallback.
+    if (t >= 2145916800UL) {   // 2038-01-01 UTC
+      Serial.printf("[TIME] Verwerfe implausible Uhrzeit %lu (>=2038)\n", (unsigned long)t);
+      return;
+    }
     struct timeval tv = { (time_t)t, 0 };
     settimeofday(&tv, nullptr);
   }
@@ -475,7 +482,13 @@ protected:
     static uint32_t s_behind[3]   = {0, 0, 0};  // gesammelte „hinter uns"-Timestamps
     static int      s_behindCnt   = 0;
     static uint32_t s_fwdCandidate = 0;         // wartender großer Vorwärtssprung
-    if (t > kSaneEpoch) {
+    // Zeit-Quellen-Priorität: Sind WLAN-Zugangsdaten hinterlegt, kommt die Uhr
+    // ausschließlich über NTP (services/timesync). Mesh-Adverts dürfen sie dann
+    // NICHT stellen — ein einzelner defekter Advert hatte uns sonst auf Jahr 2101
+    // gezogen. Nur OHNE WLAN ist das Mesh die einzige Zeitquelle und übernimmt.
+    char wssid[33];
+    settings::wifiSsid(wssid, sizeof(wssid));
+    if (wssid[0] == '\0' && t > kSaneEpoch) {
       bool smallFwd = (t > now && t - now < 3600);
       if (now < kSaneEpoch || smallFwd) {
         getRTCClock()->setCurrentTime(t + 1);

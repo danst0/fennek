@@ -56,7 +56,7 @@ void ensureLoaded() {
     key[1] = '0' + i;
     s_alarms[i] = unpackAlarm(s_prefs.getUInt(key, 0));
   }
-  s_prefs.getString("snd", s_soundPath, sizeof(s_soundPath));
+  if (s_prefs.isKey("snd")) s_prefs.getString("snd", s_soundPath, sizeof(s_soundPath));
 }
 
 void persist(int i) {
