@@ -25,11 +25,17 @@ namespace alarmclock {
 
 constexpr int kMaxAlarms = 4;
 
+// Signal-Modus beim Klingeln: Bitmaske Ton/Blinken (pro Wecker).
+constexpr uint8_t SIG_TONE  = 1;
+constexpr uint8_t SIG_BLINK = 2;
+constexpr uint8_t SIG_BOTH  = 3;
+
 struct Alarm {
   bool    enabled;
   uint8_t hour;      // 0..23 (lokale Zeit)
   uint8_t minute;    // 0..59
   uint8_t dowMask;   // bit0=Mo .. bit6=So; 0 = täglich
+  uint8_t signal;    // SIG_TONE/BLINK/BOTH (1..3); 0 wird als BOTH gelesen
 };
 
 void begin();        // lädt Wecker aus NVS
