@@ -2,18 +2,19 @@
 - [ ] ct-Bücher löschen  (manuelle SD-Aktion am Gerät — kein Firmware-Feature;
       jetzt via Konsole `rm /books/<calibre-pfad>` möglich, auch Überlängenpfade)
 
-# Verifikation am Gerät (Build OK) — neue Features 17.06.
-- [ ] Mesh-Telemetrie: `pos 51.5 7.5` setzen, `advert`, am Web-Client
-      (meshcore.dumke.me / dumke-Node) prüfen, dass Position + Akku ankommen.
-      Empfang: `contacts` zeigt `@lat,lon` bei Nodes, die Position senden.
-- [ ] Wecker headless: `time set …`, `alarm 0 <jetzt+2min> taeglich`, `alarm`
-      listet; warten → klingelt (erster Titel/`alarm sound <pfad>`); `alarm stop`.
-      `alarm test`/`alarm snooze` prüfen.
-- [ ] Wecker Deep-Sleep-Wake: Wecker auf jetzt+3 min, `sleep` (auf Akku!),
-      Gerät soll zur Weckzeit von selbst aufwachen + klingeln (Boot-Log
-      „Wecker-Wake — fahre voll hoch"). Achtung: Deep Sleep trennt USB.
-- [ ] Wecker-App-UI: Kachel „Wecker" (Launcher jetzt 2×5), Editor (A/D), Klingel-
-      Screen Schlummer/Stop. Launcher-Layout auf 10 Kacheln optisch prüfen.
+# Verifikation am Gerät — neue Features 17.06. (v2.0.x)
+- [x] Wecker headless: `time set`, `alarm 0 <hh:mm>`, Liste, geplantes Klingeln
+      (Minuten-Match), `alarm test`/`stop` — alles am Gerät grün.
+- [x] Wecker Deep-Sleep-Wake: Gerät aus dem Standby (`sleep`) zur Weckzeit von
+      SELBST aufgewacht + geklingelt (17.06., sogar an USB). Kernmechanismus
+      bestätigt (enterStandby→Timer auf Weckzeit, handleTimerWake→Vollboot, poll).
+- [x] Wecker-Signal pro Wecker (Ton/Blinken/Beides): `mode blink` feuerte nur
+      Backlight, kein Ton — am Gerät bestätigt. Piepton laut, Backlight blinkt.
+- [x] Wecker-App-UI: Kachel (Launcher 2×5), Editor mit Ziffern-Eingabe der
+      Weckzeit (Alt-Halten-Fix), Signal-Feld, „+9 min"-Schlummer-Button.
+- [x] Mesh-Telemetrie: `pos` setzen/lesen/persistieren am Gerät bestätigt.
+- [ ] Mesh-Telemetrie Empfang: am Web-Client (meshcore.dumke.me) prüfen, dass
+      Position + Akku ankommen; `contacts` zeigt `@lat,lon` fremder Nodes. (offen)
 - [x] Fennek-Bild Credit: geschwungener "by Dr. Daniel Dumke" am Schwanz war zu
       klein -> wieder entfernt (Original-Bild). Falls gewuenscht: groesser/anders.
       Tools dafuer liegen unter tools/sleepcredit.py + tools/sleepimg.py.
