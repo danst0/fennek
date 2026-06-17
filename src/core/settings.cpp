@@ -271,6 +271,7 @@ constexpr MeshParams kMeshDefaults = {869.618f, 62.5f, 8, 5, 22};
 bool       s_meshLoaded = false;
 MeshParams s_mesh = kMeshDefaults;
 char       s_meshName[32] = "T-Deck";
+double     s_meshLat = 0.0, s_meshLon = 0.0;
 
 void meshEnsure() {
   if (s_meshLoaded || !s_open) return;
@@ -281,6 +282,8 @@ void meshEnsure() {
   s_mesh.cr    = s_prefs.getUChar("mcr", kMeshDefaults.cr);
   s_mesh.txDbm = s_prefs.getUChar("mtx", kMeshDefaults.txDbm);
   if (s_prefs.isKey("mname")) s_prefs.getString("mname", s_meshName, sizeof(s_meshName));
+  s_meshLat = s_prefs.getDouble("mlat", 0.0);
+  s_meshLon = s_prefs.getDouble("mlon", 0.0);
 }
 
 }  // namespace
@@ -313,6 +316,19 @@ void setMeshName(const char* name) {
   strncpy(s_meshName, name, sizeof(s_meshName) - 1);
   s_meshName[sizeof(s_meshName) - 1] = '\0';
   s_prefs.putString("mname", s_meshName);
+}
+
+void meshPos(double* lat, double* lon) {
+  meshEnsure();
+  if (lat) *lat = s_meshLat;
+  if (lon) *lon = s_meshLon;
+}
+
+void setMeshPos(double lat, double lon) {
+  meshEnsure();
+  if (!s_open) return;
+  if (lat != s_meshLat) { s_meshLat = lat; s_prefs.putDouble("mlat", lat); }
+  if (lon != s_meshLon) { s_meshLon = lon; s_prefs.putDouble("mlon", lon); }
 }
 
 // --- WLAN-Zugangsdaten ----------------------------------------------------------

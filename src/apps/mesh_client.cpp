@@ -26,6 +26,7 @@
 #include <helpers/SimpleMeshTables.h>
 #include <helpers/IdentityStore.h>
 #include <helpers/BaseChatMesh.h>
+#include <helpers/AdvertDataHelpers.h>   // AdvertDataBuilder (Self-Advert mit Telemetrie)
 #include <helpers/radiolib/CustomSX1262.h>
 #include <helpers/radiolib/CustomSX1262Wrapper.h>
 
@@ -676,6 +677,7 @@ public:
 
     // Node-Name kommt aus den NVS-Settings (Settings-App), nicht aus SPIFFS.
     settings::meshName(_prefs.node_name, sizeof(_prefs.node_name));
+    settings::meshPos(&_prefs.node_lat, &_prefs.node_lon);
 
     loadContacts();
     bootstrapRTCfromContacts();
@@ -685,6 +687,11 @@ public:
   void setName(const char* name) {
     strncpy(_prefs.node_name, name, sizeof(_prefs.node_name) - 1);
     _prefs.node_name[sizeof(_prefs.node_name) - 1] = '\0';
+  }
+
+  void setPosition(double lat, double lon) {
+    _prefs.node_lat = lat;
+    _prefs.node_lon = lon;
   }
 
   // Hashtag-Channel beitreten (Mesh-Rheinland-Konvention):
@@ -738,8 +745,29 @@ public:
     spiUnlock();
   }
 
+  // Baut ein Self-Advert mit Akku-Telemetrie (FEAT1 = Spannung in mV, FEAT2 =
+  // Ladezustand in % im Low-Byte + Lade-Bit als MSB). Die Position hängt nur an,
+  // wenn gesetzt (0/0 gilt als unbestimmt — sonst würden wir "Null Island"
+  // annoncieren). Eigener Builder statt createSelfAdvert(), damit die vendored
+  // lib/meshcore unangetastet bleibt; self_id + createAdvert() erbt MeshClient
+  // aus der Mesh-Basis. Der Encoder lässt ein FEAT-Feld weg, wenn es 0 ist —
+  // dann liest der Empfänger 0 (mV/% nicht verfügbar), was akzeptabel ist.
+  mesh::Packet* buildSelfAdvert() {
+    bool hasPos = (_prefs.node_lat != 0.0 || _prefs.node_lon != 0.0);
+    AdvertDataBuilder builder = hasPos
+        ? AdvertDataBuilder(ADV_TYPE_CHAT, _prefs.node_name, _prefs.node_lat, _prefs.node_lon)
+        : AdvertDataBuilder(ADV_TYPE_CHAT, _prefs.node_name);
+    uint16_t mv = battery::milliVolts();
+    if (mv) builder.setFeat1(mv);
+    uint16_t feat2 = (uint16_t)battery::percent() | (battery::charging() ? 0x8000 : 0);
+    if (feat2) builder.setFeat2(feat2);
+    uint8_t app_data[MAX_ADVERT_DATA_SIZE];
+    uint8_t len = builder.encodeTo(app_data);
+    return createAdvert(self_id, app_data, len);
+  }
+
   void sendSelfAdvertNow() {
-    auto pkt = createSelfAdvert(_prefs.node_name, _prefs.node_lat, _prefs.node_lon);
+    auto pkt = buildSelfAdvert();
     if (pkt) sendZeroHop(pkt);
   }
 
@@ -865,7 +893,7 @@ bool begin() {
 
   // Boot-Advert mit etwas Verzögerung (Zero-Hop folgt auf Nutzeraktion).
   spiLock();
-  auto pkt = s_mesh->createSelfAdvert(s_mesh->name());
+  auto pkt = s_mesh->buildSelfAdvert();
   if (pkt) s_mesh->sendFlood(pkt, 1500);
   spiUnlock();
   return true;
@@ -1076,12 +1104,31 @@ bool contactDetail(int i, uint8_t* hops, uint32_t* lastSeen, uint8_t* type) {
   return true;
 }
 
+// Position eines Kontakts aus dem zuletzt empfangenen Advert (0/0 = keine
+// bekannt). gps_lat/gps_lon füllt die lib beim Advert-Empfang (×1E6).
+bool contactPos(int i, double* lat, double* lon) {
+  if (!s_ready) return false;
+  ContactInfo c;
+  if (!s_mesh->getContactByIdx(i, c)) return false;
+  if (c.gps_lat == 0 && c.gps_lon == 0) return false;
+  if (lat) *lat = c.gps_lat / 1000000.0;
+  if (lon) *lon = c.gps_lon / 1000000.0;
+  return true;
+}
+
 const char* nodeName() { return s_ready ? s_mesh->name() : "-"; }
 
 void setNodeName(const char* name) {
   if (!name || !name[0]) return;
   settings::setMeshName(name);
   if (s_ready) s_mesh->setName(name);
+}
+
+void nodePos(double* lat, double* lon) { settings::meshPos(lat, lon); }
+
+void setNodePosition(double lat, double lon) {
+  settings::setMeshPos(lat, lon);           // persistiert auch ohne aktives Mesh
+  if (s_ready) s_mesh->setPosition(lat, lon);
 }
 
 void applyRadioParams() {
