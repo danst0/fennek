@@ -241,6 +241,8 @@ uint32_t nextDueEpoch(uint32_t from) {
 
 bool ringing() { return s_ringing; }
 
+uint32_t snoozeMinutes() { return kSnoozeMinutes; }
+
 void fireNow() { startRing("Test", alarmclock::SIG_BOTH); }
 
 // Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight aus.
