@@ -61,6 +61,7 @@ void cmdHelp() {
   Serial.println("[CON]   battlog           - Akku-/Aktivitaets-Log (BATTLOG) dumpen");
   Serial.println("[CON]   i2cscan           - I2C-Bus abklopfen (RTC auf 0x51?)");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
+  Serial.println("[CON]   rm <pfad>         - Datei/Ordner rekursiv loeschen (auch ueberlange Calibre-Pfade)");
   Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
   Serial.println("[CON]   wifi ssid <name>  - WLAN-SSID setzen (NVS)");
   Serial.println("[CON]   wifi pass <pw>    - WLAN-Passwort setzen (NVS)");
@@ -135,6 +136,44 @@ void cmdLs(const char* path) {
   d.close();
   spiUnlock();
   Serial.printf("[CON] %d Eintrag/Einträge in %s\n", n, path);
+}
+
+// Rekursives Löschen für die Konsole. Eigener großer Pfadpuffer (512 statt der
+// 192er-WebFM-Puffer), weil Calibre-Dateinamen den Pfad auf >240 Zeichen treiben
+// — die einzelnen Pfad-Komponenten bleiben aber unter dem FATFS-Limit (255), nur
+// die festen Firmware-Puffer waren zu klein. f.name() liefert in arduino-esp32
+// 2.0.x den Basisnamen, daher Pfad selbst zusammensetzen. Aufruf unter spiLock!
+bool rmTree(const char* path) {
+  File f = SD.open(path);
+  if (!f) return false;
+  if (!f.isDirectory()) { f.close(); return SD.remove(path); }
+  bool ok = true;
+  File c;
+  while (ok && (c = f.openNextFile())) {
+    char child[512];
+    snprintf(child, sizeof(child), "%s/%s", path, c.name());
+    bool isDir = c.isDirectory();
+    c.close();
+    ok = isDir ? rmTree(child) : SD.remove(child);
+  }
+  f.close();
+  return ok && SD.rmdir(path);
+}
+
+void cmdRm(const char* path) {
+  if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
+  // Sicherheitsnetz: keine Wurzel-/Mountpunkt-Löschung.
+  if (path[0] != '/' || strlen(path) < 2 || strcmp(path, "/sd") == 0) {
+    Serial.println("[CON] Ungueltiger Pfad");
+    return;
+  }
+  spiLock();
+  bool exists = SD.exists(path);
+  bool ok = exists && rmTree(path);
+  spiUnlock();
+  if (!exists)   Serial.printf("[CON] '%s' existiert nicht\n", path);
+  else if (ok)   Serial.printf("[CON] Geloescht: %s\n", path);
+  else           Serial.printf("[CON] Loeschen (teilweise) fehlgeschlagen: %s\n", path);
 }
 
 // Letzte ~2 KB des SD-Nachrichten-Logs ausgeben.
@@ -368,6 +407,7 @@ void handleLine(char* line) {
   if (strcmp(line, "i2cscan") == 0)         { cmdI2cScan(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
+  if (strncmp(line, "rm ", 3) == 0)         { cmdRm(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
   if (strcmp(line, "notes") == 0)           { notes_app::debugSmoke(); return; }
   if (strncmp(line, "wifi ssid ", 10) == 0) {
