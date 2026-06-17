@@ -357,34 +357,59 @@ void drawList(Adafruit_GFX& g) {
 }
 
 // --- Zeichnen: Editor --------------------------------------------------------
-// Puffer in den Zeilen-Ring umbrechen (an '\n' und an s_editCols) und das
-// sichtbare Fenster (letzte s_editRows Zeilen, Anhänge-Modus) festhalten:
-// Zeilenzahl/erste sichtbare Zeile/y der untersten Zeile. Die Drei dienen dem
-// Schnellrefresh, um Struktur-/Scroll-Wechsel von reinem Tippen zu trennen.
+// Puffer in den Zeilen-Ring umbrechen und das sichtbare Fenster (letzte
+// s_editRows Zeilen, Anhänge-Modus) festhalten: Zeilenzahl/erste sichtbare
+// Zeile/y der untersten Zeile. Die Drei dienen dem Schnellrefresh, um
+// Struktur-/Scroll-Wechsel von reinem Tippen zu trennen.
 // Ring auf die MAX-Werte (Schriftgröße 1) dimensioniert; aktiv genutzt werden
 // nur s_editRows/s_editCols (s. applyFontScale).
 char s_ring[EDIT_ROWS_MAX][EDIT_COLS_MAX + 2];
 
+// Wort-Umbruch: ein Wort, das nicht mehr in die Zeile passt, wandert komplett
+// in die nächste (statt mitten im Wort zu trennen). Überlange Wörter (> eine
+// Zeile) werden weiterhin hart umgebrochen. Notizen sind reines ASCII
+// (s. onEditKey), daher gilt Spalte == Byte.
 void computeLayout() {
-  int total = 0;   // Index der aktuellen (Teil-)Zeile im Ring
-  int col = 0;
+  int  total = 0;          // Index der aktuellen Zeile im Ring
+  int  col   = 0;          // bereits platzierte Spalten der aktuellen Zeile
+  bool fromNewline = true; // Zeilenanfang kommt von '\n'/Pufferstart (nicht von
+                           // weichem Umbruch) -> führende Leerzeichen bleiben
+  char word[EDIT_COLS_MAX + 2];
+  int  wlen = 0;
   s_ring[0][0] = '\0';
+
+  auto endLine = [&](bool soft) {
+    s_ring[total % s_editRows][col] = '\0';
+    total++; col = 0;
+    s_ring[total % s_editRows][0] = '\0';
+    fromNewline = !soft;
+  };
+  auto placeWord = [&]() {
+    if (wlen == 0) return;
+    if (col > 0 && col + wlen > s_editCols) endLine(true);   // weicher Umbruch
+    for (int j = 0; j < wlen; j++) s_ring[total % s_editRows][col++] = word[j];
+    wlen = 0;
+  };
+
   for (int i = 0; i < s_len; i++) {
     char c = s_buf[i];
     if (c == '\r') continue;
-    if (c == '\n') {
-      s_ring[total % s_editRows][col] = '\0';
-      total++; col = 0;
-      s_ring[total % s_editRows][0] = '\0';
+    if (c == '\n') { placeWord(); endLine(false); continue; }
+    if (c == ' ') {
+      placeWord();
+      // Trenn-Leerzeichen nur setzen, wenn Platz ist und es kein weicher
+      // Zeilenanfang ist (sonst beginnt eine umgebrochene Zeile mit Space).
+      if (col < s_editCols && (col > 0 || fromNewline))
+        s_ring[total % s_editRows][col++] = ' ';
       continue;
     }
-    if (col >= s_editCols) {
-      s_ring[total % s_editRows][col] = '\0';
-      total++; col = 0;
-    }
-    s_ring[total % s_editRows][col++] = c;
+    if (wlen >= s_editCols) placeWord();   // überlanges Wort: hart umbrechen
+    word[wlen++] = c;
   }
-  // Cursor an die aktuelle Zeile hängen.
+  placeWord();
+
+  // Cursor an die aktuelle Position hängen (auf neue Zeile, falls die volle).
+  if (col >= s_editCols) endLine(true);
   s_ring[total % s_editRows][col++] = '_';
   s_ring[total % s_editRows][col]   = '\0';
 

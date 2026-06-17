@@ -58,6 +58,7 @@ void cmdHelp() {
   Serial.println("[CON]   chan <name> <txt> - Nachricht an Hashtag-Kanal");
   Serial.println("[CON]   msgs              - Nachrichten-Verlauf dumpen");
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
+  Serial.println("[CON]   battlog           - Akku-/Aktivitaets-Log (BATTLOG) dumpen");
   Serial.println("[CON]   i2cscan           - I2C-Bus abklopfen (RTC auf 0x51?)");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
   Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
@@ -158,6 +159,42 @@ void cmdMeshLog() {
   buf[rd] = '\0';
   Serial.printf("[CON] /meshcore/messages.log (%u Bytes, letzte %d):\n", (unsigned)sz, rd);
   Serial.println(buf);
+}
+
+// Akku-/Aktivitäts-Log (BATTLOG) komplett über Serial ausgeben. Gechunkt unter
+// spiLock, Netz-/Serial-I/O bleibt simpel (USB, kein SPI). Nur sinnvoll mit
+// -D BATTLOG; ohne das Flag existiert die Datei nicht.
+void cmdBatLog() {
+  if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
+  const char* path = "/.fennek/battery.log";
+  spiLock();
+  if (!SD.exists(path)) {
+    spiUnlock();
+    Serial.println("[CON] /.fennek/battery.log existiert (noch) nicht (BATTLOG aktiv?)");
+    return;
+  }
+  File f = SD.open(path, FILE_READ);
+  if (!f) { spiUnlock(); Serial.println("[CON] Log nicht lesbar"); return; }
+  uint32_t sz = f.size();
+  spiUnlock();
+  Serial.printf("[CON] %s (%u Bytes):\n", path, (unsigned)sz);
+  // In Häppchen lesen — SD-Read unter spiLock, Serial-Ausgabe danach.
+  static char buf[1025];
+  uint32_t off = 0;
+  while (off < sz) {
+    spiLock();
+    f.seek(off);
+    int rd = f.read((uint8_t*)buf, 1024);
+    spiUnlock();
+    if (rd <= 0) break;
+    buf[rd] = '\0';
+    Serial.print(buf);
+    off += rd;
+  }
+  spiLock();
+  f.close();
+  spiUnlock();
+  Serial.println("\n[CON] --- battlog Ende ---");
 }
 
 // Bekannte Geräte auf dem geteilten I2C-Bus (SDA 13 / SCL 14) benennen, damit
@@ -327,6 +364,7 @@ void handleLine(char* line) {
   if (strcmp(line, "contacts") == 0)        { cmdContacts(); return; }
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }
+  if (strcmp(line, "battlog") == 0)         { cmdBatLog(); return; }
   if (strcmp(line, "i2cscan") == 0)         { cmdI2cScan(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
