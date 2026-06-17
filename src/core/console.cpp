@@ -53,6 +53,7 @@ void cmdHelp() {
   Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|beides / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
+  Serial.println("[CON]   advert flood      - Flood-Advert (mehrhopfaehig, erreicht entfernte Nodes)");
   Serial.println("[CON]   pos [<lat> <lon>] - Node-Position zeigen/setzen (Standortbake im Advert)");
   Serial.println("[CON]   public <text>     - Nachricht an Public-Channel");
   Serial.println("[CON]   dm <idx> <text>   - Direktnachricht an Kontakt #idx");
@@ -617,6 +618,10 @@ void handleLine(char* line) {
   }
   if (strcmp(line, "advert") == 0) {
     if (ensureMesh()) { mesh_client::sendAdvert(); Serial.println("[CON] Advert gesendet (zero hop)"); }
+    return;
+  }
+  if (strcmp(line, "advert flood") == 0) {
+    if (ensureMesh()) { mesh_client::sendAdvertFlood(); Serial.println("[CON] Advert gesendet (flood)"); }
     return;
   }
   if (strcmp(line, "pos") == 0)             { cmdPos(nullptr); return; }
