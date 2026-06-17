@@ -77,6 +77,11 @@ void       setMeshParams(const MeshParams& p);   // schreibt nur Änderungen
 void meshName(char* out, size_t n);              // Node-Name (Default "T-Deck")
 void setMeshName(const char* name);
 
+// Node-Position (Dezimalgrad) für Standortbaken im Advert. 0/0 = nicht gesetzt
+// (gilt als unbestimmt — wird dann nicht im Advert mitgesendet).
+void meshPos(double* lat, double* lon);
+void setMeshPos(double lat, double lon);          // schreibt nur Änderungen
+
 // --- WLAN-Zugangsdaten (Web-Dateiverwaltung; Eingabe via Serial-Konsole) -----
 void wifiSsid(char* out, size_t n);              // "" = nicht konfiguriert
 void setWifiSsid(const char* ssid);

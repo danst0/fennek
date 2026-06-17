@@ -17,13 +17,14 @@ namespace {
 
 using gui::Rect;
 
-constexpr int kTiles = 8;
+constexpr int kTiles = 10;
 
-// 2 Spalten x 4 Reihen im Content-Bereich; darunter eine Now-Playing-Zeile.
-constexpr int kTileW = 108, kTileH = 58;
+// 2 Spalten x 5 Reihen im Content-Bereich; darunter eine Now-Playing-Zeile.
+// Flachere Kacheln als beim 4-Reihen-Raster, damit die Hinweis-Zeile bleibt.
+constexpr int kTileW = 108, kTileH = 46;
 constexpr int kCol[2] = {8, 124};
 constexpr int kRowY0  = appmgr::CONTENT_Y + 6;     // 30
-constexpr int kRowGap = 64;                        // 30, 94, 158, 222 -> Ende 280
+constexpr int kRowGap = 52;                        // 30, 82, 134, 186, 238 -> Ende 284
 
 constexpr int kHintY = 296;                        // Now-Playing-/Resume-Zeile
 

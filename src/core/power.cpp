@@ -10,11 +10,13 @@
 #include "core/i18n.h"
 #include "core/settings.h"
 #include "core/sleep_img.h"
+#include "services/alarmclock.h"
 #include "services/audio.h"
 #include "services/battlog.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
+#include "services/webfm.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -58,7 +60,31 @@ bool     s_locked       = false; // Tastensperre aktiv?
 uint8_t s_sleepPct = 0;
 RTC_DATA_ATTR uint32_t s_timerWakes = 0;
 
+// Absoluter Weckzeitpunkt (UTC-Epoche) des nächsten Weckers, beim Einschlafen
+// mit gültiger Zeitzone berechnet. 0 = kein Wecker. Liegt im RTC-RAM (übersteht
+// Deep Sleep), damit auch ein Stunden-Wake daraus die Restzeit ableiten kann.
+RTC_DATA_ATTR uint32_t s_alarmWakeEpoch = 0;
+// Toleranz, ab der ein Timer-Wake als Wecker-Wake gilt (Vollboot). Klein, da der
+// Wake-Timer ohnehin auf den Weckzeitpunkt gestellt wird.
+constexpr uint32_t kAlarmWakeSlackSec = 30;
+
 bool btnPressed() { return digitalRead(PIN_USER_BTN) == BTN_PRESSED_LEVEL; }
+
+// Timer-Wake-Dauer: Stunden-Takt, aber früher, wenn ein Wecker näher liegt.
+// Reine Epochen-Arithmetik (s_alarmWakeEpoch ist absolut) — funktioniert auch
+// im Minimal-Wake-Pfad ohne gesetzte Zeitzone. Untergrenze 1 s.
+uint64_t nextWakeUs() {
+  uint64_t dur = kTimerWakeUs;
+  if (s_alarmWakeEpoch) {
+    uint32_t now = (uint32_t)time(nullptr);
+    uint64_t untilUs = (now < s_alarmWakeEpoch)
+        ? (uint64_t)(s_alarmWakeEpoch - now) * 1000000ULL
+        : 1000000ULL;               // fällig/überfällig → gleich wieder wach
+    if (untilUs < dur) dur = untilUs;
+  }
+  if (dur < 1000000ULL) dur = 1000000ULL;
+  return dur;
+}
 
 // Banner unten: schwarzes Band mit weißem Text (Bild ist dort dunkel) —
 // Titel, Aufweck-Hinweis und klein die Batterie-% (stündlich erneuert).
@@ -96,7 +122,7 @@ void drawSleepScreen(Adafruit_GFX& g) {
 // Beide Aufwach-Quellen scharf machen: Knopf (EXT1) + Stunden-Timer.
 void armWakeups() {
   esp_sleep_enable_ext1_wakeup(1ULL << PIN_USER_BTN, WAKE_LEVEL);
-  esp_sleep_enable_timer_wakeup(kTimerWakeUs);
+  esp_sleep_enable_timer_wakeup(nextWakeUs());
 }
 
 }  // namespace
@@ -165,14 +191,32 @@ void enterStandby() {
   digitalWrite(PIN_SD_CS,   HIGH);
   board::holdSleepPins();
 
-  // 6) Wake-Quellen = Knopf + Stunden-Timer (Akku-%), dann schlafen
-  //    (kehrt nicht zurück).
+  // 6) Wake-Quellen = Knopf + Timer. Den nächsten Weckzeitpunkt JETZT berechnen
+  //    (gültige Zeitzone) und absolut im RTC-RAM ablegen; armWakeups() leitet die
+  //    Timer-Dauer daraus ab (min. Stunden-Takt). 0 = kein Wecker → Stunden-Takt.
+  s_alarmWakeEpoch = alarmclock::nextDueEpoch(timesync::now());
+  if (s_alarmWakeEpoch)
+    Serial.printf("[FENNEK] Nächster Wecker in %ld s\n",
+                  (long)(s_alarmWakeEpoch - timesync::now()));
   armWakeups();
   esp_deep_sleep_start();
 }
 
 bool handleTimerWake() {
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return false;
+
+  // Wecker-Wake? Die Systemzeit (time()) überlebt den Schlaf, der Vergleich
+  // braucht keine Zeitzone (beides UTC-Epochen). Wenn der Weckzeitpunkt erreicht
+  // ist, NICHT den Minimal-Banner-Pfad fahren, sondern voll hochbooten — dann
+  // klingelt alarmclock::poll() im normalen loop(). Flag löschen gegen Re-Trigger.
+  if (s_alarmWakeEpoch) {
+    uint32_t now = (uint32_t)time(nullptr);
+    if (now + kAlarmWakeSlackSec >= s_alarmWakeEpoch) {
+      s_alarmWakeEpoch = 0;
+      Serial.println("[FENNEK] Wecker-Wake — fahre voll hoch zum Klingeln");
+      return false;
+    }
+  }
 
   // Minimal-Pfad: nur Power, I2C (Akku-Gauge), Settings (Sprache des
   // Hinweis-Texts) und Display — kein SD-Mount, kein Audio, keine Apps.
@@ -244,6 +288,17 @@ void poll() {
   // Laufende Wiedergabe nie abschneiden (pausiert/gestoppt darf schlafen).
   audio::Status st = audio::status();
   if (st.playing && !st.paused) { s_lastActivity = now; return; }
+  // Web-Dateiverwaltung am Netzteil nie automatisch einschlafen lassen: lange
+  // WLAN-Transfers sollen nicht vom Idle-Timer gekappt werden (HTTP-Requests
+  // zählen nicht als Aktivität). Nur am Strom — auf Akku bleibt der Standby aktiv,
+  // damit ein vergessener Server den Akku nicht leersaugt. Hinweis: bei vollem
+  // Akku kann charging() auf 0 fallen (Strom ~0) und der Standby greift doch.
+  webfm::State fm = webfm::state();
+  if ((fm == webfm::State::RUNNING || fm == webfm::State::CONNECTING) &&
+      battery::charging()) {
+    s_lastActivity = now;
+    return;
+  }
   if (now - s_lastActivity >= (uint32_t)mins * 60000UL) {
     // Vor dem Auto-Standby (Gerät idle, Audio aus): wenn die Uhr-Qualität
     // schlecht ist und WLAN-Daten existieren, kurz NTP nachziehen — so schläft

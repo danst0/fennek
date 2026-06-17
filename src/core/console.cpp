@@ -13,6 +13,7 @@
 #include "services/webfm.h"
 #include "services/timesync.h"
 #include "services/scrobble.h"
+#include "services/alarmclock.h"
 #include "services/settingsfile.h"
 
 #include <time.h>
@@ -47,8 +48,12 @@ void cmdHelp() {
   Serial.println("[CON]   time sync         - NTP-Sync jetzt erzwingen (WLAN)");
   Serial.println("[CON]   tz <POSIX-TZ>     - Zeitzone setzen (Default Europe/Berlin)");
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
+  Serial.println("[CON]   alarm             - Wecker auflisten");
+  Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: taeglich|mo,di,..)");
+  Serial.println("[CON]   alarm <i> off / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
-  Serial.println("[CON]   advert            - Zero-Hop-Advert senden");
+  Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
+  Serial.println("[CON]   pos [<lat> <lon>] - Node-Position zeigen/setzen (Standortbake im Advert)");
   Serial.println("[CON]   public <text>     - Nachricht an Public-Channel");
   Serial.println("[CON]   dm <idx> <text>   - Direktnachricht an Kontakt #idx");
   Serial.println("[CON]   contacts          - Kontaktliste");
@@ -348,8 +353,97 @@ void cmdContacts() {
   for (int i = 0; i < n; i++) {
     char nm[40];
     mesh_client::contactName(i, nm, sizeof(nm));
-    Serial.printf("[CON]   [%d] %s\n", i, nm);
+    double lat, lon;
+    if (mesh_client::contactPos(i, &lat, &lon))
+      Serial.printf("[CON]   [%d] %s  @ %.5f,%.5f\n", i, nm, lat, lon);
+    else
+      Serial.printf("[CON]   [%d] %s\n", i, nm);
   }
+}
+
+// Node-Position zeigen (ohne Argument) oder setzen ("pos <lat> <lon>"). Die
+// Position wird in NVS persistiert und mit dem nächsten Advert mitgesendet;
+// funktioniert auch ohne initialisiertes Mesh (rein Settings-seitig).
+void cmdPos(const char* arg) {
+  if (!arg || !*arg) {
+    double lat, lon;
+    mesh_client::nodePos(&lat, &lon);
+    if (lat == 0.0 && lon == 0.0) Serial.println("[CON] Keine Position gesetzt (pos <lat> <lon>)");
+    else                          Serial.printf("[CON] Position: %.6f, %.6f\n", lat, lon);
+    return;
+  }
+  const char* sp = strchr(arg, ' ');
+  if (!sp) { Serial.println("[CON] Nutzung: pos <lat> <lon>"); return; }
+  double lat = atof(arg);
+  double lon = atof(sp + 1);
+  mesh_client::setNodePosition(lat, lon);
+  Serial.printf("[CON] Position gesetzt: %.6f, %.6f (advert sendet sie nun mit)\n", lat, lon);
+}
+
+void alarmPrintList() {
+  Serial.println("[CON] Wecker:");
+  const char* dn[7] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
+  for (int i = 0; i < alarmclock::count(); i++) {
+    alarmclock::Alarm a = alarmclock::get(i);
+    if (!a.enabled) { Serial.printf("[CON]   [%d] --:--  (aus)\n", i); continue; }
+    char days[40] = "";
+    if (a.dowMask == 0) strcpy(days, "taeglich");
+    else for (int d = 0; d < 7; d++)
+      if (a.dowMask & (1 << d)) { strcat(days, dn[d]); strcat(days, " "); }
+    Serial.printf("[CON]   [%d] %02u:%02u  %s\n", i, a.hour, a.minute, days);
+  }
+  char snd[TRACK_PATH_LEN];
+  alarmclock::soundPath(snd, sizeof(snd));
+  Serial.printf("[CON]   Klingelton: %s\n", snd[0] ? snd : "(erster Titel)");
+}
+
+// "mo,di,fr" -> Bitmaske (bit0=Mo); "taeglich"/leer -> 0 (täglich).
+uint8_t alarmParseDays(const char* s) {
+  if (!s || !*s) return 0;
+  if (strstr(s, "taegl") || strstr(s, "dai") || strstr(s, "all")) return 0;
+  static const char* k[7] = {"mo", "di", "mi", "do", "fr", "sa", "so"};
+  uint8_t m = 0;
+  for (int i = 0; i < 7; i++) if (strstr(s, k[i])) m |= (1 << i);
+  return m;
+}
+
+void cmdAlarm(const char* arg) {
+  while (arg && *arg == ' ') arg++;
+  if (!arg || !*arg)                  { alarmPrintList(); return; }
+  if (strcmp(arg, "test") == 0)       { alarmclock::fireNow(); return; }
+  if (strcmp(arg, "stop") == 0)       { alarmclock::dismiss(); return; }
+  if (strcmp(arg, "snooze") == 0)     { alarmclock::snooze(); return; }
+  if (strncmp(arg, "sound ", 6) == 0) {
+    alarmclock::setSoundPath(arg + 6);
+    Serial.printf("[CON] Klingelton: %s\n", arg + 6);
+    return;
+  }
+  int i = atoi(arg);
+  const char* sp = strchr(arg, ' ');
+  if (i < 0 || i >= alarmclock::count() || !sp) {
+    Serial.println("[CON] Nutzung: alarm <0..3> <hh:mm> [tage] | <i> off");
+    return;
+  }
+  sp++;
+  if (strncmp(sp, "off", 3) == 0) {
+    alarmclock::clear(i);
+    Serial.printf("[CON] Wecker %d aus\n", i);
+    return;
+  }
+  int hh, mm;
+  if (sscanf(sp, "%d:%d", &hh, &mm) != 2 || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    Serial.println("[CON] Zeit als hh:mm (z.B. 06:30)");
+    return;
+  }
+  const char* daysArg = strchr(sp, ' ');
+  alarmclock::Alarm a;
+  a.enabled = true;
+  a.hour = (uint8_t)hh;
+  a.minute = (uint8_t)mm;
+  a.dowMask = alarmParseDays(daysArg ? daysArg + 1 : "");
+  alarmclock::set(i, a);
+  Serial.printf("[CON] Wecker %d: %02d:%02d %s gesetzt\n", i, hh, mm,
+                a.dowMask ? "(Wochentage)" : "(taeglich)");
 }
 
 void cmdMsgs() {
@@ -511,6 +605,10 @@ void handleLine(char* line) {
     if (ensureMesh()) { mesh_client::sendAdvert(); Serial.println("[CON] Advert gesendet (zero hop)"); }
     return;
   }
+  if (strcmp(line, "pos") == 0)             { cmdPos(nullptr); return; }
+  if (strncmp(line, "pos ", 4) == 0)        { cmdPos(line + 4); return; }
+  if (strcmp(line, "alarm") == 0)           { cmdAlarm(""); return; }
+  if (strncmp(line, "alarm ", 6) == 0)      { cmdAlarm(line + 6); return; }
   if (strncmp(line, "public ", 7) == 0) {
     if (ensureMesh()) {
       bool ok = mesh_client::sendChannelMsg(line + 7);

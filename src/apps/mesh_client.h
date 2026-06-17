@@ -70,6 +70,9 @@ bool contactName(int i, char* out, size_t n);
 // Flood), lastSeen = Advert-Zeitstempel (Unix-Epoche), type = ADV_TYPE_*.
 // Beliebige Out-Pointer dürfen NULL sein. false, wenn Index ungültig/nicht ready.
 bool contactDetail(int i, uint8_t* hops, uint32_t* lastSeen, uint8_t* type);
+// Position eines Kontakts (Dezimalgrad) aus dessen letztem Advert. false, wenn
+// keine Position annonciert (oder Index ungültig/nicht ready).
+bool contactPos(int i, double* lat, double* lon);
 
 // Alle Kontakte löschen + persistente Spiegel (SPIFFS /contacts, SD contacts.bin)
 // entfernen. Neuaufbau erfolgt aus eingehenden Adverts. Konsole: „contacts reset".
@@ -77,6 +80,11 @@ void resetContacts();
 
 const char* nodeName();
 void setNodeName(const char* name);     // persistiert + wirkt ab sofort
+
+// Eigene Node-Position (Dezimalgrad) für Standortbaken im Advert. 0/0 = nicht
+// gesetzt. setNodePosition persistiert in NVS und wirkt ab dem nächsten Advert.
+void nodePos(double* lat, double* lon);
+void setNodePosition(double lat, double lon);
 
 // Funkparameter aus settings::meshParams() live aufs Radio anwenden
 // (Frequenz/BW/SF/CR/Präambel/Sendeleistung). No-op solange nicht ready.

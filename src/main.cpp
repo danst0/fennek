@@ -31,6 +31,7 @@
 #include "services/webfm.h"
 #include "services/timesync.h"
 #include "services/scrobble.h"
+#include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/battlog.h"
 #include "apps/launcher.h"
@@ -43,6 +44,7 @@
 #include "apps/settings_app.h"
 #include "apps/games_app.h"
 #include "apps/files_app.h"
+#include "apps/alarms_app.h"
 
 #ifdef GAMES_SMOKE_TEST
 namespace {
@@ -138,6 +140,11 @@ void setup() {
   // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
   scrobble::begin();
 
+  // Wecker-Engine: Wecker aus NVS laden. Klingelt über die Audio-Queue, daher
+  // nach audio::begin(); poll() läuft im loop(). Falls dieser Boot ein
+  // Wecker-Wake war (power::handleTimerWake → Vollboot), feuert poll() gleich.
+  alarmclock::begin();
+
   // Debug-Akku-Logger (nur mit -D BATTLOG): braucht SD + Akku + Uhr. Die
   // Aufwach-/Boot-Ursache als erste Aktivität festhalten (= „nach Standby").
   BATTLOG_BEGIN();
@@ -190,6 +197,7 @@ void setup() {
   appmgr::add(games_app::get());
   appmgr::add(files_app::get());
   appmgr::add(notes_app::get());
+  appmgr::add(alarms_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -198,6 +206,7 @@ void setup() {
   launcher::setTile(5, i18n::Str::TileGames,    games_app::get());
   launcher::setTile(6, i18n::Str::TileFiles,    files_app::get());
   launcher::setTile(7, i18n::Str::TileNotes,    notes_app::get());
+  launcher::setTile(8, i18n::Str::TileAlarm,    alarms_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
@@ -274,6 +283,7 @@ void loop() {
   webfm::poll();     // WLAN-Statusmaschine + HTTP-Requests (no-op wenn aus)
   timesync::poll();  // Zeit frisch halten (opportunistisch NTP, NVS-Sicherung)
   scrobble::poll();  // Scrobble-Queue gedrosselt nach SD persistieren
+  alarmclock::poll();// Wecker: Fälligkeit prüfen + klingeln
   BATTLOG_POLL();    // Debug-Akku-Logger (no-op ohne -D BATTLOG)
   appmgr::loop();
   delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
