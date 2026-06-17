@@ -50,7 +50,7 @@ void cmdHelp() {
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
   Serial.println("[CON]   alarm             - Wecker auflisten");
   Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: taeglich|mo,di,..)");
-  Serial.println("[CON]   alarm <i> off / sound <pfad> / test / stop / snooze");
+  Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|beides / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
   Serial.println("[CON]   pos [<lat> <lon>] - Node-Position zeigen/setzen (Standortbake im Advert)");
@@ -390,7 +390,9 @@ void alarmPrintList() {
     if (a.dowMask == 0) strcpy(days, "taeglich");
     else for (int d = 0; d < 7; d++)
       if (a.dowMask & (1 << d)) { strcat(days, dn[d]); strcat(days, " "); }
-    Serial.printf("[CON]   [%d] %02u:%02u  %s\n", i, a.hour, a.minute, days);
+    const char* sig = a.signal == alarmclock::SIG_TONE ? "Ton"
+                    : a.signal == alarmclock::SIG_BLINK ? "Blink" : "Ton+Blink";
+    Serial.printf("[CON]   [%d] %02u:%02u  %-9s  %s\n", i, a.hour, a.minute, days, sig);
   }
   char snd[TRACK_PATH_LEN];
   alarmclock::soundPath(snd, sizeof(snd));
@@ -421,7 +423,7 @@ void cmdAlarm(const char* arg) {
   int i = atoi(arg);
   const char* sp = strchr(arg, ' ');
   if (i < 0 || i >= alarmclock::count() || !sp) {
-    Serial.println("[CON] Nutzung: alarm <0..3> <hh:mm> [tage] | <i> off");
+    Serial.println("[CON] Nutzung: alarm <0..3> <hh:mm> [tage] | <i> off | <i> mode ton|blink|beides");
     return;
   }
   sp++;
@@ -430,13 +432,25 @@ void cmdAlarm(const char* arg) {
     Serial.printf("[CON] Wecker %d aus\n", i);
     return;
   }
+  if (strncmp(sp, "mode ", 5) == 0) {                  // Signal-Modus pro Wecker
+    const char* m = sp + 5;
+    uint8_t v = strstr(m, "ton") ? alarmclock::SIG_TONE
+              : strstr(m, "blink") ? alarmclock::SIG_BLINK
+              : (strstr(m, "beid") || strstr(m, "both")) ? alarmclock::SIG_BOTH : 0;
+    if (!v) { Serial.println("[CON] alarm <i> mode ton|blink|beides"); return; }
+    alarmclock::Alarm a = alarmclock::get(i);
+    a.signal = v;
+    alarmclock::set(i, a);
+    Serial.printf("[CON] Wecker %d Signal: %u (1=Ton 2=Blink 3=beides)\n", i, v);
+    return;
+  }
   int hh, mm;
   if (sscanf(sp, "%d:%d", &hh, &mm) != 2 || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
     Serial.println("[CON] Zeit als hh:mm (z.B. 06:30)");
     return;
   }
   const char* daysArg = strchr(sp, ' ');
-  alarmclock::Alarm a;
+  alarmclock::Alarm a = alarmclock::get(i);            // Signal/Rest erhalten
   a.enabled = true;
   a.hour = (uint8_t)hh;
   a.minute = (uint8_t)mm;

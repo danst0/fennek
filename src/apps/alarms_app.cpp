@@ -20,7 +20,8 @@ using gui::Rect;
 constexpr int W      = EINK_W;
 constexpr int TOP    = appmgr::CONTENT_Y;     // 24
 constexpr int ROW_H  = 26;
-constexpr int kSoundRow = alarmclock::kMaxAlarms;   // letzte Listenzeile
+constexpr int kSoundRow = alarmclock::kMaxAlarms;       // Klingelton-Zeile (= unterste)
+constexpr int kLastRow  = kSoundRow;
 
 const Rect kBack    {6, 270, 104, 42};
 const Rect kSnooze  {12, 232, 100, 56};       // Klingel-Bildschirm
@@ -35,7 +36,7 @@ const DayPreset kDays[] = {
 };
 constexpr int kNumDays = (int)(sizeof(kDays) / sizeof(kDays[0]));
 
-enum Field { F_HOUR, F_MIN, F_DAYS, F_ENABLED, F_COUNT };
+enum Field { F_HOUR, F_MIN, F_DAYS, F_SIGNAL, F_ENABLED, F_COUNT };
 
 enum Screen { LIST, EDIT };
 int  s_screen  = LIST;
@@ -45,6 +46,7 @@ alarmclock::Alarm s_buf = {};    // Arbeitskopie im Editor
 
 bool s_textEdit = false;         // Klingelton-Pfad tippen
 char s_text[TRACK_PATH_LEN] = "";
+int  s_typeCount = 0;            // getippte Ziffern im aktuellen Zeit-Feld (0..2)
 
 bool s_wasRinging = false;       // Flankenerkennung fürs Auto-Aufpoppen
 
@@ -68,8 +70,45 @@ void cycleDays(int dir) {
   s_buf.dowMask = kDays[idx].mask;
 }
 
+const char* signalLabel(uint8_t sig) {
+  switch (sig) {
+    case alarmclock::SIG_TONE:  return "Ton";
+    case alarmclock::SIG_BLINK: return "Blinken";
+    default:                    return "Beides";
+  }
+}
+
+// Ziffer ins fokussierte Zeit-Feld tippen (Telefon-Uhr-Logik): zwei Ziffern pro
+// Feld; eine zu große erste Ziffer (Stunde >2, Minute >5) ist einstellig und
+// springt sofort weiter. Stunde→Minute automatisch.
+void typeDigit(int d) {
+  if (s_sel == F_HOUR) {
+    if (s_typeCount == 0) {
+      s_buf.hour = d;
+      if (d >= 3) { s_typeCount = 0; s_sel = F_MIN; } else s_typeCount = 1;
+    } else {
+      int v = s_buf.hour * 10 + d;
+      if (v <= 23) s_buf.hour = v;
+      s_typeCount = 0; s_sel = F_MIN;
+    }
+  } else if (s_sel == F_MIN) {
+    if (s_typeCount == 0) {
+      s_buf.minute = d;
+      s_typeCount = (d >= 6) ? 0 : 1;
+    } else {
+      int v = s_buf.minute * 10 + d;
+      if (v <= 59) s_buf.minute = v;
+      s_typeCount = 0;
+    }
+  } else {
+    return;
+  }
+  markDirty();
+}
+
 void openEdit(int i) {
   s_editIdx = i;
+  s_typeCount = 0;
   s_buf = alarmclock::get(i);
   if (!s_buf.enabled && s_buf.hour == 0 && s_buf.minute == 0) {
     s_buf.hour = 7;            // sinnvolle Vorbelegung für einen neuen Wecker
@@ -153,6 +192,7 @@ void fieldValue(int f, char* v, size_t n) {
     case F_HOUR:    snprintf(v, n, "%02u", (unsigned)s_buf.hour); break;
     case F_MIN:     snprintf(v, n, "%02u", (unsigned)s_buf.minute); break;
     case F_DAYS:    daysLabel(s_buf.dowMask, v, n); break;
+    case F_SIGNAL:  snprintf(v, n, "%s", signalLabel(s_buf.signal)); break;
     case F_ENABLED: snprintf(v, n, "%s", s_buf.enabled ? "An" : "Aus"); break;
   }
 }
@@ -161,6 +201,7 @@ const char* fieldName(int f) {
     case F_HOUR:    return "Stunde";
     case F_MIN:     return "Minute";
     case F_DAYS:    return "Tage";
+    case F_SIGNAL:  return "Signal";
     case F_ENABLED: return "Aktiv";
   }
   return "";
@@ -170,6 +211,11 @@ void changeField(int f, int dir) {
     case F_HOUR:    s_buf.hour = (uint8_t)((s_buf.hour + dir + 24) % 24); break;
     case F_MIN:     s_buf.minute = (uint8_t)((s_buf.minute + dir + 60) % 60); break;
     case F_DAYS:    cycleDays(dir); break;
+    case F_SIGNAL: {
+      int m = (s_buf.signal >= 1 && s_buf.signal <= 3) ? s_buf.signal : alarmclock::SIG_BOTH;
+      s_buf.signal = (uint8_t)(((m - 1 + dir + 3) % 3) + 1);
+      break;
+    }
     case F_ENABLED: s_buf.enabled = !s_buf.enabled; break;
   }
   markDirty();
@@ -222,8 +268,8 @@ void onListKey(char k) {
     return;
   }
   switch (k) {
-    case 'w': case 'W': s_sel = (s_sel + kSoundRow) % (kSoundRow + 1); markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % (kSoundRow + 1); markDirty(); break;
+    case 'w': case 'W': s_sel = (s_sel + kLastRow) % (kLastRow + 1); markDirty(); break;
+    case 's': case 'S': s_sel = (s_sel + 1) % (kLastRow + 1); markDirty(); break;
     case '\r':
       if (s_sel == kSoundRow) { alarmclock::soundPath(s_text, sizeof(s_text)); s_textEdit = true; markDirty(); }
       else openEdit(s_sel);
@@ -234,12 +280,13 @@ void onListKey(char k) {
 }
 
 void onEditKey(char k) {
+  if (k >= '0' && k <= '9') { typeDigit(k - '0'); return; }   // Zeit direkt tippen
   switch (k) {
-    case 'w': case 'W': s_sel = (s_sel + F_COUNT - 1) % F_COUNT; markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % F_COUNT; markDirty(); break;
-    case 'a': case 'A': changeField(s_sel, -1); break;
-    case 'd': case 'D': changeField(s_sel, +1); break;
-    case '\r':          changeField(s_sel, +1); break;
+    case 'w': case 'W': s_typeCount = 0; s_sel = (s_sel + F_COUNT - 1) % F_COUNT; markDirty(); break;
+    case 's': case 'S': s_typeCount = 0; s_sel = (s_sel + 1) % F_COUNT; markDirty(); break;
+    case 'a': case 'A': s_typeCount = 0; changeField(s_sel, -1); break;
+    case 'd': case 'D': s_typeCount = 0; changeField(s_sel, +1); break;
+    case '\r':          s_typeCount = 0; changeField(s_sel, +1); break;
     case '\b': case 'q': case 'Q': saveEdit(); break;   // zurück = speichern
     default: break;
   }
@@ -255,7 +302,7 @@ void onListTouch(int x, int y) {
   if (s_textEdit) return;
   if (kBack.hit(x, y)) { appmgr::goHome(); return; }
   int row = (y - TOP) / ROW_H;
-  if (row < 0 || row > kSoundRow) return;
+  if (row < 0 || row > kLastRow) return;
   if (row != s_sel) { s_sel = row; markDirty(); return; }   // erster Tap wählt
   if (row == kSoundRow) { alarmclock::soundPath(s_text, sizeof(s_text)); s_textEdit = true; markDirty(); }
   else openEdit(row);
@@ -314,7 +361,7 @@ class AlarmsApp : public App {
       gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
       g.setTextSize(1);
       g.setCursor(120, 286);
-      gui::print(g, "A/D aendern");
+      gui::print(g, "A/D o. Ziffern tippen");
       g.setCursor(120, 300);
       gui::print(g, "Zurueck speichert");
       return;
@@ -322,7 +369,7 @@ class AlarmsApp : public App {
 
     // Liste.
     int y = TOP;
-    for (int i = 0; i <= kSoundRow; i++) { drawListRow(g, i, y); y += ROW_H; }
+    for (int i = 0; i <= kLastRow; i++) { drawListRow(g, i, y); y += ROW_H; }
     gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
     g.setTextSize(1);
     g.setCursor(120, 286);

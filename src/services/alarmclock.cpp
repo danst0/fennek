@@ -36,6 +36,7 @@ constexpr uint32_t kBlinkMs      = 400;     // Tastatur-Backlight-Blinktakt
 
 alarmclock::Alarm s_alarms[alarmclock::kMaxAlarms] = {};
 char        s_soundPath[TRACK_PATH_LEN] = "";
+uint8_t     s_ringSignal = alarmclock::SIG_BOTH;   // Signal des aktiven Klingelns
 bool        s_loaded = false;
 
 bool     s_ringing      = false;
@@ -51,13 +52,18 @@ RTC_DATA_ATTR uint32_t s_snoozeEpoch = 0;
 
 Preferences s_prefs;
 
+// byte0: bit0=enabled, bits1-2=signal (1..3). hour/minute/dowMask folgen.
 uint32_t packAlarm(const alarmclock::Alarm& a) {
-  return (uint32_t)(a.enabled ? 1 : 0) | ((uint32_t)a.hour << 8) |
+  uint8_t sig = (a.signal >= 1 && a.signal <= 3) ? a.signal : alarmclock::SIG_BOTH;
+  uint8_t b0  = (uint8_t)((a.enabled ? 1 : 0) | (sig << 1));
+  return (uint32_t)b0 | ((uint32_t)a.hour << 8) |
          ((uint32_t)a.minute << 16) | ((uint32_t)a.dowMask << 24);
 }
 alarmclock::Alarm unpackAlarm(uint32_t v) {
   alarmclock::Alarm a;
-  a.enabled = (v & 0xFF) != 0;
+  a.enabled = (v & 0x01) != 0;
+  uint8_t sig = (v >> 1) & 0x03;
+  a.signal  = sig ? sig : alarmclock::SIG_BOTH;   // Altdaten (0) → beides
   a.hour    = (v >> 8) & 0xFF;
   a.minute  = (v >> 16) & 0xFF;
   a.dowMask = (v >> 24) & 0xFF;
@@ -149,31 +155,36 @@ void ensureBeepWav() {
 // Klingeln starten: voll aufdrehen, Piepton (oder eigener Klingelton) in
 // Dauerschleife, Tastatur-Backlight als Sichtsignal. Lautstärke wird gemerkt
 // und beim Quittieren/Schlummern wiederhergestellt (kein NVS-Schreiben).
-void startRing(const char* why) {
-  char path[TRACK_PATH_LEN];
-  strncpy(path, s_soundPath, sizeof(path) - 1);
-  path[sizeof(path) - 1] = '\0';
-  if (!path[0]) {                                  // kein eigener Ton → Piepton
-    ensureBeepWav();
-    if (board::sdReady()) { strncpy(path, kBeepPath, sizeof(path) - 1); path[sizeof(path) - 1] = '\0'; }
-  }
-  if (!path[0] && library::count() > 0) library::path(0, path, sizeof(path));  // Notfall
-  if (!path[0]) {
-    Serial.println("[ALARM] Kein Klingelton + keine SD — klingelt nicht (Backlight blinkt)");
-  } else {
-    s_savedVol = audio::status().volume;           // Lautstärke merken ...
-    audio::setVolume(AUDIO_VOL_MAX);               // ... und voll aufdrehen
-    audio::queueBegin(audio::Owner::Music);
-    audio::queueAdd(path);
-    audio::queueCommit(0);
-    audio::setRepeat(audio::Repeat::One);
+void startRing(const char* why, uint8_t signal) {
+  s_ringSignal = (signal >= 1 && signal <= 3) ? signal : alarmclock::SIG_BOTH;
+  const bool wantTone  = (s_ringSignal & alarmclock::SIG_TONE)  != 0;
+  const bool wantBlink = (s_ringSignal & alarmclock::SIG_BLINK) != 0;
+  char path[TRACK_PATH_LEN] = "";
+  if (wantTone) {
+    strncpy(path, s_soundPath, sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    if (!path[0]) {                                // kein eigener Ton → Piepton
+      ensureBeepWav();
+      if (board::sdReady()) { strncpy(path, kBeepPath, sizeof(path) - 1); path[sizeof(path) - 1] = '\0'; }
+    }
+    if (!path[0] && library::count() > 0) library::path(0, path, sizeof(path));  // Notfall
+    if (path[0]) {
+      s_savedVol = audio::status().volume;         // Lautstärke merken ...
+      audio::setVolume(AUDIO_VOL_MAX);             // ... und voll aufdrehen
+      audio::queueBegin(audio::Owner::Music);
+      audio::queueAdd(path);
+      audio::queueCommit(0);
+      audio::setRepeat(audio::Repeat::One);
+    } else {
+      Serial.println("[ALARM] Kein Klingelton + keine SD — nur Backlight");
+    }
   }
   s_ringing = true;
   s_ringStartMs = millis();
-  s_blinkOn = true; s_blinkMs = millis();
-  kbBacklight(true);
+  if (wantBlink) { s_blinkOn = true; s_blinkMs = millis(); kbBacklight(true); }
   power::noteActivity();   // Auto-Standby nicht mitten ins Klingeln grätschen
-  Serial.printf("[ALARM] Klingelt (%s): %s\n", why, path[0] ? path : "(nur Backlight)");
+  Serial.printf("[ALARM] Klingelt (%s) [%s%s]: %s\n", why,
+                wantTone ? "Ton " : "", wantBlink ? "Blink" : "", path[0] ? path : "-");
 }
 
 }  // namespace
@@ -230,7 +241,7 @@ uint32_t nextDueEpoch(uint32_t from) {
 
 bool ringing() { return s_ringing; }
 
-void fireNow() { startRing("Test"); }
+void fireNow() { startRing("Test", alarmclock::SIG_BOTH); }
 
 // Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight aus.
 void stopRingOutput() {
@@ -261,8 +272,8 @@ void poll() {
   if (s_ringing) {
     power::noteActivity();                       // wach bleiben, solange es klingelt
     uint32_t ms = millis();
-    if (ms - s_blinkMs >= kBlinkMs) {            // Tastatur-Backlight blinken
-      s_blinkMs = ms; s_blinkOn = !s_blinkOn; kbBacklight(s_blinkOn);
+    if ((s_ringSignal & alarmclock::SIG_BLINK) && ms - s_blinkMs >= kBlinkMs) {
+      s_blinkMs = ms; s_blinkOn = !s_blinkOn; kbBacklight(s_blinkOn);   // Backlight blinken
     }
     if (ms - s_ringStartMs >= kRingMaxMs) {
       Serial.println("[ALARM] Auto-Quittung nach 5 min");
@@ -277,7 +288,7 @@ void poll() {
   // Schlummer-Ziel erreicht?
   if (s_snoozeEpoch && now >= s_snoozeEpoch && now - s_snoozeEpoch < 90) {
     s_snoozeEpoch = 0;
-    startRing("Schlummer");
+    startRing("Schlummer", s_ringSignal);
     return;
   }
   if (s_snoozeEpoch && now >= s_snoozeEpoch) s_snoozeEpoch = 0;  // verpasst → verfallen
@@ -296,7 +307,7 @@ void poll() {
       s_lastFireMin = curMin;
       char w[16];
       snprintf(w, sizeof(w), "Wecker %d", i);
-      startRing(w);
+      startRing(w, s_alarms[i].signal);
       return;
     }
   }
