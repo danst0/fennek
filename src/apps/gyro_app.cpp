@@ -5,9 +5,9 @@
 #include "config.h"
 #include "core/gui.h"
 #include "core/i18n.h"
+#include "services/gyro.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK
 
 namespace {
@@ -16,16 +16,20 @@ using gui::Rect;
 
 constexpr int W   = EINK_W;
 constexpr int TOP = appmgr::CONTENT_Y;
-constexpr uint8_t kBhiAddr = 0x28;   // BHI260AP
 
 const Rect kBack{6, 270, 104, 42};
 
-int  s_present = -1;   // -1 = noch nicht geprüft, 0 = nein, 1 = ja
+// Lade-Ablauf: erst „Laden"-Screen zeichnen (eigener tick), dann den ~10 s
+// blockierenden Firmware-Upload — sonst friert das Bild ohne Hinweis ein.
+enum Phase { NEED_LOAD, LOADING, RUNNING, FAILED };
+Phase    s_phase = NEED_LOAD;
+uint32_t s_lastDraw = 0;
 
-// I2C-Präsenz prüfen (Wire läuft seit main).
-void probe() {
-  Wire.beginTransmission(kBhiAddr);
-  s_present = (Wire.endTransmission() == 0) ? 1 : 0;
+void drawCentered(Adafruit_GFX& g, int y, const char* s, uint8_t size) {
+  uint16_t w, h;
+  g.setTextSize(size);
+  gui::textBounds(g, s, &w, &h);
+  gui::printAt(g, (W - (int)w) / 2, y, s, size);
 }
 
 class GyroApp : public App {
@@ -33,7 +37,21 @@ class GyroApp : public App {
   const char* id()   const override { return "Gyro"; }
   const char* name() const override { return i18n::tr(i18n::Str::AppGyro); }
 
-  void onEnter() override { probe(); }
+  void onEnter() override { s_phase = NEED_LOAD; appmgr::markDirty(); }
+  void onLeave() override { gyro::end(); }
+
+  void tick() override {
+    if (s_phase == NEED_LOAD) { s_phase = LOADING; appmgr::markDirty(); return; }
+    if (s_phase == LOADING) {            // blockt beim ersten Mal ~10 s
+      s_phase = gyro::begin() ? RUNNING : FAILED;
+      appmgr::markDirty();
+      return;
+    }
+    if (s_phase == RUNNING) {
+      gyro::poll();
+      if (millis() - s_lastDraw >= 400) { s_lastDraw = millis(); appmgr::markDirty(); }
+    }
+  }
 
   void handleInput(const InputEvent& e) override {
     if (e.type == InputEvent::TAP && kBack.hit(e.x, e.y)) { appmgr::goHome(); return; }
@@ -43,25 +61,30 @@ class GyroApp : public App {
 
   void draw(Adafruit_GFX& g) override {
     g.setTextColor(GxEPD_BLACK);
-    gui::printAt(g, 10, TOP + 8, "IMU / Lage", 3);
+    gui::printAt(g, 10, TOP + 6, "IMU / Lage", 3);
 
-    g.setTextSize(2);
-    g.setCursor(10, TOP + 50);
-    gui::print(g, "Sensor: BHI260AP");
-    g.setCursor(10, TOP + 76);
-    char line[40];
-    snprintf(line, sizeof(line), "I2C 0x28: %s",
-             s_present == 1 ? "erkannt" : s_present == 0 ? "nicht gefunden" : "...");
-    gui::print(g, line);
+    if (s_phase == NEED_LOAD || s_phase == LOADING) {
+      drawCentered(g, TOP + 90, "BHI260 Firmware laedt", 2);
+      drawCentered(g, TOP + 118, "(~10 s, einmalig)", 1);
+    } else if (s_phase == FAILED) {
+      drawCentered(g, TOP + 100, "Sensor nicht verfuegbar", 2);
+    } else {
+      const gyro::Data& d = gyro::current();
+      char l[40];
+      g.setTextSize(1);
+      g.setCursor(14, TOP + 44);  gui::print(g, "Beschleunigung (g)");
+      g.setTextSize(2);
+      snprintf(l, sizeof(l), "X %+6.2f", d.ax); g.setCursor(20, TOP + 58);  gui::print(g, l);
+      snprintf(l, sizeof(l), "Y %+6.2f", d.ay); g.setCursor(20, TOP + 80);  gui::print(g, l);
+      snprintf(l, sizeof(l), "Z %+6.2f", d.az); g.setCursor(20, TOP + 102); gui::print(g, l);
 
-    // Stufe-2-Hinweis (Live-Daten brauchen den BHy2-Firmware-Upload).
-    g.setTextSize(1);
-    g.setCursor(10, TOP + 120);
-    gui::print(g, "Live-Beschleunigung/Drehrate folgt:");
-    g.setCursor(10, TOP + 134);
-    gui::print(g, "BHI260 ist ein Smart-Sensor-Hub und");
-    g.setCursor(10, TOP + 146);
-    gui::print(g, "braucht einen Firmware-Upload (BHy2).");
+      g.setTextSize(1);
+      g.setCursor(14, TOP + 130); gui::print(g, "Drehrate (Grad/s)");
+      g.setTextSize(2);
+      snprintf(l, sizeof(l), "X %+6.1f", d.gx); g.setCursor(20, TOP + 144); gui::print(g, l);
+      snprintf(l, sizeof(l), "Y %+6.1f", d.gy); g.setCursor(20, TOP + 166); gui::print(g, l);
+      snprintf(l, sizeof(l), "Z %+6.1f", d.gz); g.setCursor(20, TOP + 188); gui::print(g, l);
+    }
 
     gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBack), false);
   }

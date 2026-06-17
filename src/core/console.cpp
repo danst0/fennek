@@ -16,6 +16,7 @@
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/gps.h"
+#include "services/gyro.h"
 
 #include <time.h>
 
@@ -585,6 +586,23 @@ void cmdGps(const char* arg) {
   Serial.println("[GPS] Modul aus");
 }
 
+// BHI260-IMU testen: Firmware laden (~10 s), 2 s lesen, Werte ausgeben.
+void cmdGyro() {
+  Serial.println("[CON] Gyro: BHI260 init (Firmware-Upload ~10 s) ...");
+  if (!gyro::begin()) { Serial.println("[CON] Gyro init fehlgeschlagen"); return; }
+  for (int i = 0; i < 20; i++) {
+    gyro::poll();
+    delay(100);
+    if (i % 5 == 4) {
+      const gyro::Data& d = gyro::current();
+      Serial.printf("[CON] acc(g) %+.2f %+.2f %+.2f | gyro(dps) %+.1f %+.1f %+.1f\n",
+                    d.ax, d.ay, d.az, d.gx, d.gy, d.gz);
+    }
+  }
+  gyro::end();
+  Serial.println("[CON] Gyro: fertig (Sensor auf 0 Hz)");
+}
+
 void handleLine(char* line) {
   // Führende Leerzeichen überspringen.
   while (*line == ' ') line++;
@@ -736,6 +754,7 @@ void handleLine(char* line) {
   if (strncmp(line, "pos ", 4) == 0)        { cmdPos(line + 4); return; }
   if (strcmp(line, "gps") == 0)             { cmdGps(nullptr); return; }
   if (strncmp(line, "gps ", 4) == 0)        { cmdGps(line + 4); return; }
+  if (strcmp(line, "gyro") == 0)            { cmdGyro(); return; }
   if (strcmp(line, "alarm") == 0)           { cmdAlarm(""); return; }
   if (strncmp(line, "alarm ", 6) == 0)      { cmdAlarm(line + 6); return; }
   if (strncmp(line, "public ", 7) == 0) {
