@@ -17,26 +17,40 @@ namespace {
 
 using gui::Rect;
 
-constexpr int kTiles = 10;
+// Zwei Homescreen-Seiten à 10 Kacheln (2 Spalten x 5 Reihen). Seitenwechsel per
+// Touch (Pfeile ‹/› rechts in der Hinweiszeile) oder Tastatur (A/D am Spaltenrand
+// wechselt die Seite; Q/E blättern direkt).
+constexpr int kPerPage = 10;
+constexpr int kPages   = 2;
+constexpr int kTiles   = kPerPage * kPages;
 
-// 2 Spalten x 5 Reihen im Content-Bereich; darunter eine Now-Playing-Zeile.
-// Flachere Kacheln als beim 4-Reihen-Raster, damit die Hinweis-Zeile bleibt.
 constexpr int kTileW = 108, kTileH = 46;
 constexpr int kCol[2] = {8, 124};
 constexpr int kRowY0  = appmgr::CONTENT_Y + 6;     // 30
 constexpr int kRowGap = 52;                        // 30, 82, 134, 186, 238 -> Ende 284
 
 constexpr int kHintY = 296;                        // Now-Playing-/Resume-Zeile
+// Tap-Zonen für den Seitenwechsel (rechts in der Hinweiszeile).
+const Rect kPrevPage{176, kHintY - 6, 24, 22};
+const Rect kNextPage{216, kHintY - 6, 24, 22};
 
 struct Tile {
   i18n::Str label;   // String-ID, beim Zeichnen aufgelöst (Sprachwechsel!)
   App*      app;
 };
 Tile s_tiles[kTiles] = {};
-int  s_cursor = 0;   // Tastatur-Cursor (Kachel-Index)
+int  s_page   = 0;   // aktuelle Homescreen-Seite
+int  s_cursor = 0;   // Tastatur-Cursor (globaler Kachel-Index)
 
-Rect tileRect(int i) {
-  return Rect{kCol[i % 2], kRowY0 + (i / 2) * kRowGap, kTileW, kTileH};
+// Position einer Kachel-Slot-Nummer (0..kPerPage-1) im Raster der aktuellen Seite.
+Rect slotRect(int slot) {
+  return Rect{kCol[slot % 2], kRowY0 + (slot / 2) * kRowGap, kTileW, kTileH};
+}
+// Gibt es auf Seite p überhaupt eine belegte Kachel?
+bool pageHasTiles(int p) {
+  for (int s = 0; s < kPerPage; s++)
+    if (s_tiles[p * kPerPage + s].label != i18n::Str::None) return true;
+  return false;
 }
 
 
@@ -47,10 +61,16 @@ class LauncherApp : public App {
 
   void handleInput(const InputEvent& e) override {
     if (e.type == InputEvent::TAP) {
+      // Seitenpfeile (nur wenn es mehr als eine belegte Seite gibt).
+      if (kPages > 1) {
+        if (kPrevPage.hit(e.x, e.y)) { flipPage(-1); return; }
+        if (kNextPage.hit(e.x, e.y)) { flipPage(+1); return; }
+      }
       // Hinweis-Zeile: Now-Playing -> Musik-App; Resume-Angebot -> abspielen.
       if (e.y >= kHintY - 8) { onHintActivate(); return; }
-      for (int i = 0; i < kTiles; i++) {
-        if (s_tiles[i].label != i18n::Str::None && tileRect(i).hit(e.x, e.y)) {
+      for (int slot = 0; slot < kPerPage; slot++) {
+        int i = s_page * kPerPage + slot;
+        if (s_tiles[i].label != i18n::Str::None && slotRect(slot).hit(e.x, e.y)) {
           if (s_tiles[i].app) appmgr::launch(s_tiles[i].app);
           return;
         }
@@ -63,10 +83,14 @@ class LauncherApp : public App {
       case 's': case 'S': moveCursor(+2); break;
       case 'a': case 'A': moveCursor(-1); break;
       case 'd': case 'D': moveCursor(+1); break;
-      case '\r':
-        if (s_tiles[s_cursor].label != i18n::Str::None && s_tiles[s_cursor].app)
-          appmgr::launch(s_tiles[s_cursor].app);
+      case 'q': case 'Q': flipPage(-1); break;
+      case 'e': case 'E': flipPage(+1); break;
+      case '\r': {
+        int i = s_page * kPerPage + s_cursor;
+        if (s_tiles[i].label != i18n::Str::None && s_tiles[i].app)
+          appmgr::launch(s_tiles[i].app);
         break;
+      }
       case ' ': onHintActivate(); break;
       default: break;
     }
@@ -82,11 +106,12 @@ class LauncherApp : public App {
 
   void draw(Adafruit_GFX& g) override {
     g.setTextColor(GxEPD_BLACK);
-    for (int i = 0; i < kTiles; i++) {
+    for (int slot = 0; slot < kPerPage; slot++) {
+      int i = s_page * kPerPage + slot;
       if (s_tiles[i].label == i18n::Str::None) continue;
-      Rect r = tileRect(i);
+      Rect r = slotRect(slot);
       g.drawRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
-      if (i == s_cursor)
+      if (slot == s_cursor)
         g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 7, GxEPD_BLACK);
       g.setTextSize(2);
       uint16_t bw, bh;
@@ -130,15 +155,44 @@ class LauncherApp : public App {
         gui::print(g, line);
       }
     }
+
+    // Seiten-Indikator + Pfeile (rechts in der Hinweiszeile).
+    if (kPages > 1) {
+      g.setTextSize(1);
+      char pg[8];
+      snprintf(pg, sizeof(pg), "%d/%d", s_page + 1, kPages);
+      g.setCursor(kPrevPage.x + 6, kHintY); gui::print(g, "\x11");   // ◄
+      g.setCursor(kPrevPage.x + 18, kHintY); gui::print(g, pg);
+      g.setCursor(kNextPage.x + 6, kHintY); gui::print(g, "\x10");   // ►
+    }
   }
 
  private:
   int s_shownIndex = -1;
 
+  // Erster belegter Slot einer Seite (für die Cursor-Position nach Seitenwechsel).
+  int firstSlot(int p) {
+    for (int s = 0; s < kPerPage; s++)
+      if (s_tiles[p * kPerPage + s].label != i18n::Str::None) return s;
+    return 0;
+  }
+
+  bool flipPage(int dir) {
+    int p = s_page + dir;
+    if (p < 0 || p >= kPages || !pageHasTiles(p)) return false;
+    s_page = p;
+    s_cursor = firstSlot(p);
+    appmgr::markDirty();
+    return true;
+  }
+
   void moveCursor(int delta) {
     int n = s_cursor + delta;
-    while (n >= 0 && n < kTiles && s_tiles[n].label == i18n::Str::None) n += (delta > 0 ? 1 : -1);
-    if (n < 0 || n >= kTiles || s_tiles[n].label == i18n::Str::None) return;
+    // A/D (±1) am Spaltenrand wechselt die Seite.
+    if ((delta == 1 || delta == -1) && (n < 0 || n >= kPerPage)) { flipPage(delta); return; }
+    while (n >= 0 && n < kPerPage &&
+           s_tiles[s_page * kPerPage + n].label == i18n::Str::None) n += (delta > 0 ? 1 : -1);
+    if (n < 0 || n >= kPerPage || s_tiles[s_page * kPerPage + n].label == i18n::Str::None) return;
     if (n != s_cursor) { s_cursor = n; appmgr::markDirty(); }
   }
 

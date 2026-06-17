@@ -46,6 +46,7 @@
 #include "apps/files_app.h"
 #include "apps/alarms_app.h"
 #include "apps/maps_app.h"
+#include "apps/gyro_app.h"
 
 #ifdef GAMES_SMOKE_TEST
 namespace {
@@ -200,6 +201,7 @@ void setup() {
   appmgr::add(notes_app::get());
   appmgr::add(alarms_app::get());
   appmgr::add(maps_app::get());
+  appmgr::add(gyro_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -210,6 +212,7 @@ void setup() {
   launcher::setTile(7, i18n::Str::TileNotes,    notes_app::get());
   launcher::setTile(8, i18n::Str::TileAlarm,    alarms_app::get());
   launcher::setTile(9, i18n::Str::TileMaps,     maps_app::get());
+  launcher::setTile(10, i18n::Str::TileGyro,    gyro_app::get());   // Seite 2, Slot 0
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
