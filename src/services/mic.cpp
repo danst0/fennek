@@ -12,15 +12,13 @@
 
 namespace {
 
-constexpr i2s_port_t kPort = I2S_NUM_1;   // I2S_NUM_0 gehört dem DAC
+constexpr i2s_port_t kPort = I2S_NUM_0;   // PDM geht nur auf I2S0 (Handover vom DAC)
 constexpr uint32_t   kRate = 16000;       // 16 kHz mono 16-bit
 
-// Aufnahme vorerst deaktiviert: PDM geht NUR auf I2S0 (Hardware-Limit der IDF),
-// und I2S0 belegt exklusiv der DAC-Ausgang (ESP32-audioI2S). Erst wenn die
-// Audio-Engine I2S0 für die Aufnahme freigibt + danach sauber wiederherstellt
-// (Handover, s. audio.cpp), kann startRecording auf I2S0 umgestellt werden.
-// Bis dahin bailt es früh — ein I2S1-PDM-Install ist ungültig und crasht.
-bool     s_enabled   = false;
+// PDM geht NUR auf I2S0 (IDF-Limit), das sonst der DAC belegt. Der Aufrufer MUSS
+// vor startRecording() audio::beginMic() rufen (gibt I2S0 frei) und danach
+// audio::endMic() (nimmt I2S0 zurück) — sonst kollidiert es mit der Wiedergabe.
+bool     s_enabled   = true;
 
 File     s_file;
 bool     s_rec       = false;

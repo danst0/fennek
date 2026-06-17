@@ -11,6 +11,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <Audio.h>          // schreibfaul1/ESP32-audioI2S
+#include <driver/i2s.h>     // I2S0-Freigabe für die PDM-Mikro-Aufnahme
 #include <esp_heap_caps.h>
 #include <string.h>
 
@@ -22,6 +23,8 @@ typedef char PathBuf[kPathLen];
 Audio          s_audio;
 QueueHandle_t  s_cmdQ   = nullptr;
 TaskHandle_t   s_task   = nullptr;
+volatile bool  s_micMode     = false;   // I2S0 an die Mikro-Aufnahme abgegeben
+volatile bool  s_i2sReleased = false;   // Handshake: I2S0 wirklich freigegeben?
 
 // Abspiel-Queue: Pfade im PSRAM + Abspiel-Reihenfolge (für Shuffle).
 // s_stage wird im UI-Thread gefüllt und per Commit (unter Mutex) übernommen.
@@ -80,7 +83,8 @@ volatile bool     s_eof     = false;
 volatile uint32_t s_startEpoch = 0;
 
 enum class Cmd : uint8_t {
-  Play, TogglePause, Next, Prev, Stop, SetVolume, SeekRel, SetShuffle, SetRepeat
+  Play, TogglePause, Next, Prev, Stop, SetVolume, SeekRel, SetShuffle, SetRepeat,
+  MicSuspend, MicResume   // I2S0 für die PDM-Mikro-Aufnahme freigeben/zurücknehmen
 };
 struct Msg { Cmd cmd; int arg; uint32_t arg2; };
 
@@ -233,7 +237,24 @@ void doSeekRel(int sec) {
 
 void handle(const Msg& m) {
   switch (m.cmd) {
+    case Cmd::MicSuspend:
+      // I2S0 der Mikro-Aufnahme überlassen: Wiedergabe stoppen, Treiber freigeben.
+      stopTrack();
+      i2s_driver_uninstall(I2S_NUM_0);
+      s_micMode = true;
+      s_i2sReleased = true;
+      break;
+    case Cmd::MicResume:
+      // I2S0 zurücknehmen: Treiber neu installieren (setI2SCommFMT_LSB reinstalliert
+      // mit der Audio-Konfig), Pins + Lautstärke wiederherstellen.
+      s_audio.setI2SCommFMT_LSB(false);
+      s_audio.setPinout(PIN_I2S_BCLK, PIN_I2S_LRC, PIN_I2S_DOUT);
+      s_audio.setVolume(s_volume);
+      s_micMode = false;
+      s_i2sReleased = false;
+      break;
     case Cmd::Play:
+      if (s_micMode) break;        // während der Aufnahme keine Wiedergabe
       if (s_playing) stopTrack();
       xSemaphoreTake(s_qMutex, portMAX_DELAY);
       // Reihenfolge-Puffer an die neue Queue-Länge anpassen (klein: 2 B/Eintrag).
@@ -402,6 +423,24 @@ void togglePause()              { post(Cmd::TogglePause); }
 void next()                     { post(Cmd::Next); }
 void prev()                     { post(Cmd::Prev); }
 void stop()                     { post(Cmd::Stop); }
+
+// I2S0 für die PDM-Mikro-Aufnahme freigeben (blockt bis der Audio-Task den
+// Treiber deinstalliert hat). true = I2S0 ist frei. Danach darf der Aufrufer
+// PDM auf I2S0 installieren; endMic() gibt I2S0 an die Audio-Engine zurück.
+bool beginMic() {
+  if (s_micMode) return true;
+  s_i2sReleased = false;
+  post(Cmd::MicSuspend);
+  uint32_t t0 = millis();
+  while (!s_i2sReleased && millis() - t0 < 1500) delay(5);
+  return s_i2sReleased;
+}
+void endMic() {
+  if (!s_micMode) return;
+  post(Cmd::MicResume);
+  uint32_t t0 = millis();
+  while (s_micMode && millis() - t0 < 1500) delay(5);
+}
 void seekRel(int sec)           { post(Cmd::SeekRel, sec); }
 void setVolume(uint8_t v)       { post(Cmd::SetVolume, v); }
 void volumeUp()                 { post(Cmd::SetVolume, (int)s_volume + 1); }

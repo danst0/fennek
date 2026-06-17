@@ -59,6 +59,12 @@ void togglePause();
 void next();
 void prev();
 void stop();
+
+// I2S0-Handover für die PDM-Mikro-Aufnahme (services/mic): beginMic() gibt I2S0
+// frei (Wiedergabe stoppt), endMic() nimmt es zurück. Während der Aufnahme
+// ignoriert die Engine Play-Kommandos.
+bool beginMic();
+void endMic();
 void seekRel(int sec);                      // ±Sekunden (zuverlässig bei CBR-MP3)
 void setVolume(uint8_t v);
 void volumeUp();

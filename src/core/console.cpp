@@ -609,10 +609,10 @@ void cmdGyro() {
 void cmdRec(const char* arg) {
   int secs = 3;
   if (arg && *arg) { int v = atoi(arg); if (v > 0 && v <= 30) secs = v; }
-  audio::stop(); delay(60);
   const char* path = "/rectest.wav";
   Serial.printf("[CON] Aufnahme %d s -> %s (jetzt sprechen!) ...\n", secs, path);
-  if (!mic::startRecording(path)) { Serial.println("[CON] Mikro-Init/SD fehlgeschlagen"); return; }
+  if (!audio::beginMic()) { Serial.println("[CON] I2S0-Handover fehlgeschlagen"); return; }
+  if (!mic::startRecording(path)) { audio::endMic(); Serial.println("[CON] Mikro-Init/SD fehlgeschlagen"); return; }
   uint16_t maxLvl = 0;
   uint32_t t0 = millis();
   while (millis() - t0 < (uint32_t)secs * 1000) {
@@ -621,6 +621,7 @@ void cmdRec(const char* arg) {
     delay(5);
   }
   uint32_t dur = mic::stopRecording();
+  audio::endMic();   // I2S0 zurück an die Audio-Engine
   Serial.printf("[CON] Aufnahme fertig: %lu s, Spitzenpegel %u/32767 %s\n",
                 (unsigned long)dur, maxLvl,
                 maxLvl > 1500 ? "(Ton erkannt)" : "(sehr leise/Stille?)");
@@ -781,6 +782,13 @@ void handleLine(char* line) {
   if (strcmp(line, "gyro") == 0)            { cmdGyro(); return; }
   if (strcmp(line, "rec") == 0)             { cmdRec(nullptr); return; }
   if (strncmp(line, "rec ", 4) == 0)        { cmdRec(line + 4); return; }
+  if (strcmp(line, "recplay") == 0) {       // letzte Aufnahme abspielen (Audio-Restore-Test)
+    audio::queueBegin(audio::Owner::Music);
+    audio::queueAdd("/rectest.wav");
+    audio::queueCommit(0);
+    Serial.println("[CON] Spiele /rectest.wav ...");
+    return;
+  }
   if (strcmp(line, "alarm") == 0)           { cmdAlarm(""); return; }
   if (strncmp(line, "alarm ", 6) == 0)      { cmdAlarm(line + 6); return; }
   if (strncmp(line, "public ", 7) == 0) {
