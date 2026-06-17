@@ -156,7 +156,7 @@ void ensureBeepWav() {
 // Dauerschleife, Tastatur-Backlight als Sichtsignal. Lautstärke wird gemerkt
 // und beim Quittieren/Schlummern wiederhergestellt (kein NVS-Schreiben).
 void startRing(const char* why, uint8_t signal) {
-  s_ringSignal = (signal >= 1 && signal <= 3) ? signal : alarmclock::SIG_BOTH;
+  s_ringSignal = (signal >= 1 && signal <= 7) ? signal : alarmclock::SIG_BOTH;
   const bool wantTone  = (s_ringSignal & alarmclock::SIG_TONE)  != 0;
   const bool wantBlink = (s_ringSignal & alarmclock::SIG_BLINK) != 0;
   char path[TRACK_PATH_LEN] = "";
@@ -186,8 +186,9 @@ void startRing(const char* why, uint8_t signal) {
   if (wantBlink) kbBacklight(true);
   if (wantVibra) { board::vibraEnable(true); board::vibrate(true); }
   power::noteActivity();   // Auto-Standby nicht mitten ins Klingeln grätschen
-  Serial.printf("[ALARM] Klingelt (%s) [%s%s]: %s\n", why,
-                wantTone ? "Ton " : "", wantBlink ? "Blink" : "", path[0] ? path : "-");
+  Serial.printf("[ALARM] Klingelt (%s) [%s%s%s]: %s\n", why,
+                wantTone ? "Ton " : "", wantBlink ? "Blink " : "",
+                wantVibra ? "Vibra" : "", path[0] ? path : "-");
 }
 
 }  // namespace
@@ -246,7 +247,9 @@ bool ringing() { return s_ringing; }
 
 uint32_t snoozeMinutes() { return kSnoozeMinutes; }
 
-void fireNow() { startRing("Test", alarmclock::SIG_BOTH); }
+void fireNow() {   // Test löst alle drei Signale aus (Ton + Blinken + Vibration)
+  startRing("Test", alarmclock::SIG_TONE | alarmclock::SIG_BLINK | alarmclock::SIG_VIBRA);
+}
 
 // Klingel-Ausgabe stoppen: Audio aus, Lautstärke zurück, Backlight + Motor aus.
 void stopRingOutput() {
