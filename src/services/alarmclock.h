@@ -52,6 +52,7 @@ void  clear(int i);                  // Slot deaktivieren
 uint32_t nextDueEpoch(uint32_t fromEpoch);
 
 bool ringing();
+uint32_t snoozeMinutes();   // Schlummer-Dauer (für die Button-Beschriftung)
 void fireNow();      // sofort klingeln (Konsolentest „alarm test")
 void snooze();       // schlummern (+kSnoozeMinutes), Klingeln stoppen
 void dismiss();      // quittieren, Klingeln stoppen

@@ -24,8 +24,8 @@ constexpr int kSoundRow = alarmclock::kMaxAlarms;       // Klingelton-Zeile (= u
 constexpr int kLastRow  = kSoundRow;
 
 const Rect kBack    {6, 270, 104, 42};
-const Rect kSnooze  {6, 232, 130, 56};        // Klingel-Bildschirm („Schlummer" = 9 Zeichen)
-const Rect kStop    {142, 232, 92, 56};
+const Rect kSnooze  {12, 232, 100, 56};       // Klingel-Bildschirm
+const Rect kStop    {128, 232, 100, 56};
 
 // Wiederholungs-Presets; eigene (per Konsole gesetzte) Masken zeigen "eigen".
 struct DayPreset { const char* name; uint8_t mask; };
@@ -142,7 +142,9 @@ void drawRinging(Adafruit_GFX& g) {
   gui::textBounds(g, hhmm, &tw, &th);
   gui::printAt(g, (W - (int)tw) / 2, TOP + 100, hhmm, 5);
 
-  gui::drawButton(g, kSnooze, "Schlummer", false);
+  char snz[12];
+  snprintf(snz, sizeof(snz), "+%u min", (unsigned)alarmclock::snoozeMinutes());
+  gui::drawButton(g, kSnooze, snz, false);
   gui::drawButton(g, kStop, "Stop", true);
 }
 
