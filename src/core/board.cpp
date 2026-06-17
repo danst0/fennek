@@ -20,7 +20,7 @@ bool s_sdReady = false;
 const gpio_num_t kHoldPins[] = {
   (gpio_num_t)PIN_PERF_POWERON, (gpio_num_t)PIN_DAC_EN, (gpio_num_t)PIN_LORA_EN,
   (gpio_num_t)PIN_EINK_CS, (gpio_num_t)PIN_LORA_CS, (gpio_num_t)PIN_SD_CS,
-  (gpio_num_t)PIN_EINK_RST,
+  (gpio_num_t)PIN_EINK_RST, (gpio_num_t)PIN_GPS_EN,
 };
 }
 
@@ -55,6 +55,12 @@ void powerOn() {
   // 5) DAC zunächst aus (Strom sparen, erst bei Wiedergabe an).
   pinMode(PIN_DAC_EN, OUTPUT);
   digitalWrite(PIN_DAC_EN, LOW);
+
+  // 6) GPS-Modul (vorhanden, aber ungenutzt) ausschalten — Enable ist active-high
+  //    (GPIO39). Ohne dies floatet der Pin und der Empfänger könnte ungenutzt
+  //    ~20-40 mA ziehen. Der Pegel wird über den Deep Sleep gehalten (kHoldPins).
+  pinMode(PIN_GPS_EN, OUTPUT);
+  digitalWrite(PIN_GPS_EN, LOW);
 }
 
 void initBus() {

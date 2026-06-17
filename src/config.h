@@ -56,6 +56,13 @@
 #define PIN_LORA_BUSY      6
 
 // -----------------------------------------------------------------------------
+// GPS-Modul (UART RX44/TX43, PPS GPIO1) ist auf der T-Deck Pro vorhanden, wird
+// von Fennek aber NICHT genutzt. Enable GPIO39 ist active-high; wir treiben ihn
+// beim Boot LOW (und halten ihn über den Deep Sleep), damit der Empfänger nicht
+// ungenutzt Strom zieht.
+#define PIN_GPS_EN        39
+
+// -----------------------------------------------------------------------------
 // Tastatur-Backlight (GPIO42). Auf dem T-Deck Pro MAX bestückt; auf manchen
 // Boards evtl. nicht angeschlossen — GPIO42 ist sonst frei, das Ansteuern ist
 // also gefahrlos (tut dann nichts). Wird als Wecker-Sichtsignal geblinkt.
