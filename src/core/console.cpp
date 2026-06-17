@@ -17,6 +17,8 @@
 #include "services/settingsfile.h"
 #include "services/gps.h"
 #include "services/gyro.h"
+#include "services/mic.h"
+#include "services/audio.h"
 
 #include <time.h>
 
@@ -603,6 +605,28 @@ void cmdGyro() {
   Serial.println("[CON] Gyro: fertig (Sensor auf 0 Hz)");
 }
 
+// Mikro-Aufnahmetest: N s nach /rectest.wav aufnehmen (Standard 3 s).
+void cmdRec(const char* arg) {
+  int secs = 3;
+  if (arg && *arg) { int v = atoi(arg); if (v > 0 && v <= 30) secs = v; }
+  audio::stop(); delay(60);
+  const char* path = "/rectest.wav";
+  Serial.printf("[CON] Aufnahme %d s -> %s (jetzt sprechen!) ...\n", secs, path);
+  if (!mic::startRecording(path)) { Serial.println("[CON] Mikro-Init/SD fehlgeschlagen"); return; }
+  uint16_t maxLvl = 0;
+  uint32_t t0 = millis();
+  while (millis() - t0 < (uint32_t)secs * 1000) {
+    mic::poll();
+    uint16_t l = mic::level(); if (l > maxLvl) maxLvl = l;
+    delay(5);
+  }
+  uint32_t dur = mic::stopRecording();
+  Serial.printf("[CON] Aufnahme fertig: %lu s, Spitzenpegel %u/32767 %s\n",
+                (unsigned long)dur, maxLvl,
+                maxLvl > 1500 ? "(Ton erkannt)" : "(sehr leise/Stille?)");
+  Serial.println("[CON] Abspielen: via WebFM herunterladen oder in /music kopieren.");
+}
+
 void handleLine(char* line) {
   // Führende Leerzeichen überspringen.
   while (*line == ' ') line++;
@@ -755,6 +779,8 @@ void handleLine(char* line) {
   if (strcmp(line, "gps") == 0)             { cmdGps(nullptr); return; }
   if (strncmp(line, "gps ", 4) == 0)        { cmdGps(line + 4); return; }
   if (strcmp(line, "gyro") == 0)            { cmdGyro(); return; }
+  if (strcmp(line, "rec") == 0)             { cmdRec(nullptr); return; }
+  if (strncmp(line, "rec ", 4) == 0)        { cmdRec(line + 4); return; }
   if (strcmp(line, "alarm") == 0)           { cmdAlarm(""); return; }
   if (strncmp(line, "alarm ", 6) == 0)      { cmdAlarm(line + 6); return; }
   if (strncmp(line, "public ", 7) == 0) {
