@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v1.9.6"
+#define FENNEK_VERSION "v1.9.7"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power
@@ -56,6 +56,11 @@
 #define PIN_LORA_BUSY      6
 
 // -----------------------------------------------------------------------------
+// Tastatur-Backlight (GPIO42). Auf dem T-Deck Pro MAX bestückt; auf manchen
+// Boards evtl. nicht angeschlossen — GPIO42 ist sonst frei, das Ansteuern ist
+// also gefahrlos (tut dann nichts). Wird als Wecker-Sichtsignal geblinkt.
+#define PIN_KB_BL         42
+
 // I2C (Touch + Keyboard + Sensoren) — getrennt vom SPI-Bus!
 // -----------------------------------------------------------------------------
 #define PIN_I2C_SDA       13
