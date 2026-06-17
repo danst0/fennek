@@ -121,15 +121,17 @@ static void drawStatusBar(Adafruit_GFX& g, const char* name, int battPct,
 // Launcher — gespiegelt aus apps/launcher.cpp (draw + tileRect).
 // =============================================================================
 static void screenLauncher(Adafruit_GFX& g) {
-  static constexpr int kTiles = 6;
-  static constexpr int kTileW = 108, kTileH = 78;
+  static constexpr int kTiles = 10;
+  static constexpr int kTileW = 108, kTileH = 46;
   static const int kCol[2] = {8, 124};
   static constexpr int kRowY0 = CONTENT_Y + 6;   // 30
-  static constexpr int kRowGap = 88;
+  static constexpr int kRowGap = 52;
   static constexpr int kHintY = 296;
-  const char* labels[kTiles] = {
-    T(Str::TileMusic), T(Str::TileBook), T(Str::TileReader),
-    T(Str::TileMesh),  T(Str::TileGames), T(Str::TileSettings)
+  // Slot-Belegung 1:1 aus main.cpp (setTile 0..8); Slot 9 leer (None).
+  const Str labels[kTiles] = {
+    Str::TileMusic, Str::TileBook,  Str::TileReader, Str::TileMesh,
+    Str::TileSettings, Str::TileGames, Str::TileFiles, Str::TileNotes,
+    Str::TileAlarm, Str::None
   };
   const int cursor = 0;
   const char* nowPlaying = "Nuvole Bianche";   // Titel — nicht übersetzen
@@ -138,16 +140,18 @@ static void screenLauncher(Adafruit_GFX& g) {
 
   g.setTextColor(GxEPD_BLACK);
   for (int i = 0; i < kTiles; i++) {
+    if (labels[i] == Str::None) continue;
     Rect r{kCol[i % 2], kRowY0 + (i / 2) * kRowGap, kTileW, kTileH};
     g.drawRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
     if (i == cursor)
       g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 7, GxEPD_BLACK);
     g.setTextSize(2);
     uint16_t bw, bh;
-    gui::textBounds(g, labels[i], &bw, &bh);
+    const char* label = T(labels[i]);
+    gui::textBounds(g, label, &bw, &bh);
     int ty = r.y + (r.h - (int)bh) / 2;
     g.setCursor(r.x + (r.w - (int)bw) / 2, ty);
-    gui::print(g, labels[i]);
+    gui::print(g, label);
   }
 
   g.setTextSize(1);
