@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v2.0.5"
+#define FENNEK_VERSION "v2.0.6"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power
@@ -61,6 +61,12 @@
 // beim Boot LOW (und halten ihn über den Deep Sleep), damit der Empfänger nicht
 // ungenutzt Strom zieht.
 #define PIN_GPS_EN        39
+
+// -----------------------------------------------------------------------------
+// Vibrationsmotor-Treiber DRV2605 (V1.1, I2C 0x5A) mit Enable GPIO2 — von Fennek
+// ungenutzt. Wie das GPS beim Boot auf LOW (Hardware-Shutdown, ~µA) und über den
+// Schlaf gehalten, damit der Treiber nicht im Standby ~1-2 mA zieht.
+#define PIN_DRV_EN        2
 
 // -----------------------------------------------------------------------------
 // Tastatur-Backlight (GPIO42). Auf dem T-Deck Pro MAX bestückt; auf manchen

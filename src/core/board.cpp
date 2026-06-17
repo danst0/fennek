@@ -20,7 +20,7 @@ bool s_sdReady = false;
 const gpio_num_t kHoldPins[] = {
   (gpio_num_t)PIN_PERF_POWERON, (gpio_num_t)PIN_DAC_EN, (gpio_num_t)PIN_LORA_EN,
   (gpio_num_t)PIN_EINK_CS, (gpio_num_t)PIN_LORA_CS, (gpio_num_t)PIN_SD_CS,
-  (gpio_num_t)PIN_EINK_RST, (gpio_num_t)PIN_GPS_EN,
+  (gpio_num_t)PIN_EINK_RST, (gpio_num_t)PIN_GPS_EN, (gpio_num_t)PIN_DRV_EN,
 };
 }
 
@@ -61,6 +61,11 @@ void powerOn() {
   //    ~20-40 mA ziehen. Der Pegel wird über den Deep Sleep gehalten (kHoldPins).
   pinMode(PIN_GPS_EN, OUTPUT);
   digitalWrite(PIN_GPS_EN, LOW);
+
+  // 7) Vibrationsmotor-Treiber DRV2605 (ungenutzt) in Hardware-Shutdown — EN
+  //    (GPIO2) LOW, ebenfalls über den Schlaf gehalten. Spart ~1-2 mA Standby.
+  pinMode(PIN_DRV_EN, OUTPUT);
+  digitalWrite(PIN_DRV_EN, LOW);
 }
 
 void initBus() {
