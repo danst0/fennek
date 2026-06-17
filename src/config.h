@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v2.0.6"
+#define FENNEK_VERSION "v2.1.0"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power
@@ -56,11 +56,14 @@
 #define PIN_LORA_BUSY      6
 
 // -----------------------------------------------------------------------------
-// GPS-Modul (UART RX44/TX43, PPS GPIO1) ist auf der T-Deck Pro vorhanden, wird
-// von Fennek aber NICHT genutzt. Enable GPIO39 ist active-high; wir treiben ihn
-// beim Boot LOW (und halten ihn über den Deep Sleep), damit der Empfänger nicht
-// ungenutzt Strom zieht.
+// GPS-Modul (UART RX44/TX43, PPS GPIO1). Enable GPIO39 ist active-high; beim Boot
+// treibt powerOn() ihn LOW (und hält ihn über den Deep Sleep), damit der
+// Empfänger nicht ungenutzt Strom zieht. Die Maps-App schaltet das Modul nur
+// solange sie im Vordergrund ist über board::gpsPower() ein (NMEA via UART1).
 #define PIN_GPS_EN        39
+#define PIN_GPS_RX        44   // GPS-TX -> ESP-RX (UART1)
+#define PIN_GPS_TX        43   // GPS-RX <- ESP-TX (UART1)
+#define GPS_BAUD          38400 // am Gerät verifiziert (u-blox GN-Talker, 17.06.2026)
 
 // -----------------------------------------------------------------------------
 // Vibrationsmotor-Treiber DRV2605 (V1.1, I2C 0x5A) mit Enable GPIO2 — von Fennek

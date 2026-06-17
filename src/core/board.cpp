@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <SD.h>
+#include <Wire.h>          // DRV2605 (Vibrationsmotor) über I2C
 #include <driver/gpio.h>   // gpio_hold_en/dis, gpio_deep_sleep_hold_en/dis
 
 SPIClass         g_spi(HSPI);
@@ -105,6 +106,46 @@ void dacPower(bool on) {
 void loraPower(bool on) {
   digitalWrite(PIN_LORA_EN, on ? HIGH : LOW);
   if (on) delay(10);   // Modul hochfahren lassen
+}
+
+void gpsPower(bool on) {
+  if (on) {
+    pinMode(PIN_GPS_EN, OUTPUT);
+    digitalWrite(PIN_GPS_EN, HIGH);
+    delay(5);          // Empfänger-Versorgung stabilisieren lassen
+    Serial1.begin(GPS_BAUD, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+  } else {
+    Serial1.end();
+    digitalWrite(PIN_GPS_EN, LOW);   // zurück in den Sparzustand (wie powerOn)
+  }
+}
+
+// --- Vibrationsmotor DRV2605 (I2C 0x5A) -----------------------------------------
+namespace {
+constexpr uint8_t kDrvAddr = 0x5A;
+void drvWrite(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(kDrvAddr);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+}  // namespace
+
+void vibraEnable(bool en) {
+  if (en) {
+    digitalWrite(PIN_DRV_EN, HIGH);   // aus Hardware-Shutdown holen
+    delay(2);                         // Treiber-Boot-Zeit
+    drvWrite(0x01, 0x05);             // MODE = RTP (Real-Time-Playback), kein Standby
+    drvWrite(0x02, 0x00);             // Motor zunächst aus
+  } else {
+    drvWrite(0x02, 0x00);             // Motor aus
+    drvWrite(0x01, 0x40);             // Standby
+    digitalWrite(PIN_DRV_EN, LOW);    // Shutdown (Strom sparen)
+  }
+}
+
+void vibrate(bool on) {
+  drvWrite(0x02, on ? 0x7F : 0x00);   // RTP-Stärke (0x7F = Maximum)
 }
 
 void holdSleepPins() {

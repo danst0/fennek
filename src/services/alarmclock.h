@@ -25,10 +25,11 @@ namespace alarmclock {
 
 constexpr int kMaxAlarms = 4;
 
-// Signal-Modus beim Klingeln: Bitmaske Ton/Blinken (pro Wecker).
+// Signal-Modus beim Klingeln: Bitmaske Ton/Blinken/Vibration (pro Wecker, 3 Bit).
 constexpr uint8_t SIG_TONE  = 1;
 constexpr uint8_t SIG_BLINK = 2;
-constexpr uint8_t SIG_BOTH  = 3;
+constexpr uint8_t SIG_VIBRA = 4;
+constexpr uint8_t SIG_BOTH  = 3;   // Ton+Blinken (Default)
 
 struct Alarm {
   bool    enabled;
