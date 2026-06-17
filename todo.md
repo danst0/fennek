@@ -13,8 +13,12 @@
 - [x] Wecker-App-UI: Kachel (Launcher 2×5), Editor mit Ziffern-Eingabe der
       Weckzeit (Alt-Halten-Fix), Signal-Feld, „+9 min"-Schlummer-Button.
 - [x] Mesh-Telemetrie: `pos` setzen/lesen/persistieren am Gerät bestätigt.
-- [ ] Mesh-Telemetrie Empfang: am Web-Client (meshcore.dumke.me) prüfen, dass
-      Position + Akku ankommen; `contacts` zeigt `@lat,lon` fremder Nodes. (offen)
+- [x] Mesh-GPS-Empfang END-TO-END (17.06.): Fennek „Daniel" sendet `advert flood`
+      mit Position 51.4818/7.2162 → über Relay/Bridge zum Server meshcore.dumke.me
+      → Companion „Antonia" sieht den Node mit korrektem GPS-Pin (~2 min Latenz).
+      Wichtig: nur Flood propagiert (Zero-Hop erreicht die 1-Hop-Bridge nicht).
+      Akku-Telemetrie liegt in den FEAT-Feldern (nicht-Standard) — der Server
+      dekodiert daraus keine Spannung (nur Position ist Standard-Advert-Feld).
 - [x] Fennek-Bild Credit: geschwungener "by Dr. Daniel Dumke" am Schwanz war zu
       klein -> wieder entfernt (Original-Bild). Falls gewuenscht: groesser/anders.
       Tools dafuer liegen unter tools/sleepcredit.py + tools/sleepimg.py.
