@@ -328,13 +328,26 @@ void startRecord() {
   markDirty();
 }
 
+// Schnelles Stop-Feedback (Streifen-Refresh ~0,3 s) — sofort sichtbar, BEVOR die
+// langsamen Schritte (I2S0-Restore, Rescan, Voll-Refresh) laufen.
+void drawStopAck(Adafruit_GFX& g) {
+  g.fillRect(0, 70, W, 80, GxEPD_WHITE);
+  g.setTextColor(GxEPD_BLACK);
+  gui::printAt(g, 30, 86, "Gespeichert", 3);
+  gui::printAt(g, 30, 124, "...", 2);
+}
+
 void stopRecord() {
   if (s_screen != RECORD) return;
   Serial.println("[NOTES] Aufnahme gestoppt");
-  mic::stopRecording();
-  audio::endMic();          // I2S0 zurück an die Audio-Engine
+  s_screen = LIST;                                 // gegen Doppel-Stop
+  mic::stopRecording();                            // WAV finalisieren (schnell)
+  display::renderRegion(drawStopAck, 70, 80);      // sofortiges Feedback (~0,3 s)
+  audio::endMic();                                 // I2S0 zurück an die Audio-Engine
   s_recFile[0] = '\0';
-  backToList();             // Rescan -> die neue Aufnahme erscheint in der Liste
+  saveCurrent();
+  scanNotes();                                     // neue Aufnahme einlesen
+  markDirty();                                     // Liste (Voll-Refresh)
 }
 
 void playEntry(int idx) {
