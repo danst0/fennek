@@ -324,11 +324,13 @@ void startRecord() {
   if (!mic::startRecording(path)) { audio::endMic(); s_recFile[0] = '\0'; return; }
   s_recStartMs = millis();
   s_screen = RECORD;
+  Serial.printf("[NOTES] Aufnahme gestartet: %s\n", s_recFile);
   markDirty();
 }
 
 void stopRecord() {
   if (s_screen != RECORD) return;
+  Serial.println("[NOTES] Aufnahme gestoppt");
   mic::stopRecording();
   audio::endMic();          // I2S0 zurück an die Audio-Engine
   s_recFile[0] = '\0';
@@ -674,7 +676,7 @@ class NotesApp : public App {
     // bleiben (sonst grätscht der Auto-Standby rein), Auto-Stop nach 5 min.
     if (s_screen == RECORD) {
       mic::poll();
-      power::noteActivity();
+      power::noteActivity();   // Auto-Standby nicht ins Aufnehmen grätschen lassen
       if (millis() - s_recStartMs >= 5UL * 60UL * 1000UL) stopRecord();
     }
   }

@@ -65,6 +65,10 @@ bool startRecording(const char* path) {
   if (i2s_driver_install(kPort, &cfg, 0, nullptr) != ESP_OK) return false;
 
   i2s_pin_config_t pins = {};
+  // WICHTIG: mck NICHT auf GPIO0 lassen! Das per {}-Init gesetzte mck_io_num=0
+  // würde den I2S-MCLK auf GPIO0 (= Standby-Knopf PIN_USER_BTN) legen — die
+  // Langdruck-Erkennung schlägt dann mitten in der Aufnahme an und schläft ein.
+  pins.mck_io_num   = I2S_PIN_NO_CHANGE;
   pins.bck_io_num   = I2S_PIN_NO_CHANGE;
   pins.ws_io_num    = PIN_MIC_CLK;        // PDM-Takt
   pins.data_out_num = I2S_PIN_NO_CHANGE;

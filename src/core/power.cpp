@@ -271,6 +271,7 @@ void poll() {
       noteActivity();             // Knopfdruck zählt als Aktivität
     } else if (!s_armed && now - s_btnDownAt >= LONGPRESS_MS) {
       s_armed = true;             // nur einmal pro Druck
+      Serial.println("[PWR] Standby via Langdruck (GPIO0)");
       enterStandby();             // Langdruck → kehrt nicht zurück
     }
   } else if (s_btnDownAt != 0) {  // Flanke LOW->HIGH (losgelassen)
@@ -301,6 +302,8 @@ void poll() {
     return;
   }
   if (now - s_lastActivity >= (uint32_t)mins * 60000UL) {
+    Serial.printf("[PWR] Auto-Standby: idle %lus (Schwelle %u min)\n",
+                  (unsigned long)((now - s_lastActivity) / 1000), mins);
     // Vor dem Auto-Standby (Gerät idle, Audio aus): bei veralteter Uhr zuerst
     // GPS-Zeit holen (genau, kein WLAN) — gelingt das, schläft das Gerät mit
     // satellitengenauer Uhr ein und der folgende NTP-Sync ist via gpsFresh() ein
