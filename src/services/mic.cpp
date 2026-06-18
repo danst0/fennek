@@ -59,8 +59,8 @@ bool startRecording(const char* path) {
   cfg.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
   cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
   cfg.intr_alloc_flags = 0;
-  cfg.dma_buf_count = 4;
-  cfg.dma_buf_len = 256;
+  cfg.dma_buf_count = 8;     // ~512 ms Puffer, überbrückt E-Ink-Refresh-SPI-Pausen
+  cfg.dma_buf_len = 1024;
   cfg.use_apll = false;
   if (i2s_driver_install(kPort, &cfg, 0, nullptr) != ESP_OK) return false;
 
@@ -86,19 +86,22 @@ bool startRecording(const char* path) {
 
 void poll() {
   if (!s_rec) return;
-  size_t got = 0;
-  i2s_read(kPort, s_buf, sizeof(s_buf), &got, 0);   // non-blocking
-  if (got == 0) return;
+  // Mehrfach lesen: nach einer SPI-Pause (E-Ink-Refresh) den DMA-Backlog abbauen.
+  for (int iter = 0; iter < 16; iter++) {
+    size_t got = 0;
+    i2s_read(kPort, s_buf, sizeof(s_buf), &got, 0);   // non-blocking
+    if (got == 0) break;
 
-  int n = (int)(got / 2);
-  int16_t pk = 0;
-  for (int i = 0; i < n; i++) { int16_t a = s_buf[i] < 0 ? -s_buf[i] : s_buf[i]; if (a > pk) pk = a; }
-  s_level = pk;
+    int n = (int)(got / 2);
+    int16_t pk = 0;
+    for (int i = 0; i < n; i++) { int16_t a = s_buf[i] < 0 ? -s_buf[i] : s_buf[i]; if (a > pk) pk = a; }
+    if (pk > s_level || iter == 0) s_level = pk;
 
-  spiLock();
-  s_file.write((const uint8_t*)s_buf, got);
-  spiUnlock();
-  s_dataBytes += got;
+    spiLock();
+    s_file.write((const uint8_t*)s_buf, got);
+    spiUnlock();
+    s_dataBytes += got;
+  }
 }
 
 uint32_t stopRecording() {

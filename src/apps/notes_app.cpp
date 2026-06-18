@@ -9,6 +9,8 @@
 #include "core/i18n.h"
 #include "core/settings.h"
 #include "services/timesync.h"
+#include "services/audio.h"
+#include "services/mic.h"
 
 #include <Arduino.h>
 #include <SD.h>
@@ -23,7 +25,7 @@ namespace {
 using gui::Rect;
 
 constexpr const char* kNotesDir = "/notes";
-constexpr int kFileLen  = 16;    // "YYYY-MM-DD.md" + Reserve
+constexpr int kFileLen  = 28;    // "YYYY-MM-DD.md" bzw. "YYYY-MM-DD-HHMMSS.wav"
 constexpr int kTitleLen = 40;    // Vorschau (erste Textzeile)
 constexpr int kMaxNotes = 366;   // ein Jahr Tagesnotizen — Überlauf-Schutz
 constexpr int kNoteCap  = 8192;  // RAM-Puffer pro Notiz (längere werden gekappt)
@@ -74,13 +76,19 @@ void applyFontScale() {
 }
 
 // --- Zustand -----------------------------------------------------------------
-enum Screen { LIST, EDIT, CONFIRM_DEL };
+enum Screen { LIST, EDIT, CONFIRM_DEL, RECORD };
 Screen s_screen = LIST;
 
-struct NoteEntry { char file[kFileLen]; char title[kTitleLen]; };
+struct NoteEntry { char file[kFileLen]; char title[kTitleLen]; bool audio; uint16_t durSec; };
 NoteEntry* s_notes = nullptr;
 int  s_count = -1;          // -1 = noch nicht gescannt
-int  s_sel = 0, s_off = 0;  // Auswahl/Scroll; Zeile 0 = "+ Heute"
+// Zeile 0 = "+ Heute" (Text), Zeile 1 = "Aufnahme", ab Zeile 2 die Einträge.
+int  s_sel = 0, s_off = 0;
+constexpr int kSpecialRows = 2;
+
+// Aufnahme-Zustand.
+char     s_recFile[kFileLen] = "";
+uint32_t s_recStartMs = 0;
 
 char*    s_buf = nullptr;    // PSRAM, aktueller Notiztext
 int      s_len = 0;
@@ -168,11 +176,27 @@ void scanNotes() {
     const char* full = entry.c_str();
     const char* nm = strrchr(full, '/');
     nm = nm ? nm + 1 : full;
-    if (isDir || nm[0] == '.' || !hasExt(nm, ".md")) continue;
+    if (isDir || nm[0] == '.') continue;
+    bool isMd  = hasExt(nm, ".md");
+    bool isWav = hasExt(nm, ".wav");
+    if (!isMd && !isWav) continue;
     NoteEntry& e = s_notes[s_count];
     strncpy(e.file, nm, kFileLen - 1); e.file[kFileLen - 1] = '\0';
-    readPreview(full, e.title, kTitleLen);
-    if (!e.title[0]) strncpy(e.title, i18n::tr(i18n::Str::EmptyList), kTitleLen - 1);
+    e.audio = isWav;
+    e.durSec = 0;
+    if (isWav) {
+      // Dauer aus der Dateigröße (16 kHz mono 16-bit): (Bytes-44)/(16000*2).
+      spiLock();
+      File wf = SD.open(full);
+      uint32_t sz = wf ? wf.size() : 0;
+      if (wf) wf.close();
+      spiUnlock();
+      e.durSec = sz > 44 ? (uint16_t)((sz - 44) / 32000) : 0;
+      snprintf(e.title, kTitleLen, "Sprachnotiz");
+    } else {
+      readPreview(full, e.title, kTitleLen);
+      if (!e.title[0]) strncpy(e.title, i18n::tr(i18n::Str::EmptyList), kTitleLen - 1);
+    }
     s_count++;
   }
   spiLock(); dir.close(); spiUnlock();
@@ -282,8 +306,41 @@ void retrySD() {
   markDirty();
 }
 
-// s_sel: 0 = "+ Heute", 1..s_count = Notizen.
-int rowCount() { return s_count > 0 ? s_count + 1 : 1; }
+// s_sel: 0 = "+ Heute", 1 = "Aufnahme", ab 2 die Einträge.
+int rowCount() { return (s_count > 0 ? s_count : 0) + kSpecialRows; }
+
+// --- Audionotizen ------------------------------------------------------------
+void startRecord() {
+  if (!board::sdReady()) return;
+  time_t t = (time_t)timesync::now();
+  struct tm tmv;
+  localtime_r(&t, &tmv);
+  strftime(s_recFile, sizeof(s_recFile), "%Y-%m-%d-%H%M%S.wav", &tmv);
+  char path[48];
+  notePath(s_recFile, path, sizeof(path));
+  audio::stop();
+  if (!audio::beginMic()) { s_recFile[0] = '\0'; return; }   // I2S0-Handover
+  if (!mic::startRecording(path)) { audio::endMic(); s_recFile[0] = '\0'; return; }
+  s_recStartMs = millis();
+  s_screen = RECORD;
+  markDirty();
+}
+
+void stopRecord() {
+  if (s_screen != RECORD) return;
+  mic::stopRecording();
+  audio::endMic();          // I2S0 zurück an die Audio-Engine
+  s_recFile[0] = '\0';
+  backToList();             // Rescan -> die neue Aufnahme erscheint in der Liste
+}
+
+void playEntry(int idx) {
+  char path[48];
+  notePath(s_notes[idx].file, path, sizeof(path));
+  audio::queueBegin(audio::Owner::Music);
+  audio::queueAdd(path);
+  audio::queueCommit(0);
+}
 
 void moveSel(int delta) {
   int n = rowCount();
@@ -298,14 +355,18 @@ void moveSel(int delta) {
 
 void openSel() {
   if (s_sel == 0) { openToday(); return; }
-  int idx = s_sel - 1;
-  if (idx >= 0 && idx < s_count) openEditor(s_notes[idx].file);
+  if (s_sel == 1) { startRecord(); return; }
+  int idx = s_sel - kSpecialRows;
+  if (idx < 0 || idx >= s_count) return;
+  if (s_notes[idx].audio) playEntry(idx);
+  else                    openEditor(s_notes[idx].file);
 }
 
 void deleteSel() {
-  if (s_sel < 1 || s_sel - 1 >= s_count) return;
-  char path[40];
-  notePath(s_notes[s_sel - 1].file, path, sizeof(path));
+  int idx = s_sel - kSpecialRows;
+  if (idx < 0 || idx >= s_count) return;
+  char path[48];
+  notePath(s_notes[idx].file, path, sizeof(path));
   spiLock();
   if (SD.exists(path)) SD.remove(path);
   spiUnlock();
@@ -332,13 +393,24 @@ void drawList(Adafruit_GFX& g) {
     char lbl[80];
     if (gi == 0) {
       snprintf(lbl, sizeof(lbl), "%s", i18n::tr(i18n::Str::NotesToday));
+    } else if (gi == 1) {
+      snprintf(lbl, sizeof(lbl), "%c Aufnahme", 0x0E);   // ♪ + Aufnahme
     } else {
-      const NoteEntry& e = s_notes[gi - 1];
-      char date[kFileLen];
-      strncpy(date, e.file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
-      char* dot = strrchr(date, '.');
-      if (dot) *dot = '\0';   // ".md" abschneiden
-      snprintf(lbl, sizeof(lbl), "%s  %s", date, e.title);
+      const NoteEntry& e = s_notes[gi - kSpecialRows];
+      if (e.audio) {
+        // Zeitanteil HH:MM:SS aus "YYYY-MM-DD-HHMMSS.wav" + Dauer.
+        char tm[10] = "??:??:??";
+        if (strlen(e.file) >= 17)
+          snprintf(tm, sizeof(tm), "%c%c:%c%c:%c%c",
+                   e.file[11], e.file[12], e.file[13], e.file[14], e.file[15], e.file[16]);
+        snprintf(lbl, sizeof(lbl), "%c %s  %us", 0x0E, tm, (unsigned)e.durSec);
+      } else {
+        char date[kFileLen];
+        strncpy(date, e.file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
+        char* dot = strrchr(date, '.');
+        if (dot) *dot = '\0';   // ".md" abschneiden
+        snprintf(lbl, sizeof(lbl), "%s  %s", date, e.title);
+      }
     }
     gui::drawRowText(g, LIST_Y + r * ROW_H, ROW_H, lbl, false);
   }
@@ -470,14 +542,26 @@ void flushEditorRefresh() {
 void drawConfirmDel(Adafruit_GFX& g) {
   gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppNotes), 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
-  if (s_sel >= 1 && s_sel - 1 < s_count) {
+  if (s_sel >= kSpecialRows && s_sel - kSpecialRows < s_count) {
     char date[kFileLen];
-    strncpy(date, s_notes[s_sel - 1].file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
+    strncpy(date, s_notes[s_sel - kSpecialRows].file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';
     char* dot = strrchr(date, '.'); if (dot) *dot = '\0';
     gui::printAt(g, 10, 90, date, 2);
   }
   gui::printAt(g, 10, 130, i18n::tr(i18n::Str::NotesDelQ), 2);
   gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
+}
+
+// Aufnahme-Screen: bewusst STATISCH (kein Live-Timer/Pegel) — jeder E-Ink-Refresh
+// hält den SPI-Bus und würde die Mikro-SD-Schreibvorgänge stocken lassen (Audio-
+// Lücken). Dauer erscheint nach dem Stop in der Liste.
+void drawRecord(Adafruit_GFX& g) {
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppNotes), 2);
+  g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
+  gui::printAt(g, 24, 96, "Aufnahme", 4);
+  gui::printAt(g, 24, 150, "Sprich jetzt ...", 2);
+  gui::printAt(g, 24, 210, "Tippen / Enter = Stop", 1);
+  gui::drawButton(g, kBack, "Stop", true);
 }
 
 // --- Interaktion -------------------------------------------------------------
@@ -504,7 +588,7 @@ void onListKey(char k) {
     case 's': case 'S': moveSel(+1); break;
     case '\r':          openSel(); break;
     case 'x': case 'X':
-      if (s_sel >= 1) { s_screen = CONFIRM_DEL; markDirty(); }
+      if (s_sel >= kSpecialRows) { s_screen = CONFIRM_DEL; markDirty(); }
       break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;
@@ -545,6 +629,12 @@ class NotesApp : public App {
   }
 
   void onLeave() override {
+    if (s_screen == RECORD) {        // laufende Aufnahme sauber beenden (I2S0 zurück)
+      mic::stopRecording();
+      audio::endMic();
+      s_recFile[0] = '\0';
+      s_screen = LIST;
+    }
     saveCurrent();   // ungesicherten Editor-Text vor App-Wechsel sichern
   }
 
@@ -556,6 +646,7 @@ class NotesApp : public App {
         case CONFIRM_DEL:
           if (kBack.hit(e.x, e.y)) { s_screen = LIST; markDirty(); }
           break;
+        case RECORD: stopRecord(); break;   // jeder Tap stoppt
       }
     } else {
       switch (s_screen) {
@@ -565,6 +656,7 @@ class NotesApp : public App {
           if (e.key == '\r') deleteSel();
           else if (e.key == '\b' || e.key == 'q' || e.key == 'Q') { s_screen = LIST; markDirty(); }
           break;
+        case RECORD: stopRecord(); break;   // jede Taste stoppt
       }
     }
   }
@@ -575,6 +667,11 @@ class NotesApp : public App {
     // Autosave im Editor: alle 30 s, wenn ungesicherte Änderungen vorliegen.
     if (s_screen == EDIT && s_dirtyBuf && millis() - s_lastSave >= 30000)
       saveCurrent();
+    // Aufnahme: DMA leeren (kein Refresh hier — würde Audio stocken). Auto-Stop 5 min.
+    if (s_screen == RECORD) {
+      mic::poll();
+      if (millis() - s_recStartMs >= 5UL * 60UL * 1000UL) stopRecord();
+    }
   }
 
   void draw(Adafruit_GFX& g) override {
@@ -583,6 +680,7 @@ class NotesApp : public App {
       case LIST:        drawList(g); break;
       case EDIT:        drawEditor(g); break;
       case CONFIRM_DEL: drawConfirmDel(g); break;
+      case RECORD:      drawRecord(g); break;
     }
   }
 };
