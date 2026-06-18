@@ -8,6 +8,7 @@
 #include "core/gui.h"
 #include "core/i18n.h"
 #include "core/settings.h"
+#include "core/power.h"
 #include "services/timesync.h"
 #include "services/audio.h"
 #include "services/mic.h"
@@ -646,7 +647,9 @@ class NotesApp : public App {
         case CONFIRM_DEL:
           if (kBack.hit(e.x, e.y)) { s_screen = LIST; markDirty(); }
           break;
-        case RECORD: stopRecord(); break;   // jeder Tap stoppt
+        // Erst nach 800 ms stoppen — sonst beendet der noch gehaltene Start-Tap
+        // (CST328-Dauer-Taps bei gehaltenem Finger) die Aufnahme sofort wieder.
+        case RECORD: if (millis() - s_recStartMs > 800) stopRecord(); break;
       }
     } else {
       switch (s_screen) {
@@ -656,7 +659,7 @@ class NotesApp : public App {
           if (e.key == '\r') deleteSel();
           else if (e.key == '\b' || e.key == 'q' || e.key == 'Q') { s_screen = LIST; markDirty(); }
           break;
-        case RECORD: stopRecord(); break;   // jede Taste stoppt
+        case RECORD: if (millis() - s_recStartMs > 800) stopRecord(); break;
       }
     }
   }
@@ -667,9 +670,11 @@ class NotesApp : public App {
     // Autosave im Editor: alle 30 s, wenn ungesicherte Änderungen vorliegen.
     if (s_screen == EDIT && s_dirtyBuf && millis() - s_lastSave >= 30000)
       saveCurrent();
-    // Aufnahme: DMA leeren (kein Refresh hier — würde Audio stocken). Auto-Stop 5 min.
+    // Aufnahme: DMA leeren (kein Refresh hier — würde Audio stocken), wach
+    // bleiben (sonst grätscht der Auto-Standby rein), Auto-Stop nach 5 min.
     if (s_screen == RECORD) {
       mic::poll();
+      power::noteActivity();
       if (millis() - s_recStartMs >= 5UL * 60UL * 1000UL) stopRecord();
     }
   }
