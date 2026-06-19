@@ -119,7 +119,14 @@ uint32_t stopRecording() {
   s_file.seek(40); put32(b, s_dataBytes);       s_file.write(b, 4);   // data-Größe
   s_file.close();
   spiUnlock();
-  return s_dataBytes / (kRate * 2);
+  // Diagnose: gueltige WAV, aber stumm? Peak-Pegel + Bytes/Sekunden loggen.
+  // s_level=0 trotz Bytes -> PDM-Mic liefert Stille (Pin/Config), nicht Wiedergabe.
+  uint32_t secs = s_dataBytes / (kRate * 2);
+  Serial.printf("[MIC] Aufnahme beendet: %lu Bytes (%lus), Peak=%u/%d %s\n",
+                (unsigned long)s_dataBytes, (unsigned long)secs,
+                (unsigned)s_level, 32767,
+                s_level < 64 ? "-> STUMM?" : "");
+  return secs;
 }
 
 bool     recording()   { return s_rec; }

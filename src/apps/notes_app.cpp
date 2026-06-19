@@ -193,7 +193,11 @@ void scanNotes() {
       if (wf) wf.close();
       spiUnlock();
       e.durSec = sz > 44 ? (uint16_t)((sz - 44) / 32000) : 0;
-      snprintf(e.title, kTitleLen, "Sprachnotiz");
+      // Titel aus dem Dateinamen "YYYY-MM-DD-HHMMSS.wav" -> "YYYY-MM-DD HH:MM".
+      if (strlen(nm) >= 17 && nm[10] == '-')
+        snprintf(e.title, kTitleLen, "%.10s %.2s:%.2s", nm, nm + 11, nm + 13);
+      else
+        snprintf(e.title, kTitleLen, "Sprachnotiz");
     } else {
       readPreview(full, e.title, kTitleLen);
       if (!e.title[0]) strncpy(e.title, i18n::tr(i18n::Str::EmptyList), kTitleLen - 1);

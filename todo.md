@@ -1,6 +1,76 @@
 # Offene Themen
-- [ ] ct-Bücher löschen  (manuelle SD-Aktion am Gerät — kein Firmware-Feature;
+- [x] ct-Bücher löschen  (manuelle SD-Aktion am Gerät — kein Firmware-Feature;
       jetzt via Konsole `rm /books/<calibre-pfad>` möglich, auch Überlängenpfade)
+- [ ] GPS Update der Uhr hat heute nie funktioniert
+      STATUS: Diagnose-Log eingebaut (maps_app: Einmal-Log „[MAPS] GPS-Zeit
+      empfangen …" sobald RMC in einer Karten-Session Datum+Zeit liefert; dazu
+      bestehendes „[TIME] GPS-Sync: … Korrektur"). B1 (Pre-Standby-Sync ohne
+      Positions-Fix) BEWUSST VERWORFEN: `gps::begin()` injiziert per UBX-MGA-INI
+      die bekannte Systemzeit — vor echtem Fix echot RMC diese zurueck, ein Sync
+      darauf waere zirkulaer und wuerde via `gpsFresh()` ~10 min NTP/Mesh
+      blockieren (s. timesync.cpp:288). Offen am Geraet: Konsole `gps 60` mit
+      Sky-View → kommt RMC-Zeit? `time` zeigt Quelle=GPS? (Hardware/Sky-View.)
+      Diagnose: `timesync::gpsSync()` wird produktiv NUR aus `maps_app::tick()`
+      gerufen (maps_app.cpp:179) — also nur, solange die Karten-App im
+      Vordergrund ist (onEnter=`gps::begin()`, onLeave=`gps::end()`). Bedingung
+      zusätzlich `f.epochUtc > 1700000000UL`, d.h. RMC muss Datum+Zeit liefern.
+      Drinnen liefert RMC oft keinen gültigen Zeitstempel → kein Sync. Der
+      einzige Hintergrund-Pfad ist `gpsSyncBeforeStandby()` (timesync.cpp:261),
+      der aber einen *gültigen Positions-Fix* verlangt und Back-off hat.
+      Plan:
+        1. Headless eingrenzen: Konsole `gps 60` mit Sky-View — kommt heute
+           überhaupt RMC mit Datum+Zeit? `time` danach zeigt Quelle=GPS?
+        2. Falls GPS-Zeit nur in der Karten-App ankommt: entscheiden, ob der
+           Zeit-Sync breiter laufen soll (z.B. ein leichter GPS-Poll-Pfad
+           unabhängig von der App) oder ob „Karten-App offen“ dokumentiert wird.
+        3. Prüfen, ob der `epochUtc`-Guard / die `gpsSync`-Drossel (>2 s) den
+           Sync verschluckt; ggf. einmaligen Force-Sync nach `begin()` loggen.
+
+- [ ] GPS und Kartenansicht: ohne Fix Fokus auf Düsseldorf
+      Diagnose: Fallback-Zentrum ist aktuell Dortmund (51.4818/7.2162) in
+      maps_app.cpp:28-30 (`FALLBACK_LAT/LON`); ohne Fix/Mesh-Pos bleibt die
+      Karte dort. NRW-Kacheln z6-13 sind vorhanden (decken Düsseldorf ab),
+      Dortmund-Detail z14-16 nicht über Düsseldorf.
+      Plan:
+        1. `FALLBACK_LAT=51.2277`, `FALLBACK_LON=6.7735` (Düsseldorf) setzen,
+           Kommentar anpassen.
+        2. Prüfen, dass `scanZooms()` für Düsseldorf eine Stufe findet und
+           `clampZoom()` `DEFAULT_ZOOM` auf eine vorhandene Stufe klemmt
+           (sonst leeres Punktraster). Ggf. DEFAULT_ZOOM auf z13 senken.
+        3. Am Gerät verifizieren: Karten-App ohne Fix zentriert auf Düsseldorf,
+           Kacheln rendern.
+
+- [ ] Audiorecordings spielen nicht ab — valide WAV-Dateien?
+      STATUS: Diagnose-Log in `mic::stopRecording()` eingebaut — loggt Bytes,
+      Sekunden und Peak-Pegel; bei Peak<64 trotz Bytes „-> STUMM?" (= PDM-Mic
+      liefert Stille, nicht Wiedergabe-Bug). Offen am Geraet: aufnehmen, Log
+      lesen + Datei per WebFM ziehen und am PC pruefen (C2/C3).
+      Diagnose: WAV-Header in mic.cpp sieht korrekt aus (RIFF/WAVE, PCM, 16 kHz
+      mono 16-bit; RIFF- und data-Größe werden beim Stop gepatcht, mic.cpp:
+      116-120). Wiedergabe läuft über die normale Audio-Queue (notes_app.cpp:
+      353, Owner Music → ESP32-audioI2S `connecttoFS`). Offen ist, ob die Datei
+      *gültig aber stumm* (PDM-Mic liefert nichts) oder *defekt* oder der
+      *Wiedergabepfad* das Problem ist.
+      Plan:
+        1. Eine `/notes/*.wav` per WebFM herunterladen, am PC Header prüfen
+           (`xxd`/Audacity) und abspielen → trennt „ungültige Datei“ vs „stille
+           Aufnahme“ vs „nur Geräte-Wiedergabe-Bug“.
+        2. Wenn am PC hörbar & gültig: Geräte-Wiedergabe debuggen (Owner-Token,
+           I2S0-Restore nach `endMic()`, Sample-Rate-Umschaltung der Lib).
+        3. Wenn am PC stumm: PDM-Mic-Pinconfig/Daten prüfen (mic.cpp:55-77,
+           PIN_MIC_CLK/DATA, `i2s_read`-Rückgabe, Pegel).
+
+- [ ] Benamung der Audio-Recordings: Datum + HH:MM
+      Diagnose: Datei heißt bereits `YYYY-MM-DD-HHMMSS.wav` (notes_app.cpp:319),
+      aber die Liste zeigt für *jede* Aufnahme nur „Sprachnotiz“ (notes_app.cpp:
+      196) — Datum/Uhrzeit sind nirgends sichtbar. Das ist vermutlich gemeint.
+      Plan:
+        1. In `scanNotes()` für WAV den Titel aus dem Dateinamen ableiten und
+           als „YYYY-MM-DD HH:MM“ anzeigen (statt fixem „Sprachnotiz“).
+        2. Optional: Dateiname-Format selbst auf Minuten kürzen, aber Sekunden
+           als Kollisionsschutz bei mehreren Aufnahmen/Minute behalten →
+           Empfehlung: Dateiname mit Sekunden lassen, nur Anzeige HH:MM.
+
 
 # Verifikation am Gerät — neue Features 17.06. (v2.0.x)
 - [x] Wecker headless: `time set`, `alarm 0 <hh:mm>`, Liste, geplantes Klingeln

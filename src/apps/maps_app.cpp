@@ -24,10 +24,12 @@ constexpr int VW  = EINK_W;                      // 240
 constexpr int VH  = EINK_H - appmgr::CONTENT_Y;  // 296
 constexpr int FOOT_H = 28;                        // Statuszeilen-Band unten
 
-constexpr int DEFAULT_ZOOM = 15;
-// Fallback-Zentrum ohne Fix/Mesh-Pos (Dortmund, am Gerät verifizierter Punkt).
-constexpr double FALLBACK_LAT = 51.4818;
-constexpr double FALLBACK_LON = 7.2162;
+// z13 ist die tiefste NRW-weit vorhandene Stufe (z14-16 nur Dortmund-Detail);
+// bei z15 ueber Duesseldorf gaebe es nur leeres Punktraster.
+constexpr int DEFAULT_ZOOM = 13;
+// Fallback-Zentrum ohne Fix/Mesh-Pos (Duesseldorf, NRW-weit bekachelt).
+constexpr double FALLBACK_LAT = 51.2277;
+constexpr double FALLBACK_LON = 6.7735;
 
 double s_lat = FALLBACK_LAT, s_lon = FALLBACK_LON;   // Karten-Zentrum
 int    s_zoom = DEFAULT_ZOOM;
@@ -39,6 +41,7 @@ uint32_t s_lastMeshMs = 0;
 double   s_meshLat = 0, s_meshLon = 0;
 
 bool s_lastFixValid = false;
+bool s_gpsTimeSeen  = false;   // Einmal-Log: RMC lieferte in dieser Session Datum+Zeit
 
 void markDirty() { appmgr::markDirty(); }
 
@@ -161,6 +164,7 @@ class MapsApp : public App {
     settings::meshPos(&lat, &lon);
     if (lat != 0.0 || lon != 0.0) { s_lat = lat; s_lon = lon; }
     s_follow = true;
+    s_gpsTimeSeen = false;
     s_viewDirty = true;
     s_lastFixValid = false;
     markDirty();
@@ -176,7 +180,14 @@ class MapsApp : public App {
 
     // GPS-Zeit hat höchste Priorität (vor NTP/Mesh): sobald RMC Datum+Zeit liefert
     // — auch schon vor dem Positionsfix — der Uhr melden (gpsSync drosselt selbst).
-    if (f.epochUtc > 1700000000UL) timesync::gpsSync(f.epochUtc);
+    if (f.epochUtc > 1700000000UL) {
+      if (!s_gpsTimeSeen) {   // Einmal pro Session: belegt, dass RMC-Zeit ankommt
+        s_gpsTimeSeen = true;
+        Serial.printf("[MAPS] GPS-Zeit empfangen: %lu UTC (Fix=%s) -> timesync\n",
+                      (unsigned long)f.epochUtc, f.valid ? "ja" : "nein");
+      }
+      timesync::gpsSync(f.epochUtc);
+    }
 
     // Folgt die Karte dem GPS und ist der Fix spürbar gewandert: nachzentrieren.
     if (s_follow && f.valid) {
