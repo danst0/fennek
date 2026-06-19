@@ -31,8 +31,8 @@ static int s_checks = 0;
 // =============================================================================
 static int testMathquiz() {
   using namespace mathquiz;
-  // Jede Operation x jede Stufe oft genug erzeugen und Invarianten prüfen.
-  for (int op = 0; op < OP_COUNT; op++) {
+  // Grundrechenarten x jede Stufe oft genug erzeugen und Invarianten prüfen.
+  for (int op = ADD; op <= DIV; op++) {
     for (uint8_t lvl = 0; lvl < 3; lvl++) {
       for (int i = 0; i < 5000; i++) {
         Problem p = generate((Op)op, lvl, testRnd);
@@ -55,6 +55,23 @@ static int testMathquiz() {
       }
     }
   }
+
+  // Finanz-Ops (Prozent): Grundbetrag durch 100 teilbar -> ganzzahliges Ergebnis.
+  for (int op = PCT; op <= DISCOUNT; op++) {
+    for (uint8_t lvl = 0; lvl < 3; lvl++) {
+      for (int i = 0; i < 5000; i++) {
+        Problem p = generate((Op)op, lvl, testRnd);
+        CHECK(p.op == op);
+        CHECK(p.a % 100 == 0);              // Grundbetrag = Vielfaches von 100
+        CHECK(p.b >= 1 && p.b <= 99);       // sinnvoller Prozentsatz
+        int32_t part = p.a / 100 * p.b;     // exakt, da a % 100 == 0
+        if (op == PCT)         CHECK(p.answer == part);
+        else if (op == MARKUP) CHECK(p.answer == p.a + part);
+        else                   CHECK(p.answer == p.a - part);
+        CHECK(p.answer >= 0);               // Rabatt bleibt nicht-negativ
+      }
+    }
+  }
   // pickOp respektiert die Maske.
   for (int i = 0; i < 1000; i++) {
     Op o = pickOp(opBit(MUL) | opBit(DIV), testRnd);
@@ -62,8 +79,13 @@ static int testMathquiz() {
   }
   CHECK(pickOp(opBit(SUB), testRnd) == SUB);
   CHECK(pickOp(0, testRnd) == ADD);   // leere Maske -> Fallback
+  for (int i = 0; i < 1000; i++) {    // Finanz-Maske
+    Op o = pickOp(opBit(PCT) | opBit(MARKUP) | opBit(DISCOUNT), testRnd);
+    CHECK(o == PCT || o == MARKUP || o == DISCOUNT);
+  }
   CHECK(opChar(ADD) == '+' && opChar(SUB) == '-');
   CHECK(opChar(MUL) == 'x' && opChar(DIV) == ':');
+  CHECK(opChar(PCT) == '%' && opChar(MARKUP) == '%' && opChar(DISCOUNT) == '%');
   printf("  mathquiz ok\n");
   return 0;
 }

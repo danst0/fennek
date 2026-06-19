@@ -16,7 +16,16 @@
 
 namespace mathquiz {
 
-enum Op : uint8_t { ADD = 0, SUB = 1, MUL = 2, DIV = 3, OP_COUNT = 4 };
+// Grundrechenarten + Finanz-Operationen (Prozent). Bei den Prozent-Ops ist
+// a = Grundbetrag (immer Vielfaches von 100 -> ganzzahliges Ergebnis) und
+// b = Prozentsatz; die UI formatiert den Aufgabentext entsprechend.
+enum Op : uint8_t {
+  ADD = 0, SUB = 1, MUL = 2, DIV = 3,
+  PCT = 4,        // "b% von a"      -> a*b/100
+  MARKUP = 5,     // "a + b%"        -> a*(100+b)/100  (z. B. Netto + MwSt)
+  DISCOUNT = 6,   // "a - b%"        -> a*(100-b)/100  (z. B. Rabatt)
+  OP_COUNT = 7
+};
 
 inline uint8_t opBit(Op o) { return (uint8_t)(1u << o); }
 
@@ -77,6 +86,30 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
       p.answer = q;
       break;
     }
+    case PCT:
+    case MARKUP:
+    case DISCOUNT: {
+      // Grundbetrag G = 100*K (größere "Geld"-Zahlen) und Prozentsatz aus einem
+      // realistischen Satz. Da G ein Vielfaches von 100 ist, bleibt der Anteil
+      // G*b/100 = K*b stets ganzzahlig.
+      static const Range rk[3] = {{1, 20}, {1, 100}, {2, 500}};   // -> G = 100..50000
+      static const int8_t pEasy[] = {10, 20, 25, 50};
+      static const int8_t pMed[]  = {5, 10, 15, 20, 25, 50};
+      static const int8_t pHard[] = {3, 5, 7, 15, 19, 25, 30, 40};
+      const int8_t* ps = pEasy; int pn = 4;
+      if (level == 1) { ps = pMed;  pn = 6; }
+      else if (level == 2) { ps = pHard; pn = 8; }
+      int32_t K = detail::pick(rnd, rk[level].lo, rk[level].hi);
+      int32_t pct = ps[rnd((uint32_t)pn)];
+      int32_t G = 100 * K;
+      int32_t part = K * pct;          // = G * pct / 100
+      p.a = G;
+      p.b = pct;
+      if (op == PCT)         p.answer = part;
+      else if (op == MARKUP) p.answer = G + part;
+      else                   p.answer = G - part;   // DISCOUNT (pct<100 -> >=0)
+      break;
+    }
     default: break;
   }
   return p;
@@ -99,6 +132,7 @@ inline char opChar(uint8_t op) {
     case SUB: return '-';
     case MUL: return 'x';
     case DIV: return ':';
+    case PCT: case MARKUP: case DISCOUNT: return '%';
   }
   return '?';
 }

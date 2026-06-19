@@ -41,13 +41,14 @@ const Mode kModes[] = {
   {"Mal",      opBit(MUL)},
   {"Geteilt",  opBit(DIV)},
   {"Gemischt", (uint8_t)(opBit(ADD) | opBit(SUB) | opBit(MUL) | opBit(DIV))},
+  {"Finanz",   (uint8_t)(opBit(PCT) | opBit(MARKUP) | opBit(DISCOUNT))},
 };
 constexpr int kNumModes = sizeof(kModes) / sizeof(kModes[0]);
 const char* const kLevels[3] = {"Leicht", "Mittel", "Schwer"};
 
-// --- Layout: Menü -------------------------------------------------------------
-const Rect kLevelBtn{10, 68, 220, 34};
-Rect modeBtn(int i) { return Rect{10, 110 + i * 40, 220, 34}; }
+// --- Layout: Menü (Stufenzeile + 6 Modus-Knöpfe, kompakt für 320 px Höhe) -----
+const Rect kLevelBtn{10, 64, 220, 30};
+Rect modeBtn(int i) { return Rect{10, 100 + i * 35, 220, 30}; }
 
 // --- Layout: Quiz -------------------------------------------------------------
 constexpr int ANSW_Y = 132;   // Streifen Aufgabe-Ergebnis (Region-Refresh)
@@ -83,17 +84,17 @@ void menuDraw(Adafruit_GFX& g) {
   g.drawRoundRect(kLevelBtn.x, kLevelBtn.y, kLevelBtn.w, kLevelBtn.h, 6, GxEPD_BLACK);
   char lvl[32];
   snprintf(lvl, sizeof(lvl), "Stufe: %s", kLevels[s_level]);
-  gui::printAt(g, kLevelBtn.x + 10, kLevelBtn.y + 9, lvl, 2);
-  gui::printAt(g, kLevelBtn.x + kLevelBtn.w - 40, kLevelBtn.y + 12, "A/D", 1);
+  gui::printAt(g, kLevelBtn.x + 10, kLevelBtn.y + 7, lvl, 2);
+  gui::printAt(g, kLevelBtn.x + kLevelBtn.w - 40, kLevelBtn.y + 11, "A/D", 1);
 
   for (int i = 0; i < kNumModes; i++) {
     Rect r = modeBtn(i);
     g.drawRoundRect(r.x, r.y, r.w, r.h, 6, GxEPD_BLACK);
     if (i == s_sel)
       g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 5, GxEPD_BLACK);
-    gui::printAt(g, r.x + 12, r.y + 9, kModes[i].label, 2);
+    gui::printAt(g, r.x + 12, r.y + 7, kModes[i].label, 2);
   }
-  gui::printAt(g, 10, 306, "W/S Modus  A/D Stufe  Enter Start", 1);
+  gui::printAt(g, 10, 309, "W/S Modus  A/D Stufe  Enter Start", 1);
 }
 
 void startQuiz() {
@@ -135,18 +136,33 @@ void quizMid(Adafruit_GFX& g) {
   g.fillRect(0, ANSW_Y, W, ANSW_H, GxEPD_WHITE);
   g.setTextColor(GxEPD_BLACK);
 
-  char q[40];
-  snprintf(q, sizeof(q), "%ld %c %ld =", (long)s_problem.a,
-           opChar(s_problem.op), (long)s_problem.b);
+  char q[48];
+  switch (s_problem.op) {
+    case PCT:
+      snprintf(q, sizeof(q), "%ld%% von %ld =", (long)s_problem.b, (long)s_problem.a);
+      break;
+    case MARKUP:
+      snprintf(q, sizeof(q), "%ld + %ld%% =", (long)s_problem.a, (long)s_problem.b);
+      break;
+    case DISCOUNT:
+      snprintf(q, sizeof(q), "%ld - %ld%% =", (long)s_problem.a, (long)s_problem.b);
+      break;
+    default:
+      snprintf(q, sizeof(q), "%ld %c %ld =", (long)s_problem.a,
+               opChar(s_problem.op), (long)s_problem.b);
+      break;
+  }
+  // Lange (Finanz-)Aufgaben kleiner setzen, damit sie auf 240 px passen.
+  uint8_t qsize = (strlen(q) > 11) ? 2 : 3;
   uint16_t bw, bh;
   gui::textBounds(g, q, &bw, &bh);
-  gui::printAt(g, (W - bw) / 2, ANSW_Y, q, 3);
+  gui::printAt(g, (W - (int)bw) / 2, ANSW_Y + (qsize == 2 ? 6 : 0), q, qsize);
 
   // Antwort-Eingabe (mit Cursor, solange nicht bewertet).
-  char ans[12];
+  char ans[16];
   snprintf(ans, sizeof(ans), "%s%s", s_input, s_answered ? "" : "_");
   gui::textBounds(g, ans[0] ? ans : " ", &bw, &bh);
-  gui::printAt(g, (W - bw) / 2, ANSW_Y + 40, ans, 3);
+  gui::printAt(g, (W - (int)bw) / 2, ANSW_Y + 44, ans, 3);
 
   if (s_answered) {
     char fb[40];
