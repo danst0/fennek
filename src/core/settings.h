@@ -133,6 +133,8 @@ void     setChessGame(const void* buf, size_t n);   // n=0 löscht
 uint16_t tttWins();
 uint16_t tttDraws();
 void     addTttResult(bool win, bool draw);
+uint16_t mathBestStreak();                 // Kopfrechnen: längste Antwort-Serie
+void     setMathBestStreak(uint16_t streak);   // schreibt nur bei neuem Rekord
 
 // CRC32-Helfer (Cache-/Bookmark-Keys).
 uint32_t crc32(const char* s);

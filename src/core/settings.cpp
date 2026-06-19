@@ -551,6 +551,7 @@ uint32_t s_best2048 = 0;
 uint16_t s_minesWins = 0, s_minesBest = 0;
 uint16_t s_chessWins = 0;
 uint16_t s_tttWins = 0, s_tttDraws = 0;
+uint16_t s_mathBest = 0;
 
 void gamesEnsure() {
   if (s_gamesLoaded || !s_open) return;
@@ -561,6 +562,7 @@ void gamesEnsure() {
   s_chessWins = s_prefs.getUShort("chwins", 0);
   s_tttWins   = s_prefs.getUShort("tttw", 0);
   s_tttDraws  = s_prefs.getUShort("tttd", 0);
+  s_mathBest  = s_prefs.getUShort("mqbest", 0);
 }
 
 }  // namespace
@@ -620,6 +622,15 @@ void addTttResult(bool win, bool draw) {
   if (!s_open) return;
   if (win)  { s_tttWins++;  s_prefs.putUShort("tttw", s_tttWins); }
   if (draw) { s_tttDraws++; s_prefs.putUShort("tttd", s_tttDraws); }
+}
+
+uint16_t mathBestStreak() { gamesEnsure(); return s_mathBest; }
+
+void setMathBestStreak(uint16_t streak) {
+  gamesEnsure();
+  if (!s_open || streak <= s_mathBest) return;
+  s_mathBest = streak;
+  s_prefs.putUShort("mqbest", streak);
 }
 
 uint32_t crc32(const char* s) {

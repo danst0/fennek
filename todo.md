@@ -1,4 +1,31 @@
 # Offene Themen
+- [x] ich haette gerne noch eine app fuer kopfrechnen uben
+      ERLEDIGT: App "Kopfrechnen" (Launcher-Kachel "Rechnen", Slot 11).
+      apps/mathquiz_app.* + Arduino-freier Core apps/mathquiz_core.h
+      (host-getestet, tools/host_test_apps.cpp). Modi Plus/Minus/Mal/Geteilt/
+      Gemischt x 3 Stufen; Subtraktion nie negativ, Division geht glatt auf
+      (reine Ziffern-Eingabe). Bestserie im NVS (settings::mathBestStreak).
+      Build OK. OFFEN: am Gerät bedienen (Ziffern-Eingabe, Region-Refresh).
+- [x] eine karteikarten app
+      ERLEDIGT: App "Karteikarten" (Launcher-Kachel "Lernen", Slot 12).
+      apps/flashcards_app.* + Core apps/flashcards_core.h (host-getestet).
+      Decks = Textdateien /flashcards/*.txt (vorn<TAB>hinten), Leitner-Boxen
+      0..4, Fortschritt je Deck nach /flashcards/.progress/<deck>.prg
+      (CRC-keyed). SD-Disziplin wie notes_app. Build OK.
+      OFFEN: am Gerät — Decks per WebFM nach /flashcards hochladen, lernen,
+      Fortschritt-Persistenz über Reboot prüfen; Umlaut-Umbruch am E-Ink.
+- [x] karteikarten für swedisch vokabeln und sätze sowie für gesprächsführung/Kommunikation
+      ERLEDIGT (Inhalt): decks/schwedisch-vokabeln.txt (37),
+      decks/schwedisch-saetze.txt (20), decks/schwedisch-konversation.txt (15)
+      im Repo + decks/README.md (Format + WebFM-Upload nach /flashcards).
+      Alle Karten parsen 100 % (Host-Check). OFFEN: per WebFM aufs Gerät.
+- [ ] später mal sync nach obsidian
+- [ ] transkription der audionotizen
+      HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
+      nicht ab") — erst wenn die Aufnahmen gültigen Ton enthalten, lohnt die
+      Transkription. Dann gleiche WLAN⊥Audio-Batch-Logik wie notes_ai/scrobble
+      (externer Whisper/Dienst, Lauf vor dem Auto-Standby).
+
 - [x] ct-Bücher löschen  (manuelle SD-Aktion am Gerät — kein Firmware-Feature;
       jetzt via Konsole `rm /books/<calibre-pfad>` möglich, auch Überlängenpfade)
 - [ ] GPS Update der Uhr hat heute nie funktioniert
@@ -26,8 +53,10 @@
         3. Prüfen, ob der `epochUtc`-Guard / die `gpsSync`-Drossel (>2 s) den
            Sync verschluckt; ggf. einmaligen Force-Sync nach `begin()` loggen.
 
-- [ ] GPS und Kartenansicht: ohne Fix Fokus auf Düsseldorf
-      Diagnose: Fallback-Zentrum ist aktuell Dortmund (51.4818/7.2162) in
+- [x] GPS und Kartenansicht: ohne Fix Fokus auf Düsseldorf
+      ERLEDIGT (Commit 70e20de9): FALLBACK_LAT/LON = 51.2277/6.7735 (Düsseldorf)
+      in maps_app.cpp:31-32.
+      Diagnose: Fallback-Zentrum war Dortmund (51.4818/7.2162) in
       maps_app.cpp:28-30 (`FALLBACK_LAT/LON`); ohne Fix/Mesh-Pos bleibt die
       Karte dort. NRW-Kacheln z6-13 sind vorhanden (decken Düsseldorf ab),
       Dortmund-Detail z14-16 nicht über Düsseldorf.
@@ -60,7 +89,9 @@
         3. Wenn am PC stumm: PDM-Mic-Pinconfig/Daten prüfen (mic.cpp:55-77,
            PIN_MIC_CLK/DATA, `i2s_read`-Rückgabe, Pegel).
 
-- [ ] Benamung der Audio-Recordings: Datum + HH:MM
+- [x] Benamung der Audio-Recordings: Datum + HH:MM
+      ERLEDIGT (Commit 8370a7ba): scanNotes() leitet den Titel aus dem
+      WAV-Dateinamen als "YYYY-MM-DD HH:MM" ab (notes_app.cpp:196ff).
       Diagnose: Datei heißt bereits `YYYY-MM-DD-HHMMSS.wav` (notes_app.cpp:319),
       aber die Liste zeigt für *jede* Aufnahme nur „Sprachnotiz“ (notes_app.cpp:
       196) — Datum/Uhrzeit sind nirgends sichtbar. Das ist vermutlich gemeint.
