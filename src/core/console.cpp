@@ -12,6 +12,7 @@
 #include "apps/notes_app.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
+#include "services/notes_ai.h"
 #include "services/scrobble.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
@@ -86,6 +87,11 @@ void cmdHelp() {
   Serial.println("[CON]   nav test          - Subsonic-Ping (WLAN)");
   Serial.println("[CON]   scrobble          - offene Scrobbles zeigen");
   Serial.println("[CON]   scrobble flush    - offene Scrobbles jetzt hochladen (WLAN)");
+  Serial.println("[CON]   ollama url <url>  - Ollama-Server (z. B. http://10.0.0.5:11434)");
+  Serial.println("[CON]   ollama model <m>  - Ollama-Modell (z. B. llama3.2)");
+  Serial.println("[CON]   ollama on|off     - Notizen automatisch schoenschreiben");
+  Serial.println("[CON]   ollama / test     - Status / Verbindungstest (WLAN)");
+  Serial.println("[CON]   ollama flush      - offene Notizen jetzt polieren (WLAN)");
   Serial.println("[CON]   settings show     - aktuelle Einstellungen anzeigen");
   Serial.println("[CON]   settings save     - Einstellungen nach /fennek.ini (SD)");
   Serial.println("[CON]   settings load     - /fennek.ini ins NVS einlesen");
@@ -719,6 +725,37 @@ void handleLine(char* line) {
     char msg[64];
     scrobble::flushNow(msg, sizeof(msg));
     Serial.printf("[CON] Scrobble-Flush: %s\n", msg);
+    return;
+  }
+  if (strncmp(line, "ollama url ", 11) == 0) {
+    settings::setAiUrl(line + 11);
+    Serial.printf("[CON] Ollama-URL gesetzt: '%s'\n", line + 11);
+    return;
+  }
+  if (strncmp(line, "ollama model ", 13) == 0) {
+    settings::setAiModel(line + 13);
+    Serial.printf("[CON] Ollama-Modell gesetzt: '%s'\n", line + 13);
+    return;
+  }
+  if (strcmp(line, "ollama on") == 0)  { settings::setAiEnabled(true);  Serial.println("[CON] Notiz-KI EIN"); return; }
+  if (strcmp(line, "ollama off") == 0) { settings::setAiEnabled(false); Serial.println("[CON] Notiz-KI AUS"); return; }
+  if (strcmp(line, "ollama test") == 0) {
+    char msg[64];
+    bool ok = notes_ai::ping(msg, sizeof(msg));
+    Serial.printf("[CON] Ollama-Test: %s (%s)\n", ok ? "OK" : "Fehler", msg);
+    return;
+  }
+  if (strcmp(line, "ollama") == 0) {
+    char url[128]; settings::aiUrl(url, sizeof(url));
+    char mod[48];  settings::aiModel(mod, sizeof(mod));
+    Serial.printf("[CON] Notiz-KI=%s URL='%s' Modell='%s'; %d Notiz(en) offen\n",
+                  settings::aiEnabled() ? "an" : "aus", url, mod, notes_ai::pendingCount());
+    return;
+  }
+  if (strcmp(line, "ollama flush") == 0) {
+    char msg[64];
+    notes_ai::flushNow(msg, sizeof(msg));
+    Serial.printf("[CON] Ollama-Flush: %s\n", msg);
     return;
   }
   if (strcmp(line, "settings show") == 0)   { cmdSettingsShow(); return; }

@@ -13,6 +13,7 @@
 #include "services/alarmclock.h"
 #include "services/audio.h"
 #include "services/battlog.h"
+#include "services/notes_ai.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
@@ -321,6 +322,10 @@ void poll() {
     // Gespielte Tracks gesammelt an Navidrome scrobbeln (verwaltet WLAN selbst,
     // mit Back-off). No-op ohne offene Einträge bzw. ohne Konfiguration.
     scrobble::flushBeforeStandby();
+    // Geaenderte Tagesnotizen (ausser heute) per Ollama "schoenschreiben"
+    // (verwaltet WLAN selbst, mit Back-off). No-op ohne offene Notizen bzw.
+    // ohne Konfiguration.
+    notes_ai::flushBeforeStandby();
     enterStandby();
   }
 }

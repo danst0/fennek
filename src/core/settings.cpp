@@ -446,6 +446,61 @@ void setNavPass(const char* pass) {
   s_prefs.putString("npass", s_navPass);
 }
 
+// --- Ollama-KI für Notizen (services/notes_ai) --------------------------------
+namespace {
+
+bool s_aiLoaded = false;
+bool s_aiOn     = false;
+char s_aiUrl[128]  = "";
+char s_aiModel[48] = "llama3.2";
+
+void aiEnsure() {
+  if (s_aiLoaded || !s_open) return;
+  s_aiLoaded = true;
+  s_aiOn = s_prefs.getBool("oai", false);
+  if (s_prefs.isKey("ourl")) s_prefs.getString("ourl", s_aiUrl,   sizeof(s_aiUrl));
+  if (s_prefs.isKey("omod")) s_prefs.getString("omod", s_aiModel, sizeof(s_aiModel));
+}
+
+}  // namespace
+
+bool aiEnabled() { aiEnsure(); return s_aiOn; }
+
+void setAiEnabled(bool on) {
+  aiEnsure();
+  if (!s_open || on == s_aiOn) return;
+  s_aiOn = on;
+  s_prefs.putBool("oai", on);
+}
+
+void aiUrl(char* out, size_t n) {
+  aiEnsure();
+  strncpy(out, s_aiUrl, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setAiUrl(const char* url) {
+  aiEnsure();
+  if (!s_open || !url || strcmp(url, s_aiUrl) == 0) return;
+  strncpy(s_aiUrl, url, sizeof(s_aiUrl) - 1);
+  s_aiUrl[sizeof(s_aiUrl) - 1] = '\0';
+  s_prefs.putString("ourl", s_aiUrl);
+}
+
+void aiModel(char* out, size_t n) {
+  aiEnsure();
+  strncpy(out, s_aiModel, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setAiModel(const char* model) {
+  aiEnsure();
+  if (!s_open || !model || !model[0] || strcmp(model, s_aiModel) == 0) return;
+  strncpy(s_aiModel, model, sizeof(s_aiModel) - 1);
+  s_aiModel[sizeof(s_aiModel) - 1] = '\0';
+  s_prefs.putString("omod", s_aiModel);
+}
+
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
 // Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
 // ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.
@@ -584,11 +639,13 @@ size_t exportIni(char* out, size_t cap) {
   if (!out || cap == 0) return 0;
   MeshParams m = meshParams();
   char name[32], ssid[33], tz[48], lapp[24], ltrk[TRACK_PATH_LEN], lbook[256];
-  char nurl[128], nuser[64];
+  char nurl[128], nuser[64], ourl[128], omod[48];
   meshName(name, sizeof(name));
   wifiSsid(ssid, sizeof(ssid));
   navUrl(nurl, sizeof(nurl));
   navUser(nuser, sizeof(nuser));
+  aiUrl(ourl, sizeof(ourl));
+  aiModel(omod, sizeof(omod));
   // WLAN-Passwort wird BEWUSST NICHT exportiert (Klartext auf entnehmbarer SD).
   // Das Feld bleibt leer; ein leeres Feld lässt beim Import das NVS-Passwort
   // unangetastet — nur ein manuell eingetragenes Passwort wird übernommen.
@@ -623,6 +680,10 @@ size_t exportIni(char* out, size_t cap) {
     "url = %s\n"
     "user = %s\n"
     "password =\n"             // leer = nicht exportiert; manuell eintragbar
+    "\n[ollama]\n"
+    "enabled = %u\n"
+    "url = %s\n"
+    "model = %s\n"
     "\n[games]\n"
     "best2048 = %lu\n"
     "mines_wins = %u\n"
@@ -642,6 +703,7 @@ size_t exportIni(char* out, size_t cap) {
     m.freqMhz, m.bwKhz, (unsigned)m.sf, (unsigned)m.cr, (unsigned)m.txDbm, name,
     ssid,
     (unsigned)(navEnabled() ? 1 : 0), nurl, nuser,
+    (unsigned)(aiEnabled() ? 1 : 0), ourl, omod,
     (unsigned long)best2048(), (unsigned)minesWins(), (unsigned)minesBestSec(),
     (unsigned)chessWins(), (unsigned)tttWins(), (unsigned)tttDraws(),
     lapp, ltrk, (unsigned long)lpos, lbook,
@@ -733,6 +795,10 @@ int importIni(const char* text) {
       else if (strcmp(key, "user") == 0)    { setNavUser(val); applied++; }
       // Leeres Passwort-Feld überspringen (wie WLAN) — bewahrt NVS-Passwort.
       else if (strcmp(key, "password") == 0 && val[0]) { setNavPass(val); applied++; }
+    } else if (strcmp(section, "ollama") == 0) {
+      if      (strcmp(key, "enabled") == 0) { setAiEnabled(atoi(val) != 0); applied++; }
+      else if (strcmp(key, "url") == 0)     { setAiUrl(val); applied++; }
+      else if (strcmp(key, "model") == 0)   { setAiModel(val); applied++; }
     } else if (strcmp(section, "games") == 0) {
       if      (strcmp(key, "best2048") == 0)       { restoreGameU32("g2kbest", (uint32_t)strtoul(val, nullptr, 10), s_best2048); applied++; }
       else if (strcmp(key, "mines_wins") == 0)     { restoreGameU16("mswins", (uint16_t)atoi(val), s_minesWins); applied++; }

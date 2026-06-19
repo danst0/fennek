@@ -100,6 +100,17 @@ void setNavUser(const char* user);
 void navPass(char* out, size_t n);
 void setNavPass(const char* pass);
 
+// --- Ollama-KI für Notizen (services/notes_ai) --------------------------------
+// Server-URL inkl. Schema+Port (z. B. http://192.168.1.10:11434) und Modellname
+// (z. B. "llama3.2"). Toggle aktiviert das automatische "Schoenschreiben" der
+// Notizen vor dem Auto-Standby (wenn WLAN frei ist).
+bool aiEnabled();                                // Default false
+void setAiEnabled(bool on);
+void aiUrl(char* out, size_t n);                 // "" = nicht konfiguriert
+void setAiUrl(const char* url);
+void aiModel(char* out, size_t n);               // Default "llama3.2"
+void setAiModel(const char* model);
+
 // --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
 uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)
 void     setLastTime(uint32_t epoch);
