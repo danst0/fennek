@@ -30,9 +30,12 @@ constexpr int kRowY0  = appmgr::CONTENT_Y + 6;     // 30
 constexpr int kRowGap = 52;                        // 30, 82, 134, 186, 238 -> Ende 284
 
 constexpr int kHintY = 296;                        // Now-Playing-/Resume-Zeile
-// Tap-Zonen für den Seitenwechsel (rechts in der Hinweiszeile).
-const Rect kPrevPage{176, kHintY - 6, 24, 22};
-const Rect kNextPage{216, kHintY - 6, 24, 22};
+// Tap-Zonen für den Seitenwechsel (rechts in der Hinweiszeile). Bewusst groß und
+// bündig bis zum rechten Display-Rand (Finger-tauglich; vorher 24x22 zu klein,
+// v. a. „nach rechts" war kaum zu treffen). Die Pfeile/Indikator werden weiter
+// innen gezeichnet (kPrevPage.x + 6/18 bzw. kNextPage.x + 6).
+const Rect kPrevPage{168, kHintY - 8, 36, 30};
+const Rect kNextPage{204, kHintY - 8, 36, 30};
 
 struct Tile {
   i18n::Str label;   // String-ID, beim Zeichnen aufgelöst (Sprachwechsel!)

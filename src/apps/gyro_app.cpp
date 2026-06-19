@@ -49,7 +49,12 @@ class GyroApp : public App {
     }
     if (s_phase == RUNNING) {
       gyro::poll();
-      if (millis() - s_lastDraw >= 400) { s_lastDraw = millis(); appmgr::markDirty(); }
+      // Bewusst träge (1,5 s): ein voller E-Ink-Refresh blockt ~650 ms und der
+      // appmgr verwirft danach 250 ms lang aufgelaufene Taps (Anti-Doppeltap).
+      // Bei 400 ms lief Refresh an Refresh — der Zurück-Knopf (und jeder Tap)
+      // fiel immer in dieses Sperrfenster und kam nie an. 1,5 s lassen ~600 ms
+      // Tap-Fenster pro Zyklus und schonen das Display (Invariante 7).
+      if (millis() - s_lastDraw >= 1500) { s_lastDraw = millis(); appmgr::markDirty(); }
     }
   }
 
