@@ -418,12 +418,8 @@ void drawList(Adafruit_GFX& g) {
     } else {
       const NoteEntry& e = s_notes[gi - kSpecialRows];
       if (e.audio) {
-        // Zeitanteil HH:MM:SS aus "YYYY-MM-DD-HHMMSS.wav" + Dauer.
-        char tm[10] = "??:??:??";
-        if (strlen(e.file) >= 17)
-          snprintf(tm, sizeof(tm), "%c%c:%c%c:%c%c",
-                   e.file[11], e.file[12], e.file[13], e.file[14], e.file[15], e.file[16]);
-        snprintf(lbl, sizeof(lbl), "%c %s  %us", 0x0E, tm, (unsigned)e.durSec);
+        // e.title ist bereits "YYYY-MM-DD HH:MM" (in scanNotes gesetzt) + Dauer.
+        snprintf(lbl, sizeof(lbl), "%c %s  %us", 0x0E, e.title, (unsigned)e.durSec);
       } else {
         char date[kFileLen];
         strncpy(date, e.file, sizeof(date) - 1); date[sizeof(date) - 1] = '\0';

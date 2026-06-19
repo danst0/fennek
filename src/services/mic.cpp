@@ -14,6 +14,7 @@ namespace {
 
 constexpr i2s_port_t kPort = I2S_NUM_0;   // PDM geht nur auf I2S0 (Handover vom DAC)
 constexpr uint32_t   kRate = 16000;       // 16 kHz mono 16-bit
+constexpr int        kGain = 6;           // PDM-Mikro ist leise (~-20 dBFS) -> anheben
 
 // PDM geht NUR auf I2S0 (IDF-Limit), das sonst der DAC belegt. Der Aufrufer MUSS
 // vor startRecording() audio::beginMic() rufen (gibt I2S0 frei) und danach
@@ -98,7 +99,13 @@ void poll() {
 
     int n = (int)(got / 2);
     int16_t pk = 0;
-    for (int i = 0; i < n; i++) { int16_t a = s_buf[i] < 0 ? -s_buf[i] : s_buf[i]; if (a > pk) pk = a; }
+    for (int i = 0; i < n; i++) {
+      int32_t v = (int32_t)s_buf[i] * kGain;        // Aufnahme-Gain mit Sättigung
+      if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+      s_buf[i] = (int16_t)v;
+      int16_t a = v < 0 ? -(int16_t)v : (int16_t)v;
+      if (a > pk) pk = a;
+    }
     if (pk > s_level || iter == 0) s_level = pk;
 
     spiLock();
@@ -111,7 +118,9 @@ void poll() {
 uint32_t stopRecording() {
   if (!s_rec) return 0;
   s_rec = false;
-  i2s_driver_uninstall(kPort);
+  // I2S0 NICHT hier deinstallieren: audio::endMic() -> MicResume erledigt
+  // uninstall+install der Audio-Konfig in einem Schritt (sonst E-Log
+  // "i2s_driver_uninstall: port 0 has not installed" durch Doppel-Uninstall).
 
   uint8_t b[4];
   spiLock();
