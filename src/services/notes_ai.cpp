@@ -19,6 +19,7 @@
 #include <mbedtls/sha256.h>
 #include <time.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 
 namespace {
@@ -366,6 +367,29 @@ bool httpPostJson(const String& url, const char* body, char* resp, size_t respCa
   return total > 0;
 }
 
+// Entfernt inline eingebettete <think>...</think>-Bloecke (manche Reasoning-
+// Modelle schreiben den Denkprozess in die Antwort statt in Ollamas separates
+// 'thinking'-Feld). Damit landet das Denken nie in der Notiz. No-op bei sauberer
+// Antwort. Auch <thinking>...</thinking> wird erfasst (case-insensitive).
+void stripThink(char* s) {
+  for (;;) {
+    char* open = nullptr;
+    for (char* p = s; *p; p++)
+      if (p[0] == '<' && strncasecmp(p, "<think", 6) == 0) { open = p; break; }
+    if (!open) break;
+    char* gt = strchr(open, '>');
+    if (!gt) break;
+    char* close = nullptr;
+    for (char* p = gt + 1; *p; p++)
+      if (p[0] == '<' && strncasecmp(p, "</think", 7) == 0) { close = p; break; }
+    if (!close) break;                       // unvollstaendig -> stehen lassen
+    char* after = strchr(close, '>');
+    if (!after) break;
+    after++;
+    memmove(open, after, strlen(after) + 1); // Block herausschneiden
+  }
+}
+
 bool ollamaGenerate(const char* base, const char* model, const char* note,
                     char* body, size_t bodyCap, char* resp, size_t respCap,
                     char* out, size_t outCap) {
@@ -386,6 +410,7 @@ bool ollamaGenerate(const char* base, const char* model, const char* note,
     Serial.println("[NOTESAI] Antwort ohne 'response'-Feld");
     return false;
   }
+  stripThink(out);   // falls das Modell den Denkteil inline einbettet
   // Fuehrende/abschliessende Leerzeichen/Zeilen trimmen.
   int n = (int)strlen(out);
   int a = 0; while (a < n && (out[a]=='\n'||out[a]=='\r'||out[a]==' '||out[a]=='\t')) a++;

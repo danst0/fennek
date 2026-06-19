@@ -24,3 +24,6 @@ __pycache__/
 # Promo-/Werbe-Aktivitäten (nicht im öffentlichen Repo)
 docs/announcement-en.md
 docs/promo-channels.md
+
+# Lokal generierte Kartenkacheln + PNG-Cache + Upload-Skripte/Logs (gross, nicht ins Repo)
+fennek_tiles/
