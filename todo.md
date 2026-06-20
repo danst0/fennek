@@ -1,5 +1,4 @@
 # Offene Themen
-- [ ] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
 - [ ] transkription der audionotizen
       HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
       nicht ab") — erst wenn die Aufnahmen gültigen Ton enthalten, lohnt die
@@ -60,6 +59,11 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
+      ERLEDIGT (v2.4.8): `strcmp(r.latest, r.current) != 0` in ota.cpp durch
+      `semverGt(latest, current)` ersetzt — semantischer Versionsvergleich (Major/
+      Minor/Patch numerisch, v-Prefix toleriert). Am Gerät verifiziert: `ota update`
+      mit GitHub-Release v2.3.1 → korrekt „aktuell" statt falschem Update-Angebot.
 - [x] bitte alle kürzlichen änderungen kritisch testen
       ERLEDIGT (v2.4.8/v2.4.9): Host-Tests grün (mathquiz, flashcards, podcast, games).
       Firmware baut sauber. Am Gerät via Konsole verifiziert: `status` (Heap/PSRAM/SD OK),
