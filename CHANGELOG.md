@@ -6,6 +6,140 @@ are documented here. This file covers the five most recent minor versions.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [2.4.x]
+
+### [2.4.7] — 2026-06-20
+
+#### Added
+- **Podcast app** (`apps/podcast_app`, launcher page 2): subscribe to RSS feeds in
+  `/podcasts/feeds.txt` (editable over WebFM, seeded with the Freakshow MP3 feed),
+  sync the latest episode over Wi-Fi and **keep only that one** (older audio files in
+  the feed folder are deleted). The sync manages Wi-Fi itself (`audio::stop` + mesh
+  suspend, like scrobble/notes_ai), fetches only the start of the (often huge) feed
+  until the first `<item>` is complete, then streams the enclosure to SD in chunks
+  (manual http↔https redirect resolution, network I/O outside `spiLock`). Manual sync
+  (app button / `podcast sync`) covers all feeds; an opt-in **auto-sync before
+  auto-standby** does one feed per standby (round-robin, RTC-RAM back-off).
+- Arduino-free RSS parser `apps/podcast_core.h` (host-tested), `audio::Owner::Podcast`,
+  `settings::podcastAutoSync`, console `podcast` / `podcast feed|rm|on|off|sync`.
+
+#### Docs
+- New **"Engineering around the hardware"** section on the website (`web/index.html`)
+  and in all three READMEs: the four device constraints — no real-time clock, can't
+  stay online, only two cores, E-Ink — and how Fennek works with them.
+
+### [2.4.6] — 2026-06-20
+- **Mental-math app:** auto-fit layout so long CFO problems no longer overflow/overlap
+  (largest font whose measured width fits, block centered vertically).
+- **Flashcards:** 10-card practice sessions with Fisher–Yates shuffle + box-ordering
+  (least-learned first); 703-card Swedish deck under `decks/`.
+
+### [2.4.5] — 2026-06-20
+- **Mental math:** "CFO mode" replaces the earlier finance mode — large-money KPI
+  mental arithmetic (share/margin, growth/YoY, VAT markup, discount, % of, Rule of 72),
+  all integer results, digit-only entry.
+
+### [2.4.4] — 2026-06-19
+- **Mental math:** finance mode with percentage problems.
+
+### [2.4.3] — 2026-06-19
+- **Notes (Ollama):** strip inline `<think>` blocks so reasoning models never write
+  their thought process into the polished note.
+
+### [2.4.2] — 2026-06-19
+
+#### Added
+- **Mental Math app** (`apps/mathquiz_app`) and **Flashcards app**
+  (`apps/flashcards_app`): launcher page 2. Both built on Arduino-free, host-tested
+  cores (`mathquiz_core` / `flashcards_core`, `tools/host_test_apps.cpp`). Flashcards
+  use Leitner boxes 0–4 with per-deck progress on SD; decks are `/flashcards/*.txt`.
+
+### [2.4.1] — 2026-06-19
+
+#### Added
+- **Auto-polish notes via Ollama** (`services/notes_ai`): past daily notes (not
+  today's) are rewritten into clean German by a local LLM. Same Wi-Fi ⊥ audio batch
+  logic as scrobble — a run before auto-standby, with a SHA256-keyed done-list so only
+  changed notes are re-polished. Console `ollama url/model/on/off/test/flush`.
+
+## [2.3.x]
+
+### [2.3.2] — 2026-06-19
+- Larger homescreen page arrows and a visible back button in the Motion (gyro) app.
+
+### [2.3.1] — 2026-06-19
+- **Voice notes:** the list shows date + HH:MM, recording gain added, cleaner I2S
+  hand-over back to playback after recording.
+
+### [2.3.0] — 2026-06-19
+- GPS/WAV diagnostic logs (maps-app GPS-time + mic recording level).
+- Maps fallback centre moved to **Düsseldorf** (covered by the NRW tiles).
+- Notes list derives the title from the WAV filename as a date/time label.
+
+## [2.2.x]
+
+### [2.2.4] — 2026-06-18
+- Instant stop feedback when ending a recording.
+
+### [2.2.3] — 2026-06-18
+- **Recording fix:** disconnect the I2S MCLK from GPIO0 (the standby button) so
+  recording no longer triggers standby.
+
+### [2.2.2] — 2026-06-18
+- Recording stops immediately; auto-standby is suppressed while recording.
+
+### [2.2.1] — 2026-06-18
+
+#### Added
+- **Voice notes in the Notes UI:** a recording row + voice memos with playback.
+
+### [2.2.0] — 2026-06-18
+
+#### Added
+- **Microphone recording foundation** (`services/mic`): PDM → WAV with an I2S0
+  hand-over between the audio engine and the mic.
+- **Gyro/Motion live data** (`apps/gyro_app`): BHI260AP accel/gyro via SensorLib.
+
+#### Fixed
+- Alarm vibration was swallowed by an old 2-bit signal clamp.
+
+## [2.1.0] — 2026-06-17
+
+### Added
+- **Second homescreen page** (2 × 2×5 tiles) and a **Motion (gyro) app** (stage 1:
+  sensor detection). Maps-app screenshots added to the docs.
+
+## [2.0.x]
+
+### [2.0.6] — 2026-06-17
+- **Power:** disable the unused DRV2605 vibration-motor driver at boot (GPIO2 LOW,
+  held across deep sleep).
+
+### [2.0.5] — 2026-06-17
+- **Power:** disable the unused GPS module at boot (GPIO39 LOW, held across sleep);
+  the maps app powers it temporarily while in front.
+
+### [2.0.4] — 2026-06-17
+- Docs: Mesh-GPS verified end-to-end at the server (Antonia / meshcore.dumke.me).
+
+### [2.0.3] — 2026-06-17
+- Alarm: drop the "tone" row from the editor; console `advert flood` (multi-hop advert).
+
+### [2.0.2] — 2026-06-17
+- Alarm: the snooze button shows "+9 min" (from the engine constant).
+
+### [2.0.1] — 2026-06-17
+- **Keyboard + alarm:** holding Alt/Sym now applies to follow-up keys (so typing the
+  wake time digit-by-digit works); snooze-button layout fixed.
+
+### [2.0.0] — 2026-06-17
+
+#### Added
+- **Alarm clock** end-to-end: per-alarm signal mode (tone / blink / both) and typing
+  the wake time directly on the keyboard (phone-clock logic). Loud beep at full
+  volume, keyboard-backlight blink, deep-sleep wake to the alarm time. Console
+  `alarm …`, app `apps/alarms_app`.
+
 ## [1.8.1] — 2026-06-13
 
 ### Changed
@@ -147,6 +281,29 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Games app:** 2048, Minesweeper, Chess (Negamax AI), Tic-Tac-Toe.
   Game logic lives in Arduino-free, host-tested cores.
 
+[2.4.7]: https://github.com/danst0/fennek/releases/tag/v2.4.7
+[2.4.6]: https://github.com/danst0/fennek/releases/tag/v2.4.6
+[2.4.5]: https://github.com/danst0/fennek/releases/tag/v2.4.5
+[2.4.4]: https://github.com/danst0/fennek/releases/tag/v2.4.4
+[2.4.3]: https://github.com/danst0/fennek/releases/tag/v2.4.3
+[2.4.2]: https://github.com/danst0/fennek/releases/tag/v2.4.2
+[2.4.1]: https://github.com/danst0/fennek/releases/tag/v2.4.1
+[2.3.2]: https://github.com/danst0/fennek/releases/tag/v2.3.2
+[2.3.1]: https://github.com/danst0/fennek/releases/tag/v2.3.1
+[2.3.0]: https://github.com/danst0/fennek/releases/tag/v2.3.0
+[2.2.4]: https://github.com/danst0/fennek/releases/tag/v2.2.4
+[2.2.3]: https://github.com/danst0/fennek/releases/tag/v2.2.3
+[2.2.2]: https://github.com/danst0/fennek/releases/tag/v2.2.2
+[2.2.1]: https://github.com/danst0/fennek/releases/tag/v2.2.1
+[2.2.0]: https://github.com/danst0/fennek/releases/tag/v2.2.0
+[2.1.0]: https://github.com/danst0/fennek/releases/tag/v2.1.0
+[2.0.6]: https://github.com/danst0/fennek/releases/tag/v2.0.6
+[2.0.5]: https://github.com/danst0/fennek/releases/tag/v2.0.5
+[2.0.4]: https://github.com/danst0/fennek/releases/tag/v2.0.4
+[2.0.3]: https://github.com/danst0/fennek/releases/tag/v2.0.3
+[2.0.2]: https://github.com/danst0/fennek/releases/tag/v2.0.2
+[2.0.1]: https://github.com/danst0/fennek/releases/tag/v2.0.1
+[2.0.0]: https://github.com/danst0/fennek/releases/tag/v2.0.0
 [1.7.0]: https://github.com/danst0/fennek/releases/tag/v1.7.0
 [1.6.3]: https://github.com/danst0/fennek/releases/tag/v1.6.3
 [1.6.2]: https://github.com/danst0/fennek/releases/tag/v1.6.2
