@@ -71,6 +71,7 @@ void cmdHelp() {
   Serial.println("[CON]   msgs              - Nachrichten-Verlauf dumpen");
   Serial.println("[CON]   meshlog           - Ende des SD-Nachrichten-Logs zeigen");
   Serial.println("[CON]   battlog           - Akku-/Aktivitaets-Log (BATTLOG) dumpen");
+  Serial.println("[CON]   gauge             - BQ27220-Register dumpen (RM/FCC/SoC, read-only)");
   Serial.println("[CON]   i2cscan           - I2C-Bus abklopfen (RTC auf 0x51?)");
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
   Serial.println("[CON]   rm <pfad>         - Datei/Ordner rekursiv loeschen (auch ueberlange Calibre-Pfade)");
@@ -670,6 +671,7 @@ void handleLine(char* line) {
   if (strcmp(line, "msgs") == 0)            { cmdMsgs(); return; }
   if (strcmp(line, "meshlog") == 0)         { cmdMeshLog(); return; }
   if (strcmp(line, "battlog") == 0)         { cmdBatLog(); return; }
+  if (strcmp(line, "gauge") == 0)           { battery::dumpGauge(); return; }
   if (strcmp(line, "i2cscan") == 0)         { cmdI2cScan(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
