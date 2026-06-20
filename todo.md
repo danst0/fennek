@@ -1,5 +1,4 @@
 # Offene Themen
-- [ ] batterieanzeige geht nur bis 72%
 - [ ] bitte alle kürzlichen änderungen kritisch testen
       STATUS: Host-Tests (mathquiz, flashcards, podcast, games) sind grün,
       Firmware baut fehlerfrei. Verifikation am realen Gerät steht noch aus.
@@ -64,6 +63,13 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] batterieanzeige geht nur bis 72%
+      ERLEDIGT: battery::percent() liest jetzt RemainingCapacity/DesignCapacity statt
+      dem SOC-Register des BQ27220. Der Gauge hatte FullChargeCapacity auf ~1944 mAh
+      fehlkalibriert (Entwicklungs-Reboots unterbrachen Ladezyklen) → SOC = RM/FCC =
+      1400/1944 = 72 %. Fix: RM/DesignCap (1400 mAh, korrekt vom LilyGO-Werksprogramm
+      gesetzt) liefert den echten Prozentwert. Fallback auf SOC-Register wenn DC < 100
+      oder 0xFFFF. (battery.cpp, v2.4.8)
 - [x] podcast app mit sync, standard: immer nur die letzte folge behalten,
       startpodcast: freakshow.fm
       ERLEDIGT: App "Podcast" (Launcher-Kachel "Podcast", Seite 2, Slot 13).
