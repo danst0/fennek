@@ -16,18 +16,23 @@
 
 namespace mathquiz {
 
-// Grundrechenarten + Finanz-Operationen (Prozent). Bei den Prozent-Ops ist
-// a = Grundbetrag (immer Vielfaches von 100 -> ganzzahliges Ergebnis) und
-// b = Prozentsatz; die UI formatiert den Aufgabentext entsprechend.
+// Grundrechenarten + CFO-/Finanz-Operationen. Bei den Geld-Ops ist der
+// Grundbetrag stets ein Vielfaches von 100 -> ganzzahlige Ergebnisse; die
+// Felder a/b sind je Op unterschiedlich belegt (s. Kommentare), die UI
+// formatiert den Aufgabentext entsprechend.
 enum Op : uint8_t {
   ADD = 0, SUB = 1, MUL = 2, DIV = 3,
-  PCT = 4,        // "b% von a"      -> a*b/100
-  MARKUP = 5,     // "a + b%"        -> a*(100+b)/100  (z. B. Netto + MwSt)
-  DISCOUNT = 6,   // "a - b%"        -> a*(100-b)/100  (z. B. Rabatt)
-  OP_COUNT = 7
+  PCT = 4,        // "b% von a"        -> a*b/100
+  MARKUP = 5,     // "a + b%"          -> a*(100+b)/100   (Netto + MwSt)
+  DISCOUNT = 6,   // "a - b%"          -> a*(100-b)/100   (Rabatt)
+  SHARE = 7,      // "a/b = ?%"        -> a*100/b          (Anteil/Marge in %)
+  GROWTH = 8,     // "a > end = ?%"    -> Wachstum a->end in %
+  RULE72 = 9,     // "2x bei b% = ?J"  -> 72/b  (Verdopplungszeit, Rule of 72)
+  OP_COUNT = 10
 };
 
-inline uint8_t opBit(Op o) { return (uint8_t)(1u << o); }
+// Operations-Bitmaske (16 Bit, da >8 Operationen).
+inline uint16_t opBit(Op o) { return (uint16_t)(1u << o); }
 
 // Liefert 0..n-1 (Gerät: esp_random()%n, Host: deterministischer Stub).
 using RndFn = uint32_t (*)(uint32_t);
@@ -88,10 +93,12 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
     }
     case PCT:
     case MARKUP:
-    case DISCOUNT: {
+    case DISCOUNT:
+    case SHARE:
+    case GROWTH: {
       // Grundbetrag G = 100*K (größere "Geld"-Zahlen) und Prozentsatz aus einem
       // realistischen Satz. Da G ein Vielfaches von 100 ist, bleibt der Anteil
-      // G*b/100 = K*b stets ganzzahlig.
+      // G*pct/100 = K*pct stets ganzzahlig.
       static const Range rk[3] = {{1, 20}, {1, 100}, {2, 500}};   // -> G = 100..50000
       static const int8_t pEasy[] = {10, 20, 25, 50};
       static const int8_t pMed[]  = {5, 10, 15, 20, 25, 50};
@@ -103,11 +110,23 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
       int32_t pct = ps[rnd((uint32_t)pn)];
       int32_t G = 100 * K;
       int32_t part = K * pct;          // = G * pct / 100
-      p.a = G;
-      p.b = pct;
-      if (op == PCT)         p.answer = part;
-      else if (op == MARKUP) p.answer = G + part;
-      else                   p.answer = G - part;   // DISCOUNT (pct<100 -> >=0)
+      switch (op) {
+        case PCT:      p.a = G;    p.b = pct; p.answer = part;       break;
+        case MARKUP:   p.a = G;    p.b = pct; p.answer = G + part;   break;
+        case DISCOUNT: p.a = G;    p.b = pct; p.answer = G - part;   break;  // pct<100 -> >=0
+        case SHARE:    p.a = part; p.b = G;   p.answer = pct;        break;  // "part/G = ?%"
+        default:       p.a = G;    p.b = pct; p.answer = pct;        break;  // GROWTH: a -> a+part
+      }
+      break;
+    }
+    case RULE72: {
+      // Verdopplungszeit nach der "Rule of 72": Jahre ~= 72 / Zinssatz. Nur
+      // Teiler von 72 -> ganzzahliges Jahresergebnis.
+      static const int8_t rates[] = {2, 3, 4, 6, 8, 9, 12};
+      int32_t r = rates[rnd(7)];
+      p.a = 0;
+      p.b = r;
+      p.answer = 72 / r;
       break;
     }
     default: break;
@@ -116,7 +135,7 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
 }
 
 // Wählt aus einer Operations-Bitmaske zufällig eine erlaubte Operation.
-inline Op pickOp(uint8_t mask, RndFn rnd) {
+inline Op pickOp(uint16_t mask, RndFn rnd) {
   Op ops[OP_COUNT];
   int n = 0;
   for (uint8_t i = 0; i < OP_COUNT; i++)
@@ -132,7 +151,8 @@ inline char opChar(uint8_t op) {
     case SUB: return '-';
     case MUL: return 'x';
     case DIV: return ':';
-    case PCT: case MARKUP: case DISCOUNT: return '%';
+    case PCT: case MARKUP: case DISCOUNT:
+    case SHARE: case GROWTH: case RULE72: return '%';
   }
   return '?';
 }

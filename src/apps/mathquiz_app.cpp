@@ -34,14 +34,16 @@ constexpr int W = EINK_W;
 uint32_t rnd(uint32_t n) { return n ? esp_random() % n : 0; }
 
 // --- Modi ---------------------------------------------------------------------
-struct Mode { const char* label; uint8_t mask; };
+struct Mode { const char* label; uint16_t mask; };
 const Mode kModes[] = {
   {"Plus",     opBit(ADD)},
   {"Minus",    opBit(SUB)},
   {"Mal",      opBit(MUL)},
   {"Geteilt",  opBit(DIV)},
-  {"Gemischt", (uint8_t)(opBit(ADD) | opBit(SUB) | opBit(MUL) | opBit(DIV))},
-  {"Finanz",   (uint8_t)(opBit(PCT) | opBit(MARKUP) | opBit(DISCOUNT))},
+  {"Gemischt", (uint16_t)(opBit(ADD) | opBit(SUB) | opBit(MUL) | opBit(DIV))},
+  // CFO: Anteil/Marge, Wachstum (YoY), MwSt-Aufschlag, Rabatt, %-von, Rule of 72.
+  {"CFO",      (uint16_t)(opBit(SHARE) | opBit(GROWTH) | opBit(MARKUP) |
+                          opBit(DISCOUNT) | opBit(PCT) | opBit(RULE72))},
 };
 constexpr int kNumModes = sizeof(kModes) / sizeof(kModes[0]);
 const char* const kLevels[3] = {"Leicht", "Mittel", "Schwer"};
@@ -60,7 +62,7 @@ Screen  s_screen = MENU;
 int     s_sel = 4;            // Menü-Auswahl (Default: Gemischt)
 uint8_t s_level = 1;          // 0..2
 
-uint8_t s_mask = 0;           // aktive Operationsmaske im Quiz
+uint16_t s_mask = 0;          // aktive Operationsmaske im Quiz
 Problem s_problem{};
 char    s_input[10] = "";
 int     s_inputLen = 0;
@@ -146,6 +148,17 @@ void quizMid(Adafruit_GFX& g) {
       break;
     case DISCOUNT:
       snprintf(q, sizeof(q), "%ld - %ld%% =", (long)s_problem.a, (long)s_problem.b);
+      break;
+    case SHARE:   // a = Anteil, b = Basis; gefragt ist der Prozentsatz
+      snprintf(q, sizeof(q), "%ld/%ld = ?%%", (long)s_problem.a, (long)s_problem.b);
+      break;
+    case GROWTH: {   // a -> end; gefragt ist das Wachstum in %
+      long end = (long)s_problem.a + (long)s_problem.a / 100 * (long)s_problem.b;
+      snprintf(q, sizeof(q), "%ld>%ld = ?%%", (long)s_problem.a, end);
+      break;
+    }
+    case RULE72:   // Verdopplungszeit in Jahren bei b% (Rule of 72)
+      snprintf(q, sizeof(q), "2x bei %ld%% = ?J", (long)s_problem.b);
       break;
     default:
       snprintf(q, sizeof(q), "%ld %c %ld =", (long)s_problem.a,

@@ -56,7 +56,7 @@ static int testMathquiz() {
     }
   }
 
-  // Finanz-Ops (Prozent): Grundbetrag durch 100 teilbar -> ganzzahliges Ergebnis.
+  // Geld-Ops (PCT/MARKUP/DISCOUNT): Grundbetrag a durch 100 teilbar.
   for (int op = PCT; op <= DISCOUNT; op++) {
     for (uint8_t lvl = 0; lvl < 3; lvl++) {
       for (int i = 0; i < 5000; i++) {
@@ -70,6 +70,38 @@ static int testMathquiz() {
         else                   CHECK(p.answer == p.a - part);
         CHECK(p.answer >= 0);               // Rabatt bleibt nicht-negativ
       }
+    }
+  }
+
+  // CFO SHARE/GROWTH: Basis durch 100 teilbar, Prozent exakt ganzzahlig.
+  for (int op = SHARE; op <= GROWTH; op++) {
+    for (uint8_t lvl = 0; lvl < 3; lvl++) {
+      for (int i = 0; i < 5000; i++) {
+        Problem p = generate((Op)op, lvl, testRnd);
+        CHECK(p.op == op);
+        CHECK(p.answer >= 1 && p.answer <= 99);
+        if (op == SHARE) {
+          // a = Anteil, b = Basis (Vielfaches von 100); answer = a*100/b exakt.
+          CHECK(p.b % 100 == 0);
+          CHECK((long)p.a * 100 % p.b == 0);
+          CHECK(p.answer == (long)p.a * 100 / p.b);
+          CHECK(p.a <= p.b);
+        } else {  // GROWTH: a Basis, answer = Wachstum%, end = a + a/100*answer
+          CHECK(p.a % 100 == 0);
+          CHECK(p.answer == p.b);
+        }
+      }
+    }
+  }
+
+  // CFO RULE72: Verdopplungszeit = 72/Zins, nur Teiler von 72.
+  for (uint8_t lvl = 0; lvl < 3; lvl++) {
+    for (int i = 0; i < 3000; i++) {
+      Problem p = generate(RULE72, lvl, testRnd);
+      CHECK(p.op == RULE72);
+      CHECK(p.b >= 2 && 72 % p.b == 0);
+      CHECK(p.answer == 72 / p.b);
+      CHECK(p.answer >= 1);
     }
   }
   // pickOp respektiert die Maske.
@@ -86,6 +118,7 @@ static int testMathquiz() {
   CHECK(opChar(ADD) == '+' && opChar(SUB) == '-');
   CHECK(opChar(MUL) == 'x' && opChar(DIV) == ':');
   CHECK(opChar(PCT) == '%' && opChar(MARKUP) == '%' && opChar(DISCOUNT) == '%');
+  CHECK(opChar(SHARE) == '%' && opChar(GROWTH) == '%' && opChar(RULE72) == '%');
   printf("  mathquiz ok\n");
   return 0;
 }
