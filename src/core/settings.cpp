@@ -501,6 +501,17 @@ void setAiModel(const char* model) {
   s_prefs.putString("omod", s_aiModel);
 }
 
+// --- Podcast-Auto-Sync (services/podcast) -------------------------------------
+bool podcastAutoSync() {
+  if (!s_open) return false;
+  return s_prefs.getBool("pcas", false);
+}
+
+void setPodcastAutoSync(bool on) {
+  if (!s_open || on == podcastAutoSync()) return;
+  s_prefs.putBool("pcas", on);
+}
+
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
 // Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
 // ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.

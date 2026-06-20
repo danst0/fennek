@@ -14,6 +14,7 @@
 #include "services/timesync.h"
 #include "services/notes_ai.h"
 #include "services/scrobble.h"
+#include "services/podcast.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/gps.h"
@@ -93,6 +94,11 @@ void cmdHelp() {
   Serial.println("[CON]   ollama on|off     - Notizen automatisch schoenschreiben");
   Serial.println("[CON]   ollama / test     - Status / Verbindungstest (WLAN)");
   Serial.println("[CON]   ollama flush      - offene Notizen jetzt polieren (WLAN)");
+  Serial.println("[CON]   podcast           - Feeds + lokale Folgen zeigen");
+  Serial.println("[CON]   podcast feed <url>- Feed abonnieren (feeds.txt)");
+  Serial.println("[CON]   podcast rm <idx>  - Feed entfernen");
+  Serial.println("[CON]   podcast on|off    - Auto-Sync vor Standby ein/aus");
+  Serial.println("[CON]   podcast sync      - neueste Folgen jetzt laden (WLAN)");
   Serial.println("[CON]   settings show     - aktuelle Einstellungen anzeigen");
   Serial.println("[CON]   settings save     - Einstellungen nach /fennek.ini (SD)");
   Serial.println("[CON]   settings load     - /fennek.ini ins NVS einlesen");
@@ -758,6 +764,38 @@ void handleLine(char* line) {
     char msg[64];
     notes_ai::flushNow(msg, sizeof(msg));
     Serial.printf("[CON] Ollama-Flush: %s\n", msg);
+    return;
+  }
+  if (strncmp(line, "podcast feed ", 13) == 0) {
+    bool ok = podcast::addFeed(line + 13, nullptr);
+    Serial.printf("[CON] Feed %s: %s\n", ok ? "hinzugefuegt" : "Fehler", line + 13);
+    return;
+  }
+  if (strncmp(line, "podcast rm ", 11) == 0) {
+    int idx = atoi(line + 11);
+    Serial.printf("[CON] Feed %d %s\n", idx, podcast::removeFeed(idx) ? "entfernt" : "Fehler");
+    return;
+  }
+  if (strcmp(line, "podcast on") == 0)  { settings::setPodcastAutoSync(true);  Serial.println("[CON] Podcast-Auto-Sync EIN"); return; }
+  if (strcmp(line, "podcast off") == 0) { settings::setPodcastAutoSync(false); Serial.println("[CON] Podcast-Auto-Sync AUS"); return; }
+  if (strcmp(line, "podcast sync") == 0) {
+    char msg[64];
+    podcast::syncAll(msg, sizeof(msg), nullptr);
+    Serial.printf("[CON] Podcast-Sync: %s\n", msg);
+    return;
+  }
+  if (strcmp(line, "podcast") == 0) {
+    int n = podcast::feedCount();
+    Serial.printf("[CON] Podcast Auto-Sync=%s, %d Feed(s):\n",
+                  settings::podcastAutoSync() ? "an" : "aus", n);
+    for (int i = 0; i < n; ++i) {
+      podcast::Feed f;
+      if (!podcast::feed(i, &f)) continue;
+      podcast::Local loc;
+      bool have = podcast::localEpisode(f, &loc);
+      Serial.printf("[CON]   [%d] %s  (%s)\n", i, f.name,
+                    have ? loc.title : "keine Folge");
+    }
     return;
   }
   if (strcmp(line, "settings show") == 0)   { cmdSettingsShow(); return; }

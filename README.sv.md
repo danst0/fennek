@@ -60,6 +60,7 @@ SPI-buss, och ändå levererar hackfri ljuduppspelning.
 | **📡 Mesh** | Slimmad MeshCore-klient: publika kanaler och hashtagg-kanaler (`#test` …), DM med leveransstatus, kontakter från adverts, meddelandelogg på SD inkl. historik-omladdning |
 | **🎮 Spel** | 2048, Minröj, Schack (Negamax-AI) och Tre i rad — logiken testad på värd |
 | **📝 Anteckningar** | En anteckning per dag under `/notes` (`YYYY-MM-DD.md`); "+ Idag" öppnar eller utökar dagens anteckning, listan visar alla dagar (nyaste först) med förhandsvisning av första raden, tilläggsredigerare med raderingsbekräftelse |
+| **🎙️ Podd** | RSS-prenumerationer i `/podcasts/feeds.txt` (Freakshow som standard), hämtar senaste avsnittet via Wi-Fi och behåller bara det — laddas till SD och spelas via ljudkön med återupptagning |
 | **⚙️ Alternativ** | Radioförinställningar (EU Narrow = DE/NRW-standard 869,618 MHz / 62,5 kHz / SF8), enskilda parametrar, nodnamn, batteriinfo, firmware-version |
 
 Dessutom: en statusrad (batteri, uppspelning), vänteläge/knapplås via knappen,
@@ -76,6 +77,32 @@ GDEQ031T10 240×320, CST328-pekskärm (I2C), TCA8418-tangentbord, PCM5102A-DAC
 > Hela arkitekturen kretsar kring att ljudet aldrig hackar trots detta, och att
 > inmatning svarar omedelbart — detaljer i [`CLAUDE.md`](CLAUDE.md)
 > (invarianter mot hackande).
+
+## 🧭 Konstruktion runt hårdvaran
+
+T-Deck Pro har fyra besvärliga begränsningar; Fennek handlar om att arbeta *med*
+dem i stället för emot. (Fullständiga designanteckningar och invarianter mot
+hackande i [`CLAUDE.md`](CLAUDE.md).)
+
+- **🕐 Ingen realtidsklocka.** Det finns ingen batteribackad RTC. Den kanoniska
+  klockan är ESP32:ns systemtid (den överlever djupsömn, till skillnad från en
+  `millis()`-klocka), satt i prioritetsordning från **GPS → NTP → mesh-annonser**;
+  driften lärs in och ett paket med framtida tid kan inte dra klockan framåt
+  okontrollerat.
+- **🔋 Kan inte vara ständigt uppkopplad.** Alltid-på är inte möjligt med den här
+  strömbudgeten — och Wi-Fi och ljud kan inte köra samtidigt (Wi-Fi-tasken på
+  kärna 0 tränger undan ljudtasken). Fennek håller därför aldrig en anslutning:
+  scrobblingar, anteckningspolering och **poddnedladdningar** buntas till ett kort
+  Wi-Fi-fönster före vänteläge, och oanvänd kringutrustning (GPS, vibration) stängs
+  av vid uppstart.
+- **🧩 Bara två kärnor.** Två kärnor ger knappt någon riktig multitasking.
+  Ljudavkodning är fäst vid kärna 0, gränssnittet + mesh-pumpen vid kärna 1;
+  SD-biblioteksskanningar pausas under uppspelning och schack-AI:n kör med låg
+  prioritet — så uppspelningen förblir mjuk och tangentbordet svarar snabbt.
+- **🖋️ E-Ink-skärm.** E-Ink är vacker men långsam, och fulla uppdateringar gör att
+  hela panelen blinkar. Fennek ritar bara om vid en verklig förändring, målar
+  förlopp/status som smala *regionremsor* i stället för full omritning, och drar ut
+  den spökförhindrande fulla uppdateringen för att hålla skärmen lugn.
 
 ## 🚀 Bygga & flasha
 

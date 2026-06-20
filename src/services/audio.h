@@ -26,7 +26,7 @@
 
 namespace audio {
 
-enum class Owner  : uint8_t { None, Music, Book };
+enum class Owner  : uint8_t { None, Music, Book, Podcast };
 enum class Repeat : uint8_t { Off, All, One };
 
 struct Status {

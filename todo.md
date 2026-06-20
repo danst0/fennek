@@ -1,7 +1,4 @@
 # Offene Themen
-- [ ] podcast app mit sync, standard: immer nur die letzte folge behalten, startpodcast: freakshow.fm
-- [ ] erklarung in der doku und auf der webseite zu den herausforderungen des gerates: keine uhr, strom fur immer online ist nicht moglich , nur zwei kerne also kaum multitasking und wie wir das gelost haben, eink screen
-
 - [ ] später mal sync nach obsidian
 - [ ] transkription der audionotizen
       HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
@@ -62,6 +59,32 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] podcast app mit sync, standard: immer nur die letzte folge behalten,
+      startpodcast: freakshow.fm
+      ERLEDIGT: App "Podcast" (Launcher-Kachel "Podcast", Seite 2, Slot 13).
+      apps/podcast_app.* + Arduino-freier RSS-Parser apps/podcast_core.h
+      (host-getestet, tools/host_test_apps.cpp). Sync-Engine services/podcast.*:
+      Abos in /podcasts/feeds.txt (Default https://freakshow.fm/feed/mp3/, per
+      WebFM editierbar), je Feed /podcasts/<slug>/episode.<ext> + state.txt.
+      "Nur letzte Folge behalten" = beim Sync erstes <item> laden, aeltere
+      Audiodateien loeschen. WLAN-Bring-up selbst (audio::stop + mesh suspend),
+      laedt nur Feed-Anfang bis erstes <item> komplett, gechunkter Download nach
+      SD (Redirect-Aufloesung http/https, Netz nach spiUnlock). Manueller Sync
+      (App-Button/`podcast sync`) = alle Feeds; Auto-Sync vor Standby
+      (flushBeforeStandby in power::poll, RTC-RAM-Back-off, NVS-Toggle pcas) =
+      ein Feed je Standby (Round-Robin). Wiedergabe via Audio-Queue
+      (Owner::Podcast), Resume-Bookmark wie book_app. Konsole podcast/podcast
+      feed/rm/on/off/sync. Build OK, Host-Tests gruen.
+      OFFEN am Geraet: realer Download (Freakshow-Folgen >100 MB! SD-Platz +
+      Dauer pruefen), m4a/AAC-Wiedergabe, Redirect-Ketten der CDN-URLs,
+      Episodentitel-Umbruch am E-Ink.
+- [x] erklaerung in der doku und auf der webseite zu den herausforderungen des
+      geraetes (keine uhr, nicht dauer-online, nur zwei kerne, e-ink)
+      ERLEDIGT: web/index.html "The defining quirk" zu "Engineering around the
+      hardware" ausgebaut (SPI-Bus + vier Challenge-Kacheln: keine RTC / nicht
+      dauer-online / zwei Kerne / E-Ink, je mit Loesung); Podcast-App-Kachel +
+      Footer-Version v2.4.6 nachgezogen. README.md/.de.md/.sv.md je neuer
+      Abschnitt "Engineering around the hardware" + Podcast-App-Zeile.
 - [x] layout rechenapp, die aufgaben passen nicht ganz hin
       ERLEDIGT: quizMid() in mathquiz_app.cpp auf Auto-Fit umgestellt — neuer
       fitSize-Helfer waehlt die groesste Schrift (3->2->1), deren GEMESSENE

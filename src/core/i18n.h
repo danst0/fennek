@@ -42,6 +42,7 @@
   X(AppGyro,       "Lage",           "Assetto",         "Läge",           "Motion",          "Postura") \
   X(AppMath,       "Kopfrechnen",    "Calcolo",         "Huvudräkning",   "Mental Math",     "Cálculo") \
   X(AppCards,      "Karteikarten",   "Flashcard",       "Flashcards",     "Flashcards",      "Tarjetas") \
+  X(AppPodcast,    "Podcast",        "Podcast",         "Podd",           "Podcast",         "Podcast") \
   /* --- Launcher-Kacheln (max 8 Zeichen) --- */ \
   X(TileMusic,     "Musik",          "Musica",          "Musik",          "Music",           "Música") \
   X(TileBook,      "Hörbuch",        "Ascolto",         "Ljudbok",        "Listen",          "Escuchar") \
@@ -56,6 +57,7 @@
   X(TileGyro,      "Lage",           "Assetto",         "Läge",           "Motion",          "Postura") \
   X(TileMath,      "Rechnen",        "Calcolo",         "Räkna",          "Math",            "Cálculo") \
   X(TileCards,     "Lernen",         "Studio",          "Plugga",         "Learn",           "Estudiar") \
+  X(TilePodcast,   "Podcast",        "Podcast",         "Podd",           "Podcast",         "Podcast") \
   X(TileSoon,      "(bald)",         "(presto)",        "(snart)",        "(soon)",          "(pronto)") \
   X(FmtResume,     "Fortsetzen: %s", "Riprendi: %s",    "Fortsätt: %s",   "Resume: %s",      "Continuar: %s") /* fmt: %s */ \
   /* --- Gemeinsame Buttons --- */ \

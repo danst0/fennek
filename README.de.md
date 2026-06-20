@@ -61,6 +61,7 @@ liefert.
 | **📡 Mesh** | Schlanker MeshCore-Client: Public- und Hashtag-Kanäle (`#test` …), DMs mit Zustellstatus, Kontakte aus Adverts, Nachrichten-Log auf SD inkl. Verlauf-Reload |
 | **🎮 Spiele** | 2048, Minensucher, Schach (Negamax-KI) und Tic-Tac-Toe — Logik host-getestet |
 | **📝 Notizen** | Eine Notiz pro Tag unter `/notes` (`YYYY-MM-DD.md`); „+ Heute" öffnet/erweitert die heutige Notiz, Liste aller Tage (neueste oben) mit Vorschau der ersten Zeile, Anhänge-Editor mit Lösch-Bestätigung |
+| **🎙️ Podcast** | RSS-Abos in `/podcasts/feeds.txt` (Freakshow-Default), holt per WLAN die neueste Folge und behält nur diese — auf SD geladen, über die Audio-Queue mit Resume abgespielt |
 | **⚙️ Optionen** | Funk-Presets (EU Narrow = DE/NRW-Standard 869,618 MHz/62,5 kHz/SF8), Einzelparameter, Node-Name, Akku-Info, Firmware-Version |
 
 Dazu: Statuszeile (Akku, Wiedergabe), Standby/Tastensperre per Knopf, und eine
@@ -77,6 +78,32 @@ GDEQ031T10 240×320, CST328-Touch (I2C), TCA8418-Tastatur, PCM5102A-DAC
 > SPI-Bus. Die ganze Architektur dreht sich darum, dass Audio trotzdem nie
 > stottert und Eingaben sofort reagieren — Details in [`CLAUDE.md`](CLAUDE.md)
 > (Anti-Stotter-Invarianten).
+
+## 🧭 Konstruieren um die Hardware herum
+
+Das T-Deck Pro hat vier unbequeme Einschränkungen; Fennek arbeitet bewusst *mit*
+ihnen statt dagegen. (Volle Design-Notizen und Anti-Stotter-Invarianten in
+[`CLAUDE.md`](CLAUDE.md).)
+
+- **🕐 Keine Echtzeituhr.** Es gibt keinen batteriegepufferten RTC. Maßgeblich ist
+  die ESP32-Systemzeit (sie übersteht den Deep Sleep, anders als eine
+  `millis()`-Uhr), gesetzt in der Reihenfolge **GPS → NTP → Mesh-Adverts**; die
+  Drift wird gelernt, und ein Paket mit Zukunfts-Uhr kann die Zeit nicht
+  ungebremst vorwärtsreißen.
+- **🔋 Nicht dauerhaft online.** Always-on ist mit diesem Energiebudget nicht
+  möglich — und WLAN und Audio können nicht gleichzeitig laufen (der WLAN-Task auf
+  Core 0 verdrängt den Audio-Task). Fennek hält daher nie eine Verbindung:
+  Scrobbles, Notiz-Politur und **Podcast-Downloads** werden in ein kurzes
+  WLAN-Fenster vor dem Standby gebündelt; ungenutzte Peripherie (GPS, Vibration)
+  wird beim Boot abgeschaltet.
+- **🧩 Nur zwei Kerne.** Zwei Kerne bedeuten kaum echtes Multitasking. Audio-Dekodierung
+  liegt fest auf Core 0, UI + Mesh-Pumpe auf Core 1; SD-Bibliotheks-Scans pausieren
+  während der Wiedergabe, und die Schach-KI läuft mit niedriger Priorität — so bleibt
+  die Wiedergabe flüssig und die Tastatur reaktionsschnell.
+- **🖋️ E-Ink-Display.** E-Ink ist schön, aber träge, und Voll-Refreshes lassen das
+  Panel blitzen. Fennek zeichnet nur bei echter Änderung neu, malt Fortschritt/Status
+  als schmale *Region-Streifen* statt Voll-Refresh und streckt den
+  Anti-Ghosting-Voll-Refresh, damit das Bild ruhig bleibt.
 
 ## 🚀 Bauen & Flashen
 

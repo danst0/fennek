@@ -14,6 +14,7 @@
 #include "services/audio.h"
 #include "services/battlog.h"
 #include "services/notes_ai.h"
+#include "services/podcast.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
@@ -326,6 +327,9 @@ void poll() {
     // (verwaltet WLAN selbst, mit Back-off). No-op ohne offene Notizen bzw.
     // ohne Konfiguration.
     notes_ai::flushBeforeStandby();
+    // Neueste Podcast-Folge(n) holen (Round-Robin, ein Feed je Standby; verwaltet
+    // WLAN selbst, mit Back-off). No-op ohne Auto-Sync/Feeds/Konfiguration.
+    podcast::flushBeforeStandby();
     enterStandby();
   }
 }

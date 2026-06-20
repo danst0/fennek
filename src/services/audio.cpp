@@ -176,7 +176,9 @@ void startCurrent(uint32_t startSec = 0) {
     // Debug-Akku-Logger (no-op ohne BATTLOG): Owner + Dateiname festhalten.
     {
       const char* bn  = strrchr(p, '/');
-      const char* own = ((audio::Owner)s_owner == audio::Owner::Book) ? "Hoerbuch" : "Musik";
+      const char* own = ((audio::Owner)s_owner == audio::Owner::Book)    ? "Hoerbuch"
+                      : ((audio::Owner)s_owner == audio::Owner::Podcast) ? "Podcast"
+                                                                         : "Musik";
       BATTLOG_EVENT("Audio", "%s: %s", own, bn ? bn + 1 : p);
     }
   } else {

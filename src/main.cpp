@@ -31,6 +31,7 @@
 #include "services/webfm.h"
 #include "services/timesync.h"
 #include "services/scrobble.h"
+#include "services/podcast.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/battlog.h"
@@ -49,6 +50,7 @@
 #include "apps/gyro_app.h"
 #include "apps/mathquiz_app.h"
 #include "apps/flashcards_app.h"
+#include "apps/podcast_app.h"
 
 #ifdef GAMES_SMOKE_TEST
 namespace {
@@ -144,6 +146,10 @@ void setup() {
   // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
   scrobble::begin();
 
+  // Podcast: /podcasts + feeds.txt sicherstellen (Default-Feed anlegen). Leicht-
+  // gewichtig (kein Netz); der Sync läuft erst auf Nutzerwunsch bzw. vor Standby.
+  podcast::begin();
+
   // Wecker-Engine: Wecker aus NVS laden. Klingelt über die Audio-Queue, daher
   // nach audio::begin(); poll() läuft im loop(). Falls dieser Boot ein
   // Wecker-Wake war (power::handleTimerWake → Vollboot), feuert poll() gleich.
@@ -206,6 +212,7 @@ void setup() {
   appmgr::add(gyro_app::get());
   appmgr::add(mathquiz_app::get());
   appmgr::add(flashcards_app::get());
+  appmgr::add(podcast_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -219,6 +226,7 @@ void setup() {
   launcher::setTile(10, i18n::Str::TileGyro,    gyro_app::get());   // Seite 2, Slot 0
   launcher::setTile(11, i18n::Str::TileMath,    mathquiz_app::get());
   launcher::setTile(12, i18n::Str::TileCards,   flashcards_app::get());
+  launcher::setTile(13, i18n::Str::TilePodcast, podcast_app::get());   // Seite 2, Slot 3
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 

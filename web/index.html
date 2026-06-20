@@ -73,6 +73,7 @@
       <article class="tile"><h3>📡 Mesh</h3><p>Lean MeshCore client: public &amp; hashtag channels, DMs with delivery status, contacts from adverts, message log on SD with history reload.</p></article>
       <article class="tile"><h3>🎮 Games</h3><p>2048, Minesweeper, Chess (Negamax AI) and Tic-Tac-Toe — game logic host-tested.</p></article>
       <article class="tile"><h3>📝 Notes</h3><p>One note per day under <code>/notes</code>. "+ Today" opens or appends; list shows every day newest-first with a preview.</p></article>
+      <article class="tile"><h3>🎙️ Podcast</h3><p>Subscribe to RSS feeds (<code>/podcasts/feeds.txt</code>), sync the latest episode over Wi-Fi and keep only that one — downloaded straight to SD.</p></article>
       <article class="tile"><h3>⚙️ Options</h3><p>Radio presets (EU Narrow), individual LoRa parameters, node name, battery info, firmware version.</p></article>
       <article class="tile tile-muted"><h3>＋ More</h3><p>Status line (battery, playback), key-lock &amp; standby via the button, and a serial debug console over USB.</p></article>
     </div>
@@ -92,22 +93,60 @@
     </div>
   </section>
 
-  <!-- ===== The quirk ===== -->
+  <!-- ===== Engineering ===== -->
   <section class="wrap" id="engineering">
-    <h2>The defining quirk</h2>
+    <h2>Engineering around the hardware</h2>
     <div class="prose quirk">
-      <p>On the T-Deck Pro, <strong>E-Ink, the SD card and LoRa share one SPI bus.</strong>
-      The entire architecture revolves around audio never stuttering despite that,
-      and inputs responding instantly:</p>
+      <p>The T-Deck Pro is a lovely device with four awkward constraints. Fennek is
+      really the story of working <em>with</em> them rather than against them — the
+      defining one being that <strong>E-Ink, the SD card and LoRa share one SPI bus.</strong>
+      The architecture revolves around audio never stuttering despite that, and
+      inputs responding instantly:</p>
       <ul>
         <li>A dedicated audio-decode task on core&nbsp;0, with a 256&nbsp;KB PSRAM read-ahead.</li>
         <li>Every SPI access (SD, E-Ink, LoRa) serialized behind one mutex.</li>
         <li>The SPI bus is released during the E-Ink BUSY phase so the I2S DMA never runs dry.</li>
         <li>E-Ink refreshes only on real change; progress shown as a narrow region strip.</li>
       </ul>
-      <p class="sub">The full set of anti-stutter invariants lives in
-      <a href="https://github.com/danst0/fennek/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a>.</p>
     </div>
+
+    <div class="tiles" style="margin-top:28px">
+      <article class="tile">
+        <h3>🕐 No real-time clock</h3>
+        <p>There is no battery-backed RTC. The canonical clock is the ESP32 system
+        time, which survives deep sleep (the older <code>millis()</code> clock lost
+        the whole sleep duration). It is set, in priority order, from <strong>GPS</strong>,
+        <strong>NTP</strong> (when Wi-Fi is briefly up) and <strong>mesh adverts</strong>;
+        drift is learned over time and a future-dated packet can never drag the
+        clock forward unchecked.</p>
+      </article>
+      <article class="tile">
+        <h3>🔋 Can't stay online</h3>
+        <p>Staying connected forever isn't possible on this power budget — and Wi-Fi
+        and audio can't even run at once (the Wi-Fi task on core&nbsp;0 evicts the
+        audio task). So Fennek never holds a connection: scrobbles, note polishing
+        and <strong>podcast downloads</strong> are batched into a short Wi-Fi window
+        before standby, and unused peripherals (GPS, haptics) are powered down at boot.</p>
+      </article>
+      <article class="tile">
+        <h3>🧩 Only two cores</h3>
+        <p>Two CPU cores mean barely any true multitasking. Fennek pins audio
+        decoding to core&nbsp;0 and the UI&nbsp;+ mesh pump to core&nbsp;1, pauses SD
+        library scans while audio is playing, and runs heavier work (the chess AI)
+        at low priority — so playback stays smooth and the keyboard stays responsive.</p>
+      </article>
+      <article class="tile">
+        <h3>🖋️ E-Ink screen</h3>
+        <p>E-Ink is gorgeous but slow, and full refreshes flash the whole panel. Fennek
+        redraws only on a real change, paints progress bars and status as narrow
+        <em>region strips</em> instead of full repaints, and stretches the
+        anti-ghosting full refresh out to keep the screen calm.</p>
+      </article>
+    </div>
+
+    <p class="sub" style="margin-top:24px">The full set of anti-stutter invariants and
+    these design decisions live in
+    <a href="https://github.com/danst0/fennek/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a>.</p>
   </section>
 
   <!-- ===== Hardware + Build ===== -->
@@ -142,7 +181,7 @@ pio device monitor -b 115200   # log + debug console</code></pre>
 <footer>
   <div class="wrap">
     <p class="foot-fox">🦊</p>
-    <p><strong>Fennek</strong> <span class="ver">v1.9.2</span> — licensed under
+    <p><strong>Fennek</strong> <span class="ver">v2.4.7</span> — licensed under
       <a href="https://github.com/danst0/fennek/blob/main/LICENSE">GPL-3.0-or-later</a>.</p>
     <p class="sub">Inspired by the <a href="https://github.com/pelgraine/Meck">Meck</a> fork,
       rebuilt as a standalone multi-app firmware. Mesh stack based on
