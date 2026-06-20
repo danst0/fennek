@@ -259,26 +259,43 @@ void submit() {
   appmgr::markDirty();   // Feedback + Statistik (Voll-Refresh, 1x pro Aufgabe)
 }
 
+char mapKeyToDigit(char k) {
+  switch (k) {
+    case 'w': case 'W': return '1';
+    case 'e': case 'E': return '2';
+    case 'r': case 'R': return '3';
+    case 's': case 'S': return '4';
+    case 'd': case 'D': return '5';
+    case 'f': case 'F': return '6';
+    case 'z': case 'Z': return '7';
+    case 'x': case 'X': return '8';
+    case 'c': case 'C': return '9';
+    case 0x02:          return '0'; // Mikrofontaste ohne Alt/Sym
+    default:            return k;
+  }
+}
+
 void quizInput(const InputEvent& e) {
   if (e.type == InputEvent::TAP) {
     if (s_answered) nextProblem();   // Tap nach Bewertung = weiter
     return;
   }
-  if (e.key == 'q' || e.key == 'Q') { s_screen = MENU; appmgr::markDirty(); return; }
-  if (e.key == '\b') {
+  char key = mapKeyToDigit(e.key);
+  if (key == 'q' || key == 'Q') { s_screen = MENU; appmgr::markDirty(); return; }
+  if (key == '\b') {
     if (s_answered || s_inputLen == 0) { s_screen = MENU; appmgr::markDirty(); return; }
     s_input[--s_inputLen] = '\0';   // letzte Ziffer löschen
     display::renderRegion(quizMid, ANSW_Y, ANSW_H);
     return;
   }
-  if (e.key == '\r') {
+  if (key == '\r') {
     if (s_answered) nextProblem();
     else submit();
     return;
   }
-  if (e.key >= '0' && e.key <= '9' && !s_answered) {
+  if (key >= '0' && key <= '9' && !s_answered) {
     if (s_inputLen < (int)sizeof(s_input) - 2) {
-      s_input[s_inputLen++] = (char)e.key;
+      s_input[s_inputLen++] = key;
       s_input[s_inputLen] = '\0';
       display::renderRegion(quizMid, ANSW_Y, ANSW_H);
     }

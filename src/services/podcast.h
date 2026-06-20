@@ -51,6 +51,7 @@ constexpr const char* kDefaultFeedName = "Freakshow";
 void begin();
 
 // --- Feed-Verwaltung (liest/schreibt feeds.txt unter spiLock) ----------------
+int  readFeeds(Feed* out, int cap);
 int  feedCount();
 bool feed(int idx, Feed* out);
 bool addFeed(const char* url, const char* name);   // hängt an feeds.txt an

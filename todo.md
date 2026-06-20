@@ -1,5 +1,10 @@
 # Offene Themen
+- [ ] batterieanzeige geht nur bis 72%
+- [ ] bitte alle kürzlichen änderungen kritisch testen
+      STATUS: Host-Tests (mathquiz, flashcards, podcast, games) sind grün,
+      Firmware baut fehlerfrei. Verifikation am realen Gerät steht noch aus.
 - [ ] später mal sync nach obsidian
+- [ ] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
 - [ ] transkription der audionotizen
       HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
       nicht ab") — erst wenn die Aufnahmen gültigen Ton enthalten, lohnt die
@@ -198,3 +203,23 @@
 - [x] Mesh-App anwenderfreundlicher: neue scrollbare "Chats"-Ansicht (alle Kanäle
       + DMs als Einträge), Auswahl öffnet die Konversation, Zurück fuehrt zur
       Liste. Kanäle pro Chat getrennt (MsgView.channelIdx).
+- [x] podcast app stürzt ab direkt beim start
+      ERLEDIGT: Heap-Allokation für das Feed-Array verwendet, um Stack-Overflow
+      auf dem standardmäßig kleinen 8-KB-Task-Stack zu verhindern. feedCount()
+      und feed(idx) optimiert, sodass feeds.txt beim Start nur einmal per
+      readFeeds() eingelesen wird statt n+1 mal.
+- [x] in der rechenapp möchte ich nicht alt drücken für die zahlen, auch ohne alt sollen die zahlen genommen werden
+      ERLEDIGT: mapKeyToDigit() in mathquiz_app.cpp eingeführt, das im Quiz-Bildschirm
+      Buchstaben (w,e,r,s,d,f,z,x,c) und Mikrofon-Taste (0x02) auf ihre
+      Ziffern-Entsprechungen (1-9, 0) mappt.
+- [x] in der notizenapp, menüpunkt für audionotizen entfernen. nutze dazu die mikrofontaste auf der tastatur
+      ERLEDIGT: kSpecialRows von 2 auf 1 verringert (Aufnahme-Zeile aus Liste entfernt).
+      onListKey() fängt Mikrofontaste (0x02) ab und ruft startRecord() auf.
+- [x] audio aufnahmen sind immer noch sehr schwierig (langsam, leise, speichern dauert lange)
+      ERLEDIGT: 8-KB-RAM-Schreibpuffer (s_writeBuf) in mic.cpp implementiert, um
+      Schreibvorgänge zu blocken und SPI-Locks drastisch zu reduzieren. kGain auf
+      12 (+6 dB) angehoben für lauteres Audio.
+- [x] rechenapp, die null funktioniert nicht (liegt auf alt-mikrofontaste)
+      ERLEDIGT: s_altActive-Abfrage beim Handling der Mikrofontaste (Code 34) in
+      keyboard.cpp ergänzt. Alt-Mikrofontaste liefert nun korrekt '0'.
+

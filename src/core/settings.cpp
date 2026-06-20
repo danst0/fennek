@@ -501,6 +501,35 @@ void setAiModel(const char* model) {
   s_prefs.putString("omod", s_aiModel);
 }
 
+// --- OTA-Firmware-Update (services/ota) ---------------------------------------
+namespace {
+
+bool s_otaLoaded = false;
+// Default: neuestes Release von danst0/fennek (die GitHub-API dient als Manifest).
+char s_otaUrl[160] = "https://api.github.com/repos/danst0/fennek/releases/latest";
+
+void otaEnsure() {
+  if (s_otaLoaded || !s_open) return;
+  s_otaLoaded = true;
+  if (s_prefs.isKey("otau")) s_prefs.getString("otau", s_otaUrl, sizeof(s_otaUrl));
+}
+
+}  // namespace
+
+void otaUrl(char* out, size_t n) {
+  otaEnsure();
+  strncpy(out, s_otaUrl, n - 1);
+  out[n - 1] = '\0';
+}
+
+void setOtaUrl(const char* url) {
+  otaEnsure();
+  if (!s_open || !url || strcmp(url, s_otaUrl) == 0) return;
+  strncpy(s_otaUrl, url, sizeof(s_otaUrl) - 1);
+  s_otaUrl[sizeof(s_otaUrl) - 1] = '\0';
+  s_prefs.putString("otau", s_otaUrl);
+}
+
 // --- Podcast-Auto-Sync (services/podcast) -------------------------------------
 bool podcastAutoSync() {
   if (!s_open) return false;
@@ -661,13 +690,14 @@ size_t exportIni(char* out, size_t cap) {
   if (!out || cap == 0) return 0;
   MeshParams m = meshParams();
   char name[32], ssid[33], tz[48], lapp[24], ltrk[TRACK_PATH_LEN], lbook[256];
-  char nurl[128], nuser[64], ourl[128], omod[48];
+  char nurl[128], nuser[64], ourl[128], omod[48], oturl[160];
   meshName(name, sizeof(name));
   wifiSsid(ssid, sizeof(ssid));
   navUrl(nurl, sizeof(nurl));
   navUser(nuser, sizeof(nuser));
   aiUrl(ourl, sizeof(ourl));
   aiModel(omod, sizeof(omod));
+  otaUrl(oturl, sizeof(oturl));
   // WLAN-Passwort wird BEWUSST NICHT exportiert (Klartext auf entnehmbarer SD).
   // Das Feld bleibt leer; ein leeres Feld lässt beim Import das NVS-Passwort
   // unangetastet — nur ein manuell eingetragenes Passwort wird übernommen.
@@ -706,6 +736,8 @@ size_t exportIni(char* out, size_t cap) {
     "enabled = %u\n"
     "url = %s\n"
     "model = %s\n"
+    "\n[update]\n"
+    "url = %s\n"
     "\n[games]\n"
     "best2048 = %lu\n"
     "mines_wins = %u\n"
@@ -726,6 +758,7 @@ size_t exportIni(char* out, size_t cap) {
     ssid,
     (unsigned)(navEnabled() ? 1 : 0), nurl, nuser,
     (unsigned)(aiEnabled() ? 1 : 0), ourl, omod,
+    oturl,
     (unsigned long)best2048(), (unsigned)minesWins(), (unsigned)minesBestSec(),
     (unsigned)chessWins(), (unsigned)tttWins(), (unsigned)tttDraws(),
     lapp, ltrk, (unsigned long)lpos, lbook,
@@ -821,6 +854,8 @@ int importIni(const char* text) {
       if      (strcmp(key, "enabled") == 0) { setAiEnabled(atoi(val) != 0); applied++; }
       else if (strcmp(key, "url") == 0)     { setAiUrl(val); applied++; }
       else if (strcmp(key, "model") == 0)   { setAiModel(val); applied++; }
+    } else if (strcmp(section, "update") == 0) {
+      if      (strcmp(key, "url") == 0)     { setOtaUrl(val); applied++; }
     } else if (strcmp(section, "games") == 0) {
       if      (strcmp(key, "best2048") == 0)       { restoreGameU32("g2kbest", (uint32_t)strtoul(val, nullptr, 10), s_best2048); applied++; }
       else if (strcmp(key, "mines_wins") == 0)     { restoreGameU16("mswins", (uint16_t)atoi(val), s_minesWins); applied++; }

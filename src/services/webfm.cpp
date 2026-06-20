@@ -3,10 +3,14 @@
 
 #include "webfm.h"
 #include "webfm_html.h"
+#include "config.h"
 #include "core/board.h"
 #include "core/settings.h"
+#include "core/display.h"
+#include "core/gui.h"
 #include "services/audio.h"
 #include "services/battlog.h"
+#include "services/ota.h"
 #include "apps/mesh_client.h"
 
 #include <Arduino.h>
@@ -14,6 +18,7 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <SD.h>
+#include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <string.h>
 
 namespace {
@@ -27,6 +32,7 @@ uint32_t     s_connectT0 = 0;
 uint32_t     s_requests = 0;
 char         s_ssid[33] = "";
 char         s_ip[16] = "";
+bool         s_rebootPending = false;   // nach erfolgreichem OTA: poll() rebootet
 
 // Upload-Zustand (ein Upload zur Zeit — der Server ist synchron).
 File s_upFile;
@@ -343,6 +349,68 @@ void handleMkdir() {
   else             sendJsonErr(500, "mkdir fehlgeschlagen");
 }
 
+// --- OTA-Firmware-Update -----------------------------------------------------
+// WLAN ist hier bereits oben (Server läuft nur im Zustand RUNNING). Der lange,
+// blockierende Flash ist unkritisch fürs SPI-Stottern: Audio ist gestoppt, die
+// Mesh-Pumpe suspendiert, und OTA schreibt in den internen Flash (nicht HSPI).
+
+// E-Ink-Hinweis während des Flashens (captureless für display::render).
+void drawOtaScreen(Adafruit_GFX& g) {
+  g.fillScreen(GxEPD_WHITE);
+  gui::printAt(g, 16, 120, "Firmware-Update", 3);
+  gui::printAt(g, 16, 160, "laeuft - bitte das Geraet", 2);
+  gui::printAt(g, 16, 184, "NICHT ausschalten.", 2);
+  gui::printAt(g, 16, 230, "Neustart erfolgt automatisch.", 2);
+}
+
+// Netzfreier Versions-Endpunkt (für die Erstanzeige beim Seitenaufbau — kein
+// blockierender GitHub-Aufruf bei jedem Laden der Dateiverwaltung).
+void handleOtaVersion() {
+  s_requests++;
+  char b[48];
+  snprintf(b, sizeof(b), "{\"current\":\"%s\"}", FENNEK_VERSION);
+  s_server->send(200, "application/json", b);
+}
+
+void handleOtaCheck() {
+  s_requests++;
+  char url[160];
+  settings::otaUrl(url, sizeof(url));
+  ota::CheckResult r = ota::check(url);
+
+  String json = "{\"ok\":";
+  json += r.ok ? "true" : "false";
+  json += ",\"current\":\"";  appendJsonEscaped(json, r.current);
+  json += "\",\"latest\":\"";  appendJsonEscaped(json, r.latest);
+  json += "\",\"update\":";   json += r.updateAvail ? "true" : "false";
+  json += ",\"err\":\"";      appendJsonEscaped(json, r.err);
+  json += "\"}";
+  s_server->send(200, "application/json", json);
+}
+
+void handleOtaUpdate() {
+  s_requests++;
+  bool force = s_server->arg("force") == "1";
+
+  char url[160];
+  settings::otaUrl(url, sizeof(url));
+  ota::CheckResult r = ota::check(url);
+  if (!r.ok)                       { sendJsonErr(502, r.err); return; }
+  if (!r.updateAvail && !force)    { sendJsonErr(409, "kein Update verfuegbar"); return; }
+
+  // Einmaliger Vollbild-Hinweis, dann blockierend flashen.
+  display::render(drawOtaScreen, true);
+  Serial.printf("[WEBFM] OTA-Update angestossen (%s -> %s)\n", r.current, r.latest);
+
+  char err[80] = "";
+  if (ota::apply(r.url, err, sizeof(err))) {
+    sendJsonOk();
+    s_rebootPending = true;        // poll() rebootet, sobald die Antwort raus ist
+  } else {
+    sendJsonErr(500, err);
+  }
+}
+
 void ensureServer() {
   if (s_server) return;
   s_server = new WebServer(80);
@@ -352,6 +420,9 @@ void ensureServer() {
   s_server->on("/api/upload",   HTTP_POST, handleUploadDone, handleUploadData);
   s_server->on("/api/delete",   HTTP_POST, handleDelete);
   s_server->on("/api/mkdir",    HTTP_POST, handleMkdir);
+  s_server->on("/api/ota/version", HTTP_GET,  handleOtaVersion);
+  s_server->on("/api/ota/check",   HTTP_GET,  handleOtaCheck);
+  s_server->on("/api/ota/update",  HTTP_POST, handleOtaUpdate);
   s_server->onNotFound([]() { sendJsonErr(404, "unbekannter Endpunkt"); });
 }
 
@@ -420,6 +491,12 @@ void poll() {
     }
   } else if (s_state == State::RUNNING) {
     s_server->handleClient();
+    if (s_rebootPending) {
+      // Antwort ist raus (handleClient hat sie versandt) — jetzt neu starten.
+      Serial.println("[WEBFM] OTA fertig — Reboot in neue Version");
+      delay(300);
+      ESP.restart();
+    }
   }
 }
 

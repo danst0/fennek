@@ -83,9 +83,9 @@ Screen s_screen = LIST;
 struct NoteEntry { char file[kFileLen]; char title[kTitleLen]; bool audio; uint16_t durSec; };
 NoteEntry* s_notes = nullptr;
 int  s_count = -1;          // -1 = noch nicht gescannt
-// Zeile 0 = "+ Heute" (Text), Zeile 1 = "Aufnahme", ab Zeile 2 die Einträge.
+// Zeile 0 = "+ Heute" (Text), ab Zeile 1 die Einträge.
 int  s_sel = 0, s_off = 0;
-constexpr int kSpecialRows = 2;
+constexpr int kSpecialRows = 1;
 
 // Aufnahme-Zustand.
 char     s_recFile[kFileLen] = "";
@@ -375,7 +375,6 @@ void moveSel(int delta) {
 
 void openSel() {
   if (s_sel == 0) { openToday(); return; }
-  if (s_sel == 1) { startRecord(); return; }
   int idx = s_sel - kSpecialRows;
   if (idx < 0 || idx >= s_count) return;
   if (s_notes[idx].audio) playEntry(idx);
@@ -413,8 +412,6 @@ void drawList(Adafruit_GFX& g) {
     char lbl[80];
     if (gi == 0) {
       snprintf(lbl, sizeof(lbl), "%s", i18n::tr(i18n::Str::NotesToday));
-    } else if (gi == 1) {
-      snprintf(lbl, sizeof(lbl), "%c Aufnahme", 0x0E);   // ♪ + Aufnahme
     } else {
       const NoteEntry& e = s_notes[gi - kSpecialRows];
       if (e.audio) {
@@ -599,6 +596,7 @@ void onListTouch(int x, int y) {
 }
 
 void onListKey(char k) {
+  if (k == 0x02) { startRecord(); return; }   // Mikrofontaste
   switch (k) {
     case 'w': case 'W': moveSel(-1); break;
     case 's': case 'S': moveSel(+1); break;

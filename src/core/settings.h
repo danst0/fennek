@@ -111,6 +111,12 @@ void setAiUrl(const char* url);
 void aiModel(char* out, size_t n);               // Default "llama3.2"
 void setAiModel(const char* model);
 
+// --- OTA-Firmware-Update (services/ota) ---------------------------------------
+// Manifest-URL: GitHub-Releases-API (Default) oder ein selbst gehostetes Manifest.
+// Default = neuestes Release von danst0/fennek. "" lässt OTA-Prüfen fehlschlagen.
+void otaUrl(char* out, size_t n);
+void setOtaUrl(const char* url);
+
 // --- Podcast (services/podcast) -----------------------------------------------
 // Toggle für den automatischen Episoden-Sync VOR dem Auto-Standby (wenn WLAN
 // frei ist). Der manuelle Sync in der Podcast-App läuft unabhängig davon.

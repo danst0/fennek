@@ -10,6 +10,7 @@
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
 #include "apps/podcast_core.h"
+#include "core/power.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -58,40 +59,6 @@ bool isAudioName(const char* n) {
 }
 
 // --- feeds.txt ----------------------------------------------------------------
-int readFeeds(podcast::Feed* out, int cap) {
-  int n = 0;
-  if (!board::sdReady()) return 0;
-  spiLock();
-  File f = SD.open(kFeeds, FILE_READ);
-  bool open = (bool)f;
-  spiUnlock();
-  if (!open) return 0;
-  char line[320];
-  for (;;) {
-    spiLock();
-    int len = f.available() ? f.readBytesUntil('\n', line, sizeof(line) - 1) : -1;
-    spiUnlock();
-    if (len < 0) break;
-    line[len] = '\0';
-    char* s = line;
-    while (*s == ' ' || *s == '\t') s++;
-    if (!*s || *s == '#') continue;
-    if (n >= cap) break;
-    podcast::Feed& fd = out[n];
-    char* tab = strchr(s, '\t');
-    if (tab) { *tab = '\0'; copyStr(fd.name, sizeof(fd.name), tab + 1); rstrip(fd.name); }
-    else     { fd.name[0] = '\0'; }
-    copyStr(fd.url, sizeof(fd.url), s);
-    rstrip(fd.url);
-    if (!fd.url[0]) continue;
-    podcast::feedSlug(fd.url, fd.slug, sizeof(fd.slug));
-    if (!fd.name[0]) copyStr(fd.name, sizeof(fd.name), fd.slug);
-    n++;
-  }
-  spiLock(); f.close(); spiUnlock();
-  return n;
-}
-
 // --- state.txt ----------------------------------------------------------------
 void statePath(const char* slug, char* out, size_t n) {
   snprintf(out, n, "%s/%s/state.txt", kDir, slug);
@@ -130,10 +97,10 @@ void wifiDown() {
 
 // HTTP-GET mit manueller Redirect-Auflösung (max 6 Hops; deckt http→https und
 // CDN-Umleitungen ab, die der eingebaute Follow je nach Schema-Wechsel verschluckt).
-// Bei HTTP 200 bleibt http offen und der Stream wird zurückgegeben (Aufrufer
-// ruft http.end()); sonst nullptr.
+// rangeStart > 0 → sendet Range: bytes=<n>- auf jedem Hop; akzeptiert 200 und 206.
+// Bei Erfolg bleibt http offen und der Stream wird zurückgegeben (Aufrufer ruft http.end()).
 WiFiClient* httpOpenFollow(HTTPClient& http, WiFiClientSecure& cs, WiFiClient& cp,
-                           const char* url, int* code) {
+                           const char* url, int* code, size_t rangeStart = 0) {
   String cur = url;
   for (int hop = 0; hop < 6; ++hop) {
     bool https = cur.startsWith("https");
@@ -142,6 +109,10 @@ WiFiClient* httpOpenFollow(HTTPClient& http, WiFiClientSecure& cs, WiFiClient& c
     http.setUserAgent("fennek-podcast");
     http.setConnectTimeout(kConnectTimeoutMs);
     http.setTimeout(kHttpTimeoutMs);
+    if (rangeStart > 0) {
+      char rng[32]; snprintf(rng, sizeof(rng), "bytes=%u-", (unsigned)rangeStart);
+      http.addHeader("Range", rng);
+    }
     const char* hdr[] = { "Location" };
     http.collectHeaders(hdr, 1);
     int c = http.GET();
@@ -153,7 +124,7 @@ WiFiClient* httpOpenFollow(HTTPClient& http, WiFiClientSecure& cs, WiFiClient& c
       cur = loc;
       continue;
     }
-    if (c == 200) return http.getStreamPtr();
+    if (c == 200 || c == 206) return http.getStreamPtr();
     http.end();
     return nullptr;
   }
@@ -167,10 +138,12 @@ bool fetchLatest(const char* feedUrl, podcast::EpisodeMeta& meta) {
   if (!buf) buf = (char*)malloc(kRssCap);
   if (!buf) return false;
 
-  HTTPClient http; WiFiClientSecure cs; WiFiClient cp;
+  HTTPClient*       http = new HTTPClient();
+  WiFiClientSecure* cs   = new WiFiClientSecure();
+  WiFiClient*       cp   = new WiFiClient();
   int code = 0;
-  WiFiClient* st = httpOpenFollow(http, cs, cp, feedUrl, &code);
-  if (!st) { Serial.printf("[PODCAST] Feed HTTP %d\n", code); free(buf); return false; }
+  WiFiClient* st = httpOpenFollow(*http, *cs, *cp, feedUrl, &code);
+  if (!st) { Serial.printf("[PODCAST] Feed HTTP %d\n", code); delete http; delete cs; delete cp; free(buf); return false; }
 
   size_t total = 0; bool got = false; uint32_t last = millis();
   buf[0] = '\0';
@@ -186,42 +159,98 @@ bool fetchLatest(const char* feedUrl, podcast::EpisodeMeta& meta) {
         if (podcast::isComplete(meta)) { got = true; break; }
       }
     } else {
-      if (!http.connected() && st->available() == 0) break;
+      if (!http->connected() && st->available() == 0) break;
       if (millis() - last > kStallMs) break;
       delay(10);
     }
   }
-  http.end();
+  http->end();
+  delete http; delete cs; delete cp;
   if (!got) { meta = podcast::parseLatest(buf); got = meta.valid; }
   free(buf);
   return got;
 }
 
-// Episode streamend auf die SD laden (Netz-I/O lock-frei, SD-Writes unter
-// spiLock). Erst in <dest>.part, bei Erfolg umbenannt. WLAN muss an sein.
+// Episode streamend auf die SD laden. Unterstützt Resume: prüft <dest>.dl_url
+// (gespeicherte URL des laufenden Downloads) und <dest>.part (Fortschritt).
+// Bei URL-Match und Range-Support (HTTP 206) wird ab <partSize> fortgesetzt.
+// Netz-I/O lock-frei, SD-Writes unter spiLock. WLAN muss an sein.
 bool downloadEpisode(const char* url, const char* dest, podcast::Progress prog, const char* feedName) {
-  HTTPClient http; WiFiClientSecure cs; WiFiClient cp;
-  int code = 0;
-  WiFiClient* st = httpOpenFollow(http, cs, cp, url, &code);
-  if (!st) { Serial.printf("[PODCAST] Episode HTTP %d\n", code); return false; }
-  int contentLen = http.getSize();
+  char tmp[170];    snprintf(tmp,    sizeof(tmp),    "%s.part",   dest);
+  char urlFile[170]; snprintf(urlFile, sizeof(urlFile), "%s.dl_url", dest);
 
-  char tmp[170]; snprintf(tmp, sizeof(tmp), "%s.part", dest);
+  // --- Resume: vorhandene .part-Datei prüfen ---
+  size_t partSize = 0;
   spiLock();
-  SD.remove(tmp);
-  File f = SD.open(tmp, FILE_WRITE);
+  if (SD.exists(urlFile)) {
+    File uf = SD.open(urlFile, FILE_READ);
+    if (uf) {
+      char stored[256]; int n = uf.readBytesUntil('\n', stored, sizeof(stored) - 1);
+      stored[n] = '\0'; uf.close();
+      if (strcmp(stored, url) == 0 && SD.exists(tmp)) {
+        File pf = SD.open(tmp, FILE_READ);
+        if (pf) { partSize = pf.size(); pf.close(); }
+      } else {
+        SD.remove(tmp); SD.remove(urlFile);  // andere URL → Neustart
+      }
+    }
+  }
+  spiUnlock();
+
+  // --- HTTP-Verbindung (mit Range falls Resume) ---
+  // Heap-Allokation: HTTPClient + WiFiClientSecure kosten ~4-6 KB Stack — zu viel
+  // für den 8-KB-loopTask (Guru Meditation Stack canary). PSRAM bevorzugt.
+  HTTPClient*      http = new HTTPClient();
+  WiFiClientSecure* cs  = new WiFiClientSecure();
+  WiFiClient*       cp  = new WiFiClient();
+  int code = 0;
+  WiFiClient* st = httpOpenFollow(*http, *cs, *cp, url, &code, partSize);
+
+  // Server ignoriert Range → 200 statt 206: Neustart erzwingen
+  if (st && partSize > 0 && code == 200) {
+    Serial.printf("[PODCAST] %s: kein Range-Support (HTTP 200), starte neu\n", feedName);
+    http->end(); st = nullptr;
+    partSize = 0;
+    spiLock(); SD.remove(tmp); spiUnlock();
+    st = httpOpenFollow(*http, *cs, *cp, url, &code, 0);
+  }
+  if (!st) {
+    Serial.printf("[PODCAST] Episode HTTP %d\n", code);
+    delete http; delete cs; delete cp;
+    return false;
+  }
+
+  int contentLen  = http->getSize();  // verbleibende Bytes (206) oder Gesamt (200)
+  size_t totalSize = (code == 206 && contentLen > 0) ? partSize + (size_t)contentLen
+                   : (contentLen > 0 ? (size_t)contentLen : 0);
+  Serial.printf("[PODCAST] %s: HTTP %d, contentLen=%d, partSize=%u, total=%u\n",
+                feedName, code, contentLen, (unsigned)partSize, (unsigned)totalSize);
+
+  // --- .dl_url schreiben (URL des laufenden Downloads) ---
+  spiLock();
+  { File uf = SD.open(urlFile, FILE_WRITE); if (uf) { uf.print(url); uf.close(); } }
+  if (partSize == 0) SD.remove(tmp);
+  File f = SD.open(tmp, partSize > 0 ? FILE_APPEND : FILE_WRITE);
   bool open = (bool)f;
   spiUnlock();
-  if (!open) { http.end(); Serial.println("[PODCAST] SD-Datei nicht offen"); return false; }
+  if (!open) { http->end(); delete http; delete cs; delete cp; Serial.println("[PODCAST] SD-Datei nicht offen"); return false; }
 
-  uint8_t* buf = (uint8_t*)malloc(kDlBuf);
-  if (!buf) { spiLock(); f.close(); SD.remove(tmp); spiUnlock(); http.end(); return false; }
+  // --- PSRAM-Puffer ---
+  int bufSz = 64 * 1024;
+  uint8_t* buf = (uint8_t*)heap_caps_malloc(bufSz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!buf) { bufSz = kDlBuf; buf = (uint8_t*)malloc(kDlBuf); }
+  if (!buf) { spiLock(); f.close(); spiUnlock(); http->end(); delete http; delete cs; delete cp; return false; }
 
-  size_t written = 0; uint32_t last = millis(); bool ok = true; int lastPct = -2;
+  // Fortschritt ab Anfang des Resumes anzeigen
+  int startPct = (totalSize > 0 && partSize > 0) ? (int)((uint64_t)partSize * 100 / totalSize) : 0;
+  int lastPct  = startPct - 1;
+  if (prog && partSize > 0) prog(feedName, startPct);  // sofort aktuellen Stand zeigen
+
+  size_t written = 0; uint32_t last = millis(); bool ok = true;
   for (;;) {
     int av = st->available();
     if (av > 0) {
-      int want = av > kDlBuf ? kDlBuf : av;
+      int want = av > bufSz ? bufSz : av;
       int r = st->readBytes(buf, want);            // Netz: ohne Lock
       if (r > 0) {
         spiLock();
@@ -229,35 +258,49 @@ bool downloadEpisode(const char* url, const char* dest, podcast::Progress prog, 
         spiUnlock();
         if (w != (size_t)r) { ok = false; break; }
         written += r; last = millis();
-        if (prog && contentLen > 0) {
-          int pct = (int)((uint64_t)written * 100 / contentLen);
-          if (pct != lastPct) { lastPct = pct; prog(feedName, pct); }
+        power::noteActivity();                     // Standby-Timer zurücksetzen
+        if (prog) {
+          if (totalSize > 0) {
+            int pct = (int)((uint64_t)(partSize + written) * 100 / totalSize);
+            if (pct != lastPct) { lastPct = pct; prog(feedName, pct); }
+          } else {
+            int mark = (int)((partSize + written) >> 19);  // alle 512 KB
+            if (mark != lastPct) { lastPct = mark; prog(feedName, -1); }
+          }
         }
       }
     } else {
-      if (!http.connected() && st->available() == 0) break;
+      if (!http->connected() && st->available() == 0) break;
       if (millis() - last > kStallMs) { ok = false; Serial.println("[PODCAST] Download-Timeout"); break; }
       delay(5);
     }
   }
   free(buf);
   spiLock(); f.close(); spiUnlock();
-  http.end();
+  http->end();
+  delete http; delete cs; delete cp;
 
+  // Vollständigkeit prüfen (contentLen = verbleibende Bytes bei 206)
   if (ok && contentLen > 0 && written < (size_t)contentLen) {
-    Serial.printf("[PODCAST] unvollstaendig %u/%d\n", (unsigned)written, contentLen);
+    Serial.printf("[PODCAST] %s: unvollstaendig %u/%d\n", feedName, (unsigned)written, contentLen);
     ok = false;
   }
-  if (ok && written == 0) ok = false;
-  if (!ok) { spiLock(); SD.remove(tmp); spiUnlock(); return false; }
+  if (ok && written == 0 && partSize == 0) ok = false;
+  if (!ok) {
+    // .part + .dl_url stehen lassen → nächster Sync kann fortsetzen
+    Serial.printf("[PODCAST] %s: unterbrochen bei %u+%u B, Resume beim naechsten Sync\n",
+                  feedName, (unsigned)partSize, (unsigned)written);
+    return false;
+  }
 
   spiLock();
   SD.remove(dest);
   bool ren = SD.rename(tmp, dest);
   if (!ren) SD.remove(tmp);
+  SD.remove(urlFile);  // .dl_url nach erfolgreichem Download aufräumen
   spiUnlock();
   if (!ren) { Serial.println("[PODCAST] rename fehlgeschlagen"); return false; }
-  Serial.printf("[PODCAST] %s: %u Bytes -> %s\n", feedName, (unsigned)written, dest);
+  Serial.printf("[PODCAST] %s: %u Bytes gesamt -> %s\n", feedName, (unsigned)(partSize + written), dest);
   return true;
 }
 
@@ -326,15 +369,16 @@ bool syncCore(int onlyIdx, bool roundRobin, bool useBackoff, char* log, size_t l
   if (useBackoff && !settings::podcastAutoSync()) { setLog("Auto-Sync aus"); return true; }
   if (!board::sdReady()) { setLog("keine SD-Karte"); return false; }
 
-  podcast::Feed feeds[podcast::kMaxFeeds];
-  int n = readFeeds(feeds, podcast::kMaxFeeds);
-  if (n == 0) { setLog("keine Feeds"); return true; }
+  auto* feeds = (podcast::Feed*)malloc(podcast::kMaxFeeds * sizeof(podcast::Feed));
+  if (!feeds) { setLog("out of memory"); return false; }
+  int n = podcast::readFeeds(feeds, podcast::kMaxFeeds);
+  if (n == 0) { setLog("keine Feeds"); free(feeds); return true; }
 
   char ssid[33], wpass[65];
   settings::wifiSsid(ssid, sizeof(ssid));
   settings::wifiPass(wpass, sizeof(wpass));
-  if (!ssid[0]) { setLog("kein WLAN konfiguriert"); return false; }
-  if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); return false; }
+  if (!ssid[0]) { setLog("kein WLAN konfiguriert"); free(feeds); return false; }
+  if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); free(feeds); return false; }
 
   if (useBackoff) {
     uint32_t cur = timesync::now();
@@ -346,6 +390,7 @@ bool syncCore(int onlyIdx, bool roundRobin, bool useBackoff, char* log, size_t l
         Serial.printf("[PODCAST] Pre-Standby-Sync uebersprungen (Back-off: %u Fehlschlaege, "
                       "warte %lus)\n", (unsigned)s_failCount, (unsigned long)wait);
         setLog("Back-off aktiv");
+        free(feeds);
         return false;
       }
     }
@@ -356,6 +401,7 @@ bool syncCore(int onlyIdx, bool roundRobin, bool useBackoff, char* log, size_t l
     wifiDown();
     if (useBackoff && s_failCount < 0xFF) s_failCount++;
     setLog("WLAN-Fehler");
+    free(feeds);
     return false;
   }
 
@@ -374,6 +420,7 @@ bool syncCore(int onlyIdx, bool roundRobin, bool useBackoff, char* log, size_t l
   }
 
   wifiDown();
+  free(feeds);
 
   if (useBackoff) {
     if (fehler == 0) s_failCount = 0;
@@ -410,17 +457,50 @@ void begin() {
 }
 
 int feedCount() {
-  Feed feeds[kMaxFeeds];
-  return readFeeds(feeds, kMaxFeeds);
+  return readFeeds(nullptr, 0);
 }
 
 bool feed(int idx, Feed* out) {
   if (idx < 0 || !out) return false;
-  Feed feeds[kMaxFeeds];
-  int n = readFeeds(feeds, kMaxFeeds);
-  if (idx >= n) return false;
-  *out = feeds[idx];
-  return true;
+  if (!board::sdReady()) return false;
+  spiLock();
+  File f = SD.open(kFeeds, FILE_READ);
+  bool open = (bool)f;
+  spiUnlock();
+  if (!open) return false;
+  char line[320];
+  int n = 0;
+  bool found = false;
+  for (;;) {
+    spiLock();
+    int len = f.available() ? f.readBytesUntil('\n', line, sizeof(line) - 1) : -1;
+    spiUnlock();
+    if (len < 0) break;
+    line[len] = '\0';
+    char* s = line;
+    while (*s == ' ' || *s == '\t') s++;
+    if (!*s || *s == '#') continue;
+
+    char* tab = strchr(s, '\t');
+    char name[64]; name[0] = '\0';
+    if (tab) { *tab = '\0'; copyStr(name, sizeof(name), tab + 1); rstrip(name); }
+    char url[256];
+    copyStr(url, sizeof(url), s);
+    rstrip(url);
+    if (!url[0]) continue;
+
+    if (n == idx) {
+      copyStr(out->url, sizeof(out->url), url);
+      copyStr(out->name, sizeof(out->name), name);
+      podcast::feedSlug(out->url, out->slug, sizeof(out->slug));
+      if (!out->name[0]) copyStr(out->name, sizeof(out->name), out->slug);
+      found = true;
+      break;
+    }
+    n++;
+  }
+  spiLock(); f.close(); spiUnlock();
+  return found;
 }
 
 bool addFeed(const char* url, const char* name) {
@@ -439,9 +519,10 @@ bool addFeed(const char* url, const char* name) {
 }
 
 bool removeFeed(int idx) {
-  Feed feeds[kMaxFeeds];
+  auto* feeds = (Feed*)malloc(kMaxFeeds * sizeof(Feed));
+  if (!feeds) return false;
   int n = readFeeds(feeds, kMaxFeeds);
-  if (idx < 0 || idx >= n || !board::sdReady()) return false;
+  if (idx < 0 || idx >= n || !board::sdReady()) { free(feeds); return false; }
   spiLock();
   File f = SD.open(kFeeds, FILE_WRITE);   // FILE_WRITE trunkiert
   bool ok = (bool)f;
@@ -454,6 +535,7 @@ bool removeFeed(int idx) {
     f.close();
   }
   spiUnlock();
+  free(feeds);
   return ok;
 }
 
@@ -497,6 +579,47 @@ bool syncOne(int idx, char* log, size_t logN, Progress prog) {
 bool flushBeforeStandby() {
   char dummy[8];
   return syncCore(-1, true, true, dummy, sizeof(dummy), nullptr);
+}
+
+int readFeeds(Feed* out, int cap) {
+  int n = 0;
+  if (!board::sdReady()) return 0;
+  spiLock();
+  File f = SD.open(kFeeds, FILE_READ);
+  bool open = (bool)f;
+  spiUnlock();
+  if (!open) return 0;
+  char line[320];
+  for (;;) {
+    spiLock();
+    int len = f.available() ? f.readBytesUntil('\n', line, sizeof(line) - 1) : -1;
+    spiUnlock();
+    if (len < 0) break;
+    line[len] = '\0';
+    char* s = line;
+    while (*s == ' ' || *s == '\t') s++;
+    if (!*s || *s == '#') continue;
+
+    char* tab = strchr(s, '\t');
+    char name[64]; name[0] = '\0';
+    if (tab) { *tab = '\0'; copyStr(name, sizeof(name), tab + 1); rstrip(name); }
+    char url[256];
+    copyStr(url, sizeof(url), s);
+    rstrip(url);
+    if (!url[0]) continue;
+
+    if (out && n < cap) {
+      podcast::Feed& fd = out[n];
+      copyStr(fd.url, sizeof(fd.url), url);
+      copyStr(fd.name, sizeof(fd.name), name);
+      podcast::feedSlug(fd.url, fd.slug, sizeof(fd.slug));
+      if (!fd.name[0]) copyStr(fd.name, sizeof(fd.name), fd.slug);
+    }
+    n++;
+    if (out && n >= cap) break;
+  }
+  spiLock(); f.close(); spiUnlock();
+  return n;
 }
 
 }  // namespace podcast

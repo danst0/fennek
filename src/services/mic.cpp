@@ -14,7 +14,7 @@ namespace {
 
 constexpr i2s_port_t kPort = I2S_NUM_0;   // PDM geht nur auf I2S0 (Handover vom DAC)
 constexpr uint32_t   kRate = 16000;       // 16 kHz mono 16-bit
-constexpr int        kGain = 6;           // PDM-Mikro ist leise (~-20 dBFS) -> anheben
+constexpr int        kGain = 12;          // PDM-Mikro ist leise (~-20 dBFS) -> anheben
 
 // PDM geht NUR auf I2S0 (IDF-Limit), das sonst der DAC belegt. Der Aufrufer MUSS
 // vor startRecording() audio::beginMic() rufen (gibt I2S0 frei) und danach
@@ -26,6 +26,10 @@ bool     s_rec       = false;
 uint32_t s_dataBytes = 0;
 uint16_t s_level     = 0;
 int16_t  s_buf[512];
+
+constexpr int kWriteBufSize = 8192;
+uint8_t* s_writeBuf = nullptr;
+int s_writeBufLen = 0;
 
 void put32(uint8_t* d, uint32_t v) { d[0]=v; d[1]=v>>8; d[2]=v>>16; d[3]=v>>24; }
 void put16(uint8_t* d, uint16_t v) { d[0]=v; d[1]=v>>8; }
@@ -83,6 +87,12 @@ bool startRecording(const char* path) {
   spiUnlock();
   if (!s_file) { i2s_driver_uninstall(kPort); return false; }
 
+  if (!s_writeBuf) {
+    s_writeBuf = (uint8_t*)heap_caps_malloc(kWriteBufSize, MALLOC_CAP_SPIRAM);
+    if (!s_writeBuf) s_writeBuf = (uint8_t*)malloc(kWriteBufSize);
+  }
+  s_writeBufLen = 0;
+
   s_dataBytes = 0;
   s_level = 0;
   s_rec = true;
@@ -108,9 +118,20 @@ void poll() {
     }
     if (pk > s_level || iter == 0) s_level = pk;
 
-    spiLock();
-    s_file.write((const uint8_t*)s_buf, got);
-    spiUnlock();
+    if (s_writeBuf) {
+      if (s_writeBufLen + got > kWriteBufSize) {
+        spiLock();
+        s_file.write(s_writeBuf, s_writeBufLen);
+        spiUnlock();
+        s_writeBufLen = 0;
+      }
+      memcpy(s_writeBuf + s_writeBufLen, s_buf, got);
+      s_writeBufLen += got;
+    } else {
+      spiLock();
+      s_file.write((const uint8_t*)s_buf, got);
+      spiUnlock();
+    }
     s_dataBytes += got;
   }
 }
@@ -118,18 +139,24 @@ void poll() {
 uint32_t stopRecording() {
   if (!s_rec) return 0;
   s_rec = false;
-  // I2S0 NICHT hier deinstallieren: audio::endMic() -> MicResume erledigt
-  // uninstall+install der Audio-Konfig in einem Schritt (sonst E-Log
-  // "i2s_driver_uninstall: port 0 has not installed" durch Doppel-Uninstall).
+
+  spiLock();
+  if (s_writeBuf && s_writeBufLen > 0) {
+    s_file.write(s_writeBuf, s_writeBufLen);
+    s_writeBufLen = 0;
+  }
 
   uint8_t b[4];
-  spiLock();
   s_file.seek(4);  put32(b, 36 + s_dataBytes); s_file.write(b, 4);   // RIFF-Größe
   s_file.seek(40); put32(b, s_dataBytes);       s_file.write(b, 4);   // data-Größe
   s_file.close();
   spiUnlock();
-  // Diagnose: gueltige WAV, aber stumm? Peak-Pegel + Bytes/Sekunden loggen.
-  // s_level=0 trotz Bytes -> PDM-Mic liefert Stille (Pin/Config), nicht Wiedergabe.
+
+  if (s_writeBuf) {
+    free(s_writeBuf);
+    s_writeBuf = nullptr;
+  }
+
   uint32_t secs = s_dataBytes / (kRate * 2);
   Serial.printf("[MIC] Aufnahme beendet: %lu Bytes (%lus), Peak=%u/%d %s\n",
                 (unsigned long)s_dataBytes, (unsigned long)secs,

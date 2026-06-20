@@ -126,7 +126,11 @@ char processEvent(uint8_t ev) {
     c = '$';
     s_symActive = false;
   } else if (code == 34) {                     // Mikrofon-Taste
-    if (s_symActive) { s_symActive = false; c = '0'; }
+    if (s_symActive || s_altActive) {
+      c = '0';
+      if (s_altActive) { if (s_altHeld) s_altUsed = true; else s_altActive = false; }
+      if (s_symActive) { if (s_symHeld) s_symUsed = true; else s_symActive = false; }
+    }
     else c = 0x02;
   } else if (s_altActive || s_symActive) {     // Alt wirkt wie Sym (Aufdruck)
     c = symChar(code);

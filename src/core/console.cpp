@@ -15,6 +15,7 @@
 #include "services/notes_ai.h"
 #include "services/scrobble.h"
 #include "services/podcast.h"
+#include "services/ota.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/gps.h"
@@ -99,6 +100,10 @@ void cmdHelp() {
   Serial.println("[CON]   podcast rm <idx>  - Feed entfernen");
   Serial.println("[CON]   podcast on|off    - Auto-Sync vor Standby ein/aus");
   Serial.println("[CON]   podcast sync      - neueste Folgen jetzt laden (WLAN)");
+  Serial.println("[CON]   ota               - OTA-Status (Version + Update-URL)");
+  Serial.println("[CON]   ota url <url>     - Update-Quelle (GitHub-Release-API/Manifest)");
+  Serial.println("[CON]   ota check         - auf neue Firmware pruefen (WLAN)");
+  Serial.println("[CON]   ota update|force  - Firmware laden + flashen + Reboot (WLAN)");
   Serial.println("[CON]   settings show     - aktuelle Einstellungen anzeigen");
   Serial.println("[CON]   settings save     - Einstellungen nach /fennek.ini (SD)");
   Serial.println("[CON]   settings load     - /fennek.ini ins NVS einlesen");
@@ -796,6 +801,20 @@ void handleLine(char* line) {
       Serial.printf("[CON]   [%d] %s  (%s)\n", i, f.name,
                     have ? loc.title : "keine Folge");
     }
+    return;
+  }
+  if (strncmp(line, "ota url ", 8) == 0) {
+    settings::setOtaUrl(line + 8);
+    Serial.printf("[CON] OTA-Update-URL gesetzt: '%s'\n", line + 8);
+    return;
+  }
+  if (strcmp(line, "ota check") == 0)  { ota::consoleCheck();      return; }
+  if (strcmp(line, "ota update") == 0) { ota::consoleUpdate(false); return; }
+  if (strcmp(line, "ota force") == 0)  { ota::consoleUpdate(true);  return; }
+  if (strcmp(line, "ota") == 0) {
+    char url[160]; settings::otaUrl(url, sizeof(url));
+    Serial.printf("[CON] OTA: aktuell=%s  URL='%s'\n", FENNEK_VERSION, url);
+    Serial.println("[CON]   'ota check' prueft, 'ota update' flasht (WLAN noetig)");
     return;
   }
   if (strcmp(line, "settings show") == 0)   { cmdSettingsShow(); return; }

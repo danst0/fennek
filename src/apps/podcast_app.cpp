@@ -48,6 +48,7 @@ enum Screen { LIST, DETAIL };
 Screen s_screen = LIST;
 
 podcast::Feed s_feeds[podcast::kMaxFeeds];
+bool s_hasLocal[podcast::kMaxFeeds] = {};  // außerhalb draw() gecacht, nie unter spiLock
 int  s_n = -1;                 // -1 = noch nicht geladen
 int  s_sel = 0, s_off = 0;
 
@@ -58,10 +59,16 @@ uint32_t s_epKey = 0;          // CRC32 des Episodenpfads (Bookmark-Key)
 
 // Blockierender Sync: Anforderung wird erst nach dem "Synchronisiere…"-Frame
 // ausgeführt, damit der Nutzer Feedback sieht, bevor die UI blockiert.
-int  s_syncReq = -2;           // -2 = keiner, -1 = alle, >=0 = Feed-Index
-bool s_syncDrawn = false;
-char s_syncFeedName[64] = "";
-char s_syncLog[64] = "";
+int      s_syncReq = -2;       // -2 = keiner, -1 = alle, >=0 = Feed-Index
+bool     s_syncDrawn = false;
+char     s_syncFeedName[64] = "";
+char     s_syncLog[64] = "";
+int      s_syncPct = -1;       // -1 = unbestimmt, 0-100 = Download-%
+int      s_syncMark = 0;       // Puls-Zaehler fuer Chunked-Downloads (je 512 KB = +1)
+uint32_t s_lastProgMs = 0;     // Drossel: letzter E-Ink-Region-Update
+
+constexpr int SYNC_STRIP_Y = 156;
+constexpr int SYNC_STRIP_H = 38;
 
 // Bookmark-Pflege
 uint32_t s_lastSave = 0;
@@ -73,12 +80,15 @@ constexpr uint32_t kProgressMs = 3000;
 void markDirty() { appmgr::markDirty(); }
 
 void loadFeeds() {
-  s_n = 0;
-  int c = podcast::feedCount();
-  for (int i = 0; i < c && i < podcast::kMaxFeeds; ++i)
-    if (podcast::feed(i, &s_feeds[i])) s_n++;
+  s_feeds[0] = {};
+  s_n = podcast::readFeeds(s_feeds, podcast::kMaxFeeds);
   if (s_sel >= s_n) s_sel = s_n > 0 ? s_n - 1 : 0;
   if (s_off > s_sel) s_off = 0;
+  // localEpisode() braucht spiLock — hier außerhalb draw() cachen (nie in draw() rufen!)
+  for (int i = 0; i < s_n && i < podcast::kMaxFeeds; ++i) {
+    podcast::Local tmp;
+    s_hasLocal[i] = podcast::localEpisode(s_feeds[i], &tmp);
+  }
 }
 
 void refreshLocal() {
@@ -110,12 +120,48 @@ void openEpisode() {
 }
 
 // --- Zeichnen -----------------------------------------------------------------
+
+// Fortschrittsstreifen für renderRegion(): Balken + Prozentanzeige.
+// Darf NICHT aus draw() heraus aufgerufen werden (draw() hält bereits spiLock;
+// renderRegion() würde denselben Lock anfordern → Self-Deadlock).
+void drawSyncProgressStrip(Adafruit_GFX& g) {
+  g.fillRect(0, SYNC_STRIP_Y, W, SYNC_STRIP_H, GxEPD_WHITE);
+  int bx = 10, bw = W - 52, by = SYNC_STRIP_Y + 6, bh = 18;
+  g.drawRect(bx, by, bw, bh, GxEPD_BLACK);
+  if (s_syncPct >= 0) {
+    int fw = (int)((uint64_t)(bw - 2) * s_syncPct / 100);
+    if (fw > 0) g.fillRect(bx + 1, by + 1, fw, bh - 2, GxEPD_BLACK);
+  }
+  char info[16];
+  if (s_syncPct >= 0)       snprintf(info, sizeof(info), "%d%%", s_syncPct);
+  else if (s_syncMark > 0)  snprintf(info, sizeof(info), "%d MB", s_syncMark / 2);  // je 512 KB
+  else                      strcpy(info, "...");
+  gui::printAt(g, bx + bw + 4, by + 2, info, 1);
+}
+
+// Progress-Callback für podcast::syncAll/syncOne — aufgerufen nach spiUnlock(),
+// daher renderRegion() hier sicher (kein verschachtelter Lock).
+void onSyncProgress(const char* /*phase*/, int pct) {
+  if (pct >= 0) {
+    int p = pct > 100 ? 100 : pct;
+    if (s_syncPct >= 0 && p - s_syncPct < 2) return;  // 2%-Schritte
+    s_syncPct = p;
+  } else {
+    s_syncMark++;
+  }
+  uint32_t now = millis();
+  if (now - s_lastProgMs < 1500) return;  // max. alle 1,5 s
+  s_lastProgMs = now;
+  display::renderRegion(drawSyncProgressStrip, SYNC_STRIP_Y, SYNC_STRIP_H);
+}
+
 void drawSyncing(Adafruit_GFX& g) {
   gui::printAt(g, 6, HEADER_Y, "Podcast", 2);
   g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
-  gui::printAt(g, 10, 120, "Synchronisiere\205", 2);   // \205 = …
-  if (s_syncFeedName[0]) gui::printAt(g, 10, 150, s_syncFeedName, 1);
-  gui::printAt(g, 10, 180, "WLAN aktiv \227 bitte warten", 1);   // \227 = —
+  gui::printAt(g, 10, 110, "Synchronisiere ...", 2);
+  if (s_syncFeedName[0]) gui::printAt(g, 10, 140, s_syncFeedName, 1);
+  drawSyncProgressStrip(g);
+  gui::printAt(g, 10, SYNC_STRIP_Y + SYNC_STRIP_H + 4, "WLAN aktiv - bitte warten", 1);
 }
 
 void drawList(Adafruit_GFX& g) {
@@ -138,10 +184,8 @@ void drawList(Adafruit_GFX& g) {
 
   for (int r = 0; r < VISIBLE && s_off + r < s_n; ++r) {
     int i = s_off + r;
-    podcast::Local loc;
-    bool have = podcast::localEpisode(s_feeds[i], &loc);
     char lbl[96];
-    snprintf(lbl, sizeof(lbl), "%s%s", have ? "\020 " : "  ", s_feeds[i].name);  // \020 = ►
+    snprintf(lbl, sizeof(lbl), "%s%s", s_hasLocal[i] ? "\020 " : "  ", s_feeds[i].name);  // \020 = ►
     gui::drawRowText(g, LIST_Y + r * ROW_H, ROW_H, lbl, false);
   }
   int cr = s_sel - s_off;
@@ -235,6 +279,9 @@ void requestSync(int idx) {
   s_syncReq = idx;
   s_syncDrawn = false;
   s_syncLog[0] = '\0';
+  s_syncPct = -1;
+  s_syncMark = 0;
+  s_lastProgMs = 0;
   if (idx >= 0 && idx < s_n) { strncpy(s_syncFeedName, s_feeds[idx].name, sizeof(s_syncFeedName) - 1); s_syncFeedName[sizeof(s_syncFeedName)-1]='\0'; }
   else strcpy(s_syncFeedName, "alle Feeds");
   markDirty();
@@ -364,8 +411,8 @@ class PodcastApp : public App {
         return;
       }
       int req = s_syncReq;
-      if (req == -1) podcast::syncAll(s_syncLog, sizeof(s_syncLog), nullptr);
-      else           podcast::syncOne(req, s_syncLog, sizeof(s_syncLog), nullptr);
+      if (req == -1) podcast::syncAll(s_syncLog, sizeof(s_syncLog), onSyncProgress);
+      else           podcast::syncOne(req, s_syncLog, sizeof(s_syncLog), onSyncProgress);
       s_syncReq = -2;
       loadFeeds();
       if (s_screen == DETAIL) refreshLocal();

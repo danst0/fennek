@@ -41,6 +41,9 @@ const char kWebFmHtml[] PROGMEM = R"HTML(<!doctype html>
  a.file:hover,a.dir:hover{text-decoration:underline}
  #msg{margin:8px 0;font-size:14px;color:#555;min-height:18px}
  progress{width:160px}
+ section.ota{margin-top:22px;background:#fff;border-radius:8px;padding:12px 14px;border:1px solid #e4ded2}
+ section.ota h2{margin:0 0 6px;font-size:16px;color:#2b2620}
+ #otamsg{font-size:14px;color:#555;min-height:18px;margin:6px 0}
 </style>
 </head>
 <body>
@@ -58,6 +61,14 @@ const char kWebFmHtml[] PROGMEM = R"HTML(<!doctype html>
  <thead><tr><th>Name</th><th style="text-align:right">Gr&ouml;&szlig;e</th><th></th></tr></thead>
  <tbody id="tbl"></tbody>
 </table>
+<section class="ota">
+ <h2>Firmware-Update</h2>
+ <div id="otamsg">Aktuelle Version: &hellip;</div>
+ <div class="bar">
+  <button onclick="otaCheck()">Auf Updates pr&uuml;fen</button>
+  <button id="otabtn" onclick="otaUpdate()" hidden>Jetzt aktualisieren</button>
+ </div>
+</section>
 </main>
 <script>
 let cur = '/';
@@ -170,6 +181,44 @@ async function upload(){
   $('up').value = '';
   load();
 }
+
+let otaUrl = '';   // firmware.bin-URL aus dem letzten Check (für force nicht nötig)
+
+async function otaCheck(){
+  $('otamsg').textContent = 'Prüfe …';
+  $('otabtn').hidden = true;
+  try {
+    const r = await fetch('/api/ota/check');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.err || 'Prüfung fehlgeschlagen');
+    if (j.update){
+      $('otamsg').textContent = 'Update verfügbar: ' + j.current + ' → ' + j.latest;
+      $('otabtn').hidden = false;
+    } else {
+      $('otamsg').textContent = 'Aktuell (' + j.current + ') — kein Update.';
+    }
+  } catch (e){ $('otamsg').textContent = 'Fehler: ' + e.message; }
+}
+
+async function otaUpdate(){
+  if (!confirm('Firmware jetzt aktualisieren? Das Gerät startet danach neu und ist ~1 min nicht erreichbar.')) return;
+  $('otabtn').hidden = true;
+  $('otamsg').textContent = 'Update läuft — Firmware wird geladen und geschrieben. Gerät NICHT ausschalten …';
+  try {
+    const r = await fetch('/api/ota/update', {method:'POST'});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.err || ('HTTP ' + r.status));
+    $('otamsg').textContent = 'Update geschrieben — Gerät startet neu. Bitte in ~1 min die Seite neu laden.';
+  } catch (e){
+    // Bei Erfolg bricht die Verbindung durch den Reboot ab — das ist KEIN Fehler.
+    $('otamsg').textContent = 'Verbindung beendet (vermutlich Reboot). Bitte in ~1 min neu laden. (' + e.message + ')';
+  }
+}
+
+// Aktuelle Version beim Laden anzeigen (netzfrei — kein GitHub-Aufruf, schnell).
+fetch('/api/ota/version').then(r => r.json()).then(j => {
+  if (j && j.current) $('otamsg').textContent = 'Aktuelle Version: ' + j.current;
+}).catch(() => {});
 
 load();
 </script>

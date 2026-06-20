@@ -40,11 +40,12 @@ enum RowId {
   ROW_LANG, ROW_STANDBY, ROW_FONT, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
   ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_AION, ROW_AIURL, ROW_AIMODEL,
+  ROW_OTAURL, ROW_OTAVER,
   ROW_COUNT
 };
 
 // --- Kategorien ("Ordner") ------------------------------------------------------
-enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_AI, CAT_COUNT };
+enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_AI, CAT_OTA, CAT_COUNT };
 
 const RowId kRadioRows[]  = {ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME};
 const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY, ROW_FONT};
@@ -52,6 +53,7 @@ const RowId kTimeRows[]   = {ROW_TZ, ROW_TIME};
 const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
 const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
 const RowId kAiRows[]     = {ROW_AION, ROW_AIURL, ROW_AIMODEL};
+const RowId kOtaRows[]    = {ROW_OTAVER, ROW_OTAURL};
 
 struct CatRows { const RowId* rows; int count; };
 const CatRows kCats[] = {
@@ -61,6 +63,7 @@ const CatRows kCats[] = {
   {kWifiRows,   (int)(sizeof(kWifiRows)   / sizeof(RowId))},
   {kNavRows,    (int)(sizeof(kNavRows)    / sizeof(RowId))},
   {kAiRows,     (int)(sizeof(kAiRows)     / sizeof(RowId))},
+  {kOtaRows,    (int)(sizeof(kOtaRows)    / sizeof(RowId))},
 };
 
 const char* catName(int c) {
@@ -71,6 +74,7 @@ const char* catName(int c) {
     case CAT_WIFI:   return "WLAN";
     case CAT_NAV:    return "Navidrome";
     case CAT_AI:     return "Ollama";
+    case CAT_OTA:    return "Update";
   }
   return "";
 }
@@ -84,7 +88,8 @@ char s_editBuf[128] = "";  // groß genug für die Navidrome-URL (127)
 bool rowEditable(int row) {
   return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS ||
          row == ROW_TIME || row == ROW_NAVURL || row == ROW_NAVUSER ||
-         row == ROW_NAVPASS || row == ROW_AIURL || row == ROW_AIMODEL;
+         row == ROW_NAVPASS || row == ROW_AIURL || row == ROW_AIMODEL ||
+         row == ROW_OTAURL;
 }
 
 // Auto-Standby-Stufen (Minuten; 0 = Aus).
@@ -241,6 +246,8 @@ const char* rowName(int row) {
     case ROW_AION:     return "Schoenschreiben";
     case ROW_AIURL:    return "Server";
     case ROW_AIMODEL:  return "Modell";
+    case ROW_OTAVER:   return "Version";
+    case ROW_OTAURL:   return "Quelle";
   }
   return "";
 }
@@ -350,6 +357,16 @@ void rowValue(int row, char* v, size_t n) {
       if (s_edit == ROW_AIMODEL) snprintf(v, n, "%s_", s_editBuf);
       else settings::aiModel(v, n);
       break;
+    case ROW_OTAVER:
+      snprintf(v, n, "%s", FENNEK_VERSION);
+      break;
+    case ROW_OTAURL:
+      if (s_edit == ROW_OTAURL) snprintf(v, n, "%s_", s_editBuf);
+      else {
+        settings::otaUrl(v, n);
+        if (!v[0]) snprintf(v, n, "-");
+      }
+      break;
   }
 }
 
@@ -442,6 +459,7 @@ void startEdit(int row) {
     case ROW_NAVPASS: settings::navPass(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_AIURL:   settings::aiUrl(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_AIMODEL: settings::aiModel(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_OTAURL:  settings::otaUrl(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_TIME: {
       // Mit der aktuellen lokalen Zeit als Vorlage vorbelegen.
       time_t    tt = (time_t)timesync::now();
@@ -469,6 +487,7 @@ void finishEdit(bool save) {
       case ROW_NAVPASS: settings::setNavPass(s_editBuf); break;
       case ROW_AIURL:   settings::setAiUrl(s_editBuf); break;
       case ROW_AIMODEL: settings::setAiModel(s_editBuf); break;
+      case ROW_OTAURL:  settings::setOtaUrl(s_editBuf); break;
       case ROW_TIME: {
         // "YYYY-MM-DD HH:MM" als lokale Zeit lesen → über die Zeitzone nach UTC.
         struct tm lt;
