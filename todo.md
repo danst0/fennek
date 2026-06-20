@@ -1,28 +1,4 @@
 # Offene Themen
-- [ ] GPS Update der Uhr hat heute nie funktioniert
-      STATUS: Diagnose-Log eingebaut (maps_app: Einmal-Log „[MAPS] GPS-Zeit
-      empfangen …" sobald RMC in einer Karten-Session Datum+Zeit liefert; dazu
-      bestehendes „[TIME] GPS-Sync: … Korrektur"). B1 (Pre-Standby-Sync ohne
-      Positions-Fix) BEWUSST VERWORFEN: `gps::begin()` injiziert per UBX-MGA-INI
-      die bekannte Systemzeit — vor echtem Fix echot RMC diese zurueck, ein Sync
-      darauf waere zirkulaer und wuerde via `gpsFresh()` ~10 min NTP/Mesh
-      blockieren (s. timesync.cpp:288). Offen am Geraet: Konsole `gps 60` mit
-      Sky-View → kommt RMC-Zeit? `time` zeigt Quelle=GPS? (Hardware/Sky-View.)
-      Diagnose: `timesync::gpsSync()` wird produktiv NUR aus `maps_app::tick()`
-      gerufen (maps_app.cpp:179) — also nur, solange die Karten-App im
-      Vordergrund ist (onEnter=`gps::begin()`, onLeave=`gps::end()`). Bedingung
-      zusätzlich `f.epochUtc > 1700000000UL`, d.h. RMC muss Datum+Zeit liefern.
-      Drinnen liefert RMC oft keinen gültigen Zeitstempel → kein Sync. Der
-      einzige Hintergrund-Pfad ist `gpsSyncBeforeStandby()` (timesync.cpp:261),
-      der aber einen *gültigen Positions-Fix* verlangt und Back-off hat.
-      Plan:
-        1. Headless eingrenzen: Konsole `gps 60` mit Sky-View — kommt heute
-           überhaupt RMC mit Datum+Zeit? `time` danach zeigt Quelle=GPS?
-        2. Falls GPS-Zeit nur in der Karten-App ankommt: entscheiden, ob der
-           Zeit-Sync breiter laufen soll (z.B. ein leichter GPS-Poll-Pfad
-           unabhängig von der App) oder ob „Karten-App offen“ dokumentiert wird.
-        3. Prüfen, ob der `epochUtc`-Guard / die `gpsSync`-Drossel (>2 s) den
-           Sync verschluckt; ggf. einmaligen Force-Sync nach `begin()` loggen.
 - [ ] Audiorecordings spielen nicht ab — valide WAV-Dateien?
       STATUS: Diagnose-Log in `mic::stopRecording()` eingebaut — loggt Bytes,
       Sekunden und Peak-Pegel; bei Peak<64 trotz Bytes „-> STUMM?" (= PDM-Mic
@@ -59,6 +35,23 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] GPS Update der Uhr hat heute nie funktioniert
+      ERLEDIGT (timesync.cpp): Zwei Fixes:
+      (1) `gpsSync()`: `s_lastGpsMs` (gpsFresh) wird jetzt nur noch gesetzt, wenn
+      die Abweichung > 2 s ist — also nur bei echter Satelliten-Korrektur. Vorher
+      setzte ein Null-Diff (GPS-Modul echot die per UBX-MGA-INI injizierte
+      Systemzeit zurück) gpsFresh und blockierte NTP/Mesh 10 min lang ohne
+      nutzbaren Effekt. Löst das "B1 BEWUSST VERWORFEN"-Problem.
+      (2) `gpsSyncBeforeStandby()`: Nicht mehr auf `f.valid` (Positionsfix) warten
+      — RMC liefert UTC oft vor dem Positionsfix (wie maps_app + Konsole `gps` es
+      schon taten). Inline-diff-Prüfung (> 2 s) verhindert die zirkuläre
+      Injektion: wenn GPS die injizierte Systemzeit echot (diff ≈ 0), wird kein
+      Sync gezählt und kein Back-off konsumiert.
+      Diagnose-Erkenntnis: Drinnen liefert u-blox MIA-M10Q RMC oft ohne Datum-
+      Feld → epochUtc = 0 → kein Sync möglich, unabhängig vom Code. GPS-Zeit-
+      Sync erfordert Sky-View. Karten-App und Konsole `gps` decken das ab.
+      OFFEN am Gerät: mit Sky-View prüfen — `time` zeigt nach kurzer GPS-Session
+      (Maps-App oder `gps 60`) „Quelle=GPS Qualität=gut"?
 - [x] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
       ERLEDIGT (v2.4.8): `strcmp(r.latest, r.current) != 0` in ota.cpp durch
       `semverGt(latest, current)` ersetzt — semantischer Versionsvergleich (Major/

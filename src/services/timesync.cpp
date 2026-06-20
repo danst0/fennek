@@ -285,9 +285,13 @@ bool gpsSyncBeforeStandby() {
   while (millis() - t0 < kGpsSyncTimeoutMs) {
     gps::poll();
     const gps::Fix& f = gps::current();
-    // Erst bei echtem Positionsfix ist die UTC satellitengenau (nicht die
-    // injizierte Zeit) — dann übernehmen. gpsSync setzt nur bei Abweichung >2 s.
-    if (f.valid && f.epochUtc > kSaneEpoch) { gpsSync(f.epochUtc); got = true; break; }
+    // RMC liefert UTC oft schon vor dem Positionsfix (Satelliten-Zeit ohne Fix).
+    // gpsSync selbst setzt gpsFresh nur bei echter Abweichung >2 s — die injizierte
+    // Systemzeit (diff ≈ 0) wird also nicht als Sync gezählt.
+    if (f.epochUtc > kSaneEpoch) {
+      uint32_t diff = (now() > f.epochUtc) ? now() - f.epochUtc : f.epochUtc - now();
+      if (diff > 2) { gpsSync(f.epochUtc); got = true; break; }
+    }
     delay(20);
   }
   gps::end();
@@ -317,9 +321,6 @@ void onExternalSync(uint32_t epoch, const char* src) {
 // NTP/Mesh als Quelle stumm. Nicht fürs Drift-Lernen genutzt (kein NTP-Intervall).
 void gpsSync(uint32_t utc) {
   if (!plausibleEpoch(utc)) return;
-  s_lastGpsMs = millis();
-  // Nur setzen, wenn die Uhr spürbar abweicht (>2 s) — sonst nur Freshness-Stempel,
-  // damit nicht jede Sekunde settimeofday/NVS läuft.
   uint32_t cur = now();
   uint32_t diff = (cur > utc) ? cur - utc : utc - cur;
   s_lastSyncEpoch  = utc;
@@ -327,6 +328,10 @@ void gpsSync(uint32_t utc) {
   s_source         = "GPS";
   s_failCount      = 0;
   if (diff > 2) {
+    // gpsFresh nur bei echter Korrektur setzen — sonst würde die GPS-Injektion
+    // (gps::begin() schreibt die Systemzeit per UBX-MGA-INI ins Modul; das Modul
+    // echot sie in RMC zurück, diff ≈ 0) NTP/Mesh 10 min lang blockieren.
+    s_lastGpsMs = millis();
     mesh_client::setRtcTime(utc, true);
     settings::setLastTime(utc);
     Serial.printf("[TIME] GPS-Sync: %lu UTC (Korrektur %lus)\n",
