@@ -1,5 +1,4 @@
 # Offene Themen
-- [ ] später mal sync nach obsidian
 - [ ] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
 - [ ] transkription der audionotizen
       HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
@@ -49,6 +48,7 @@
            I2S0-Restore nach `endMic()`, Sample-Rate-Umschaltung der Lib).
         3. Wenn am PC stumm: PDM-Mic-Pinconfig/Daten prüfen (mic.cpp:55-77,
            PIN_MIC_CLK/DATA, `i2s_read`-Rückgabe, Pegel).
+- [ ] später mal sync nach obsidian
 
 # Verifikation am Gerät — neue Features 17.06. (v2.0.x)
 - [ ] Verifikation am Gerät (Build OK): Mesh-Identität von SD, Chats-Navigation,
