@@ -46,14 +46,8 @@ uint16_t milliVolts() { return s_ready ? read16(REG_VOLTAGE) : 0; }
 
 uint8_t percent() {
   if (!s_ready) return 0;
-  uint16_t rm  = read16(REG_REMAINCAP);
-  uint16_t dc  = read16(REG_DESIGNCAP);
-  if (dc < 100 || dc == 0xFFFF) {     // Gauge nicht initialisiert → Fallback auf SOC-Register
-    uint16_t soc = read16(REG_SOC);
-    return (uint8_t)(soc > 100 ? 100 : soc);
-  }
-  uint32_t pct = (uint32_t)rm * 100 / dc;
-  return (uint8_t)(pct > 100 ? 100 : pct);
+  uint16_t soc = read16(REG_SOC);
+  return (uint8_t)(soc > 100 ? 100 : soc);
 }
 
 bool charging() {

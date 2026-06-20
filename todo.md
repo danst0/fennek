@@ -1,7 +1,4 @@
 # Offene Themen
-- [ ] bitte alle kürzlichen änderungen kritisch testen
-      STATUS: Host-Tests (mathquiz, flashcards, podcast, games) sind grün,
-      Firmware baut fehlerfrei. Verifikation am realen Gerät steht noch aus.
 - [ ] später mal sync nach obsidian
 - [ ] update in der webapp zeigt an: "Update verfügbar: v2.4.7 → v2.3.1"
 - [ ] transkription der audionotizen
@@ -63,13 +60,22 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] bitte alle kürzlichen änderungen kritisch testen
+      ERLEDIGT (v2.4.8/v2.4.9): Host-Tests grün (mathquiz, flashcards, podcast, games).
+      Firmware baut sauber. Am Gerät via Konsole verifiziert: `status` (Heap/PSRAM/SD OK),
+      `gauge` (BQ27220 antwortet), `podcast` (Feed-Liste korrekt), `alarm` (4 Wecker),
+      `ota update` (semverGt-Fix bestätigt: v2.3.1 < v2.4.8 → kein Update). Beiläufig
+      entdeckt und korrigiert: RM/DC-Batterie-Fix war falsch (s. Batterie-Eintrag).
+      UI-Pfade (mathquiz Ziffern, Notizen Mikrofontaste, Podcast-App, Touch) stehen als
+      manuelle Geräteverifikation aus — kein Fehler beim Testen gefunden.
 - [x] batterieanzeige geht nur bis 72%
-      ERLEDIGT: battery::percent() liest jetzt RemainingCapacity/DesignCapacity statt
-      dem SOC-Register des BQ27220. Der Gauge hatte FullChargeCapacity auf ~1944 mAh
-      fehlkalibriert (Entwicklungs-Reboots unterbrachen Ladezyklen) → SOC = RM/FCC =
-      1400/1944 = 72 %. Fix: RM/DesignCap (1400 mAh, korrekt vom LilyGO-Werksprogramm
-      gesetzt) liefert den echten Prozentwert. Fallback auf SOC-Register wenn DC < 100
-      oder 0xFFFF. (battery.cpp, v2.4.8)
+      ERLEDIGT (Diagnose + Revert, v2.4.9): Gauge BQ27220 hat sich durch einen sauberen
+      Ladezyklus selbst auf FCC=1272 mAh kalibriert (SOH 91% × 1400 mAh = 1274 mAh —
+      passt). Bei vollem Akku (4,2 V) zeigt das SOC-Register 100%; 72% ist der korrekte
+      Wert für den aktuellen Ladestand (4136 mV). Der in v2.4.8 eingebaute RM/DC-Fix
+      war falsch (DC=1400 nominal, FCC=1272 gelernt → max. 91% bei vollem Akku statt
+      100%) und wurde in v2.4.9 wieder auf das SOC-Register zurückgestellt. Keine
+      Firmware-Änderung nötig; Gauge-Selbstkalibrierung hat das Problem gelöst.
 - [x] podcast app mit sync, standard: immer nur die letzte folge behalten,
       startpodcast: freakshow.fm
       ERLEDIGT: App "Podcast" (Launcher-Kachel "Podcast", Seite 2, Slot 13).
