@@ -183,6 +183,28 @@ static int testFlashcards() {
   // cardKey stabil + verschieden für verschiedene Fronten.
   CHECK(cardKey("hund") == cardKey("hund"));
   CHECK(cardKey("hund") != cardKey("katt"));
+
+  // shuffle: Permutation erhält das Multiset (kein Index verloren/dupliziert).
+  int idx[12];
+  for (int i = 0; i < 12; i++) idx[i] = i;
+  shuffle(idx, 12, testRnd);
+  int seen[12] = {0};
+  for (int i = 0; i < 12; i++) { CHECK(idx[i] >= 0 && idx[i] < 12); seen[idx[i]]++; }
+  for (int i = 0; i < 12; i++) CHECK(seen[i] == 1);
+  // ... und ändert die Reihenfolge tatsächlich (deterministischer Seed).
+  int ident = 1;
+  for (int i = 0; i < 12; i++) if (idx[i] != i) ident = 0;
+  CHECK(!ident);
+
+  // stableSortByBox: Box aufsteigend + stabil innerhalb gleicher Box.
+  // Index->Box: gleiche Box (0) bei 1 und 4 — 1 muss vor 4 bleiben.
+  int j2[6] = {0, 1, 2, 3, 4, 5};
+  uint8_t boxes[6] = {2, 0, 2, 1, 0, 1};
+  stableSortByBox(j2, 6, [&](int i) { return boxes[i]; });
+  for (int i = 1; i < 6; i++) CHECK(boxes[j2[i - 1]] <= boxes[j2[i]]);   // monoton
+  // Erste zwei Einträge sind die Box-0-Karten in Eingangsreihenfolge (1, dann 4).
+  CHECK(j2[0] == 1 && j2[1] == 4);
+
   printf("  flashcards ok\n");
   return 0;
 }

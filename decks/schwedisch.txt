@@ -1,0 +1,758 @@
+# Schwedisch — komplettes Deck (vorn Schwedisch, hinten Deutsch)
+# Ein gemischtes Deck aus Grundwortschatz, Zahlen/Zeit, Alltag, Reise,
+# Verben, Adjektiven und nützlichen Sätzen. Trenner = Tabulator.
+
+# --- Begrüßung & Höflichkeit ---
+hej	hallo
+hejsan	hallöchen
+hej hej	tschüss
+hej då	auf Wiedersehen
+god morgon	guten Morgen
+god middag	guten Tag (mittags)
+god kväll	guten Abend
+god natt	gute Nacht
+välkommen	willkommen
+tack	danke
+tack så mycket	vielen Dank
+tusen tack	tausend Dank
+varsågod	bitte (gern geschehen)
+ja	ja
+nej	nein
+kanske	vielleicht
+ursäkta	entschuldigung
+förlåt	es tut mir leid
+ingen orsak	keine Ursache
+ingen fara	kein Problem
+vi ses	bis bald
+vi ses snart	bis bald
+ha det bra	mach's gut
+hur är läget?	wie läuft's?
+trevligt att träffas	schön, dich kennenzulernen
+
+# --- Pronomen ---
+jag	ich
+du	du
+han	er
+hon	sie
+den	er/sie/es (utrum)
+det	es (neutrum)
+vi	wir
+ni	ihr
+de	sie (Plural)
+min	mein
+din	dein
+hans	sein
+hennes	ihr
+vår	unser
+er	euer
+deras	ihr (Plural)
+denna	diese
+detta	dieses
+någon	jemand
+något	etwas
+ingen	niemand
+inget	nichts
+alla	alle
+allt	alles
+själv	selbst
+varandra	einander
+
+# --- Fragewörter ---
+vad	was
+vem	wer
+vilken	welcher
+vilket	welches
+var	wo
+vart	wohin
+varifrån	woher
+när	wann
+hur	wie
+varför	warum
+hur mycket	wie viel
+hur många	wie viele
+hur länge	wie lange
+vad för	was für
+
+# --- Zahlen ---
+noll	null
+en	eins
+ett	eins (neutrum)
+två	zwei
+tre	drei
+fyra	vier
+fem	fünf
+sex	sechs
+sju	sieben
+åtta	acht
+nio	neun
+tio	zehn
+elva	elf
+tolv	zwölf
+tretton	dreizehn
+fjorton	vierzehn
+femton	fünfzehn
+sexton	sechzehn
+sjutton	siebzehn
+arton	achtzehn
+nitton	neunzehn
+tjugo	zwanzig
+tjugoen	einundzwanzig
+trettio	dreißig
+fyrtio	vierzig
+femtio	fünfzig
+sextio	sechzig
+sjuttio	siebzig
+åttio	achtzig
+nittio	neunzig
+hundra	hundert
+tusen	tausend
+miljon	Million
+första	erste
+andra	zweite
+tredje	dritte
+fjärde	vierte
+femte	fünfte
+hälften	die Hälfte
+ett par	ein paar
+ett dussin	ein Dutzend
+
+# --- Wochentage & Monate ---
+måndag	Montag
+tisdag	Dienstag
+onsdag	Mittwoch
+torsdag	Donnerstag
+fredag	Freitag
+lördag	Samstag
+söndag	Sonntag
+vecka	die Woche
+helg	das Wochenende
+januari	Januar
+februari	Februar
+mars	März
+april	April
+maj	Mai
+juni	Juni
+juli	Juli
+augusti	August
+september	September
+oktober	Oktober
+november	November
+december	Dezember
+månad	der Monat
+år	das Jahr
+
+# --- Zeit ---
+idag	heute
+imorgon	morgen
+igår	gestern
+i övermorgon	übermorgen
+i förrgår	vorgestern
+nu	jetzt
+sedan	dann/danach
+snart	bald
+alltid	immer
+aldrig	nie
+ofta	oft
+ibland	manchmal
+sällan	selten
+tidigt	früh
+sent	spät
+morgon	der Morgen
+förmiddag	der Vormittag
+eftermiddag	der Nachmittag
+kväll	der Abend
+natt	die Nacht
+dag	der Tag
+timme	die Stunde
+minut	die Minute
+sekund	die Sekunde
+klocka	die Uhr
+i tid	rechtzeitig
+en stund	eine Weile
+
+# --- Farben ---
+färg	die Farbe
+röd	rot
+blå	blau
+gul	gelb
+grön	grün
+vit	weiß
+svart	schwarz
+grå	grau
+brun	braun
+rosa	rosa
+orange	orange
+lila	lila
+ljus	hell
+mörk	dunkel
+
+# --- Familie & Menschen ---
+familj	die Familie
+mamma	die Mutter
+pappa	der Vater
+föräldrar	die Eltern
+barn	das Kind
+son	der Sohn
+dotter	die Tochter
+bror	der Bruder
+syster	die Schwester
+syskon	die Geschwister
+mormor	die Großmutter (mütt.)
+morfar	der Großvater (mütt.)
+farmor	die Großmutter (vät.)
+farfar	der Großvater (vät.)
+man	der Mann/Ehemann
+kvinna	die Frau
+fru	die Ehefrau
+pojke	der Junge
+flicka	das Mädchen
+vän	der Freund
+kompis	der Kumpel
+granne	der Nachbar
+människa	der Mensch
+folk	die Leute
+namn	der Name
+
+# --- Körper ---
+kropp	der Körper
+huvud	der Kopf
+hår	das Haar
+öga	das Auge
+ögon	die Augen
+öra	das Ohr
+näsa	die Nase
+mun	der Mund
+tand	der Zahn
+tunga	die Zunge
+hals	der Hals
+arm	der Arm
+hand	die Hand
+finger	der Finger
+ben	das Bein
+fot	der Fuß
+rygg	der Rücken
+mage	der Bauch
+hjärta	das Herz
+hud	die Haut
+
+# --- Essen & Trinken ---
+mat	das Essen
+frukost	das Frühstück
+lunch	das Mittagessen
+middag	das Abendessen
+fika	die Kaffeepause
+bröd	das Brot
+smör	die Butter
+ost	der Käse
+ägg	das Ei
+kött	das Fleisch
+fisk	der Fisch
+kyckling	das Hähnchen
+korv	die Wurst
+potatis	die Kartoffel
+ris	der Reis
+pasta	die Nudeln
+grönsaker	das Gemüse
+frukt	das Obst
+äpple	der Apfel
+banan	die Banane
+apelsin	die Orange
+tomat	die Tomate
+sallad	der Salat
+soppa	die Suppe
+socker	der Zucker
+salt	das Salz
+peppar	der Pfeffer
+glass	das Eis
+choklad	die Schokolade
+kaka	der Kuchen
+godis	die Süßigkeiten
+vatten	das Wasser
+mjölk	die Milch
+juice	der Saft
+kaffe	der Kaffee
+te	der Tee
+öl	das Bier
+vin	der Wein
+saft	der Sirup/Saft
+
+# --- Im Restaurant & Einkauf ---
+meny	die Speisekarte
+restaurang	das Restaurant
+kafé	das Café
+affär	das Geschäft
+butik	der Laden
+mataffär	der Lebensmittelladen
+marknad	der Markt
+pris	der Preis
+pengar	das Geld
+kontant	bar
+betalkort	die Bankkarte
+kvitto	der Kassenbon
+rabatt	der Rabatt
+billig	billig
+dyr	teuer
+gratis	kostenlos
+öppen	geöffnet
+stängd	geschlossen
+räkning	die Rechnung
+beställa	bestellen
+
+# --- Reisen & Verkehr ---
+resa	die Reise
+bil	das Auto
+buss	der Bus
+tåg	der Zug
+flyg	das Flugzeug
+båt	das Boot
+cykel	das Fahrrad
+taxi	das Taxi
+station	der Bahnhof
+flygplats	der Flughafen
+hållplats	die Haltestelle
+biljett	die Fahrkarte
+karta	die Karte (Landkarte)
+väg	der Weg
+gata	die Straße
+torg	der Platz
+bro	die Brücke
+hotell	das Hotel
+rum	das Zimmer
+nyckel	der Schlüssel
+bagage	das Gepäck
+resväska	der Koffer
+pass	der Reisepass
+gräns	die Grenze
+riktning	die Richtung
+höger	rechts
+vänster	links
+rakt fram	geradeaus
+nära	nah
+långt	weit
+
+# --- Natur & Wetter ---
+natur	die Natur
+väder	das Wetter
+sol	die Sonne
+regn	der Regen
+snö	der Schnee
+vind	der Wind
+moln	die Wolke
+himmel	der Himmel
+sjö	der See
+hav	das Meer
+flod	der Fluss
+berg	der Berg
+skog	der Wald
+träd	der Baum
+blomma	die Blume
+gräs	das Gras
+sten	der Stein
+strand	der Strand
+ö	die Insel
+mark	der Boden
+eld	das Feuer
+is	das Eis
+varm	warm
+kall	kalt
+soligt	sonnig
+molnigt	bewölkt
+det regnar	es regnet
+det snöar	es schneit
+
+# --- Jahreszeiten ---
+årstid	die Jahreszeit
+våren	der Frühling
+sommar	der Sommer
+höst	der Herbst
+vinter	der Winter
+
+# --- Tiere ---
+djur	das Tier
+hund	der Hund
+katt	die Katze
+häst	das Pferd
+ko	die Kuh
+gris	das Schwein
+får	das Schaf
+fågel	der Vogel
+mus	die Maus
+björn	der Bär
+älg	der Elch
+räv	der Fuchs
+varg	der Wolf
+ekorre	das Eichhörnchen
+
+# --- Haus & Wohnen ---
+hus	das Haus
+hem	das Zuhause
+lägenhet	die Wohnung
+dörr	die Tür
+fönster	das Fenster
+vägg	die Wand
+golv	der Boden
+tak	das Dach
+trappa	die Treppe
+kök	die Küche
+sovrum	das Schlafzimmer
+badrum	das Badezimmer
+vardagsrum	das Wohnzimmer
+trädgård	der Garten
+bord	der Tisch
+stol	der Stuhl
+säng	das Bett
+soffa	das Sofa
+lampa	die Lampe
+spegel	der Spiegel
+kylskåp	der Kühlschrank
+spis	der Herd
+
+# --- Kleidung ---
+kläder	die Kleidung
+skjorta	das Hemd
+tröja	der Pullover
+byxor	die Hose
+klänning	das Kleid
+kjol	der Rock
+jacka	die Jacke
+kappa	der Mantel
+skor	die Schuhe
+strumpor	die Socken
+mössa	die Mütze
+hatt	der Hut
+handskar	die Handschuhe
+halsduk	der Schal
+bälte	der Gürtel
+
+# --- Schule & Arbeit ---
+skola	die Schule
+universitet	die Universität
+lärare	der Lehrer
+elev	der Schüler
+student	der Student
+lektion	der Unterricht
+läxa	die Hausaufgabe
+prov	die Prüfung
+penna	der Stift
+papper	das Papier
+arbete	die Arbeit
+jobb	der Job
+kontor	das Büro
+företag	die Firma
+chef	der Chef
+kollega	der Kollege
+möte	das Treffen/Meeting
+lön	der Lohn
+yrke	der Beruf
+dator	der Computer
+telefon	das Telefon
+mobil	das Handy
+
+# --- Stadt & öffentliche Orte ---
+stad	die Stadt
+by	das Dorf
+land	das Land
+huvudstad	die Hauptstadt
+centrum	das Zentrum
+park	der Park
+sjukhus	das Krankenhaus
+apotek	die Apotheke
+bank	die Bank
+post	die Post
+kyrka	die Kirche
+museum	das Museum
+bibliotek	die Bibliothek
+polis	die Polizei
+brandkår	die Feuerwehr
+toalett	die Toilette
+
+# --- Gesundheit ---
+hälsa	die Gesundheit
+sjuk	krank
+frisk	gesund
+ont	der Schmerz
+huvudvärk	die Kopfschmerzen
+feber	das Fieber
+förkyld	erkältet
+medicin	das Medikament
+läkare	der Arzt
+tandläkare	der Zahnarzt
+sjuksköterska	die Krankenschwester
+hjälp	die Hilfe
+ambulans	der Krankenwagen
+
+# --- Verben ---
+att vara	sein
+att ha	haben
+att göra	machen/tun
+att gå	gehen
+att komma	kommen
+att se	sehen
+att höra	hören
+att säga	sagen
+att tala	sprechen
+att fråga	fragen
+att svara	antworten
+att äta	essen
+att dricka	trinken
+att sova	schlafen
+att vakna	aufwachen
+att stå	stehen
+att sitta	sitzen
+att ligga	liegen
+att springa	rennen
+att köpa	kaufen
+att sälja	verkaufen
+att betala	bezahlen
+att läsa	lesen
+att skriva	schreiben
+att lära	lernen/lehren
+att förstå	verstehen
+att veta	wissen
+att tro	glauben
+att tänka	denken
+att vilja	wollen
+att kunna	können
+att måste	müssen
+att få	dürfen/bekommen
+att börja	anfangen
+att sluta	aufhören
+att öppna	öffnen
+att stänga	schließen
+att ge	geben
+att ta	nehmen
+att hjälpa	helfen
+att arbeta	arbeiten
+att resa	reisen
+att köra	fahren
+att vänta	warten
+att leta	suchen
+att hitta	finden
+att glömma	vergessen
+att minnas	sich erinnern
+att tycka om	mögen
+att älska	lieben
+att behöva	brauchen
+att använda	benutzen
+att bo	wohnen
+att leva	leben
+att dö	sterben
+att träffa	treffen
+att ringa	anrufen
+att skicka	schicken
+att visa	zeigen
+att lyssna	zuhören
+att titta	schauen
+att laga	kochen/reparieren
+att städa	putzen
+att tvätta	waschen
+att spela	spielen
+att sjunga	singen
+att dansa	tanzen
+att simma	schwimmen
+att skratta	lachen
+att gråta	weinen
+att le	lächeln
+
+# --- Adjektive ---
+stor	groß
+liten	klein
+bra	gut
+dålig	schlecht
+ny	neu
+gammal	alt
+ung	jung
+lång	lang/groß
+kort	kurz
+hög	hoch
+låg	niedrig
+snabb	schnell
+långsam	langsam
+lätt	leicht
+svår	schwer/schwierig
+tung	schwer (Gewicht)
+stark	stark
+svag	schwach
+ren	sauber
+smutsig	schmutzig
+full	voll
+tom	leer
+rik	reich
+fattig	arm
+glad	froh
+ledsen	traurig
+arg	wütend
+trött	müde
+hungrig	hungrig
+törstig	durstig
+vacker	schön
+ful	hässlig
+snäll	nett
+elak	gemein
+rolig	lustig
+tråkig	langweilig
+viktig	wichtig
+farlig	gefährlich
+säker	sicher
+rädd	ängstlich
+nöjd	zufrieden
+intressant	interessant
+enkel	einfach
+torr	trocken
+våt	nass
+mjuk	weich
+hård	hart
+
+# --- Adverbien & kleine Wörter ---
+mycket	sehr/viel
+lite	wenig
+mer	mehr
+mest	am meisten
+mindre	weniger
+också	auch
+bara	nur
+redan	schon
+ännu	noch
+igen	wieder
+tillsammans	zusammen
+ensam	allein
+här	hier
+där	dort
+hemma	zu Hause
+ute	draußen
+inne	drinnen
+uppe	oben
+nere	unten
+verkligen	wirklich
+nästan	fast
+precis	genau
+tyvärr	leider
+gärna	gern
+naturligtvis	natürlich
+
+# --- Präpositionen & Konjunktionen ---
+och	und
+eller	oder
+men	aber
+för	denn/für
+att	dass
+om	wenn/ob
+därför att	weil
+så	so/also
+i	in
+på	auf/an
+under	unter
+över	über
+bredvid	neben
+mellan	zwischen
+bakom	hinter
+framför	vor
+till	zu/nach
+från	von/aus
+med	mit
+utan	ohne
+mot	gegen
+genom	durch
+hos	bei
+efter	nach
+före	vor (zeitlich)
+
+# --- Nützliche Sätze ---
+Hur mår du?	Wie geht es dir?
+Jag mår bra, tack.	Mir geht es gut, danke.
+Vad heter du?	Wie heißt du?
+Jag heter Daniel.	Ich heiße Daniel.
+Varifrån kommer du?	Woher kommst du?
+Jag kommer från Tyskland.	Ich komme aus Deutschland.
+Talar du engelska?	Sprichst du Englisch?
+Jag talar lite svenska.	Ich spreche etwas Schwedisch.
+Jag förstår inte.	Ich verstehe nicht.
+Kan du upprepa det?	Kannst du das wiederholen?
+Kan du tala långsammare?	Kannst du langsamer sprechen?
+Vad betyder det?	Was bedeutet das?
+Hur säger man det på svenska?	Wie sagt man das auf Schwedisch?
+Vad kostar det?	Was kostet das?
+Var ligger toaletten?	Wo ist die Toilette?
+Var ligger stationen?	Wo ist der Bahnhof?
+Jag skulle vilja ha en kaffe.	Ich hätte gern einen Kaffee.
+Notan, tack.	Die Rechnung, bitte.
+Vad är klockan?	Wie spät ist es?
+Klockan är tre.	Es ist drei Uhr.
+Jag är hungrig.	Ich bin hungrig.
+Jag är törstig.	Ich bin durstig.
+Jag är trött.	Ich bin müde.
+Det var gott.	Das war lecker.
+Vi ses imorgon.	Wir sehen uns morgen.
+Ha en trevlig dag!	Hab einen schönen Tag!
+Ursäkta mig.	Entschuldigung.
+Lycka till!	Viel Glück!
+Grattis!	Herzlichen Glückwunsch!
+Smaklig måltid!	Guten Appetit!
+Skål!	Prost!
+Hur gammal är du?	Wie alt bist du?
+Jag är trettio år.	Ich bin dreißig Jahre alt.
+Var bor du?	Wo wohnst du?
+Jag bor i Berlin.	Ich wohne in Berlin.
+Kan du hjälpa mig?	Kannst du mir helfen?
+Jag har gått vilse.	Ich habe mich verlaufen.
+Hur kommer jag till centrum?	Wie komme ich ins Zentrum?
+Det är långt härifrån.	Das ist weit von hier.
+Vänta lite.	Warte einen Moment.
+Jag vet inte.	Ich weiß nicht.
+Inga problem.	Kein Problem.
+Det gör inget.	Das macht nichts.
+Vad bra!	Wie gut!
+Vad synd.	Wie schade.
+Jag är förkyld.	Ich bin erkältet.
+Jag behöver en läkare.	Ich brauche einen Arzt.
+Ring polisen!	Ruf die Polizei!
+Hjälp!	Hilfe!
+Var försiktig.	Sei vorsichtig.
+Vi ses senare.	Bis später.
+Sov gott.	Schlaf gut.
+Trevlig resa!	Gute Reise!
+Det är vackert här.	Hier ist es schön.
+Jag tycker om det.	Das gefällt mir.
+Jag älskar dig.	Ich liebe dich.
+Saknar dig.	Ich vermisse dich.
+Vad gör du?	Was machst du?
+Jag arbetar hemifrån.	Ich arbeite von zu Hause.
+Ses vi imorgon?	Sehen wir uns morgen?
+Hur var din dag?	Wie war dein Tag?
+Det var en bra dag.	Es war ein guter Tag.
+
+# --- Gesprächsführung & Kommunikation ---
+Får jag fråga en sak?	Darf ich etwas fragen?
+Vad tycker du om det?	Was hältst du davon?
+Jag håller med dig.	Ich stimme dir zu.
+Jag håller inte med.	Ich stimme nicht zu.
+Det stämmer.	Das stimmt.
+Å andra sidan ...	Andererseits ...
+Å ena sidan ...	Einerseits ...
+Kan du förklara mer?	Kannst du mehr erklären?
+Vad menar du med det?	Was meinst du damit?
+Låt mig tänka efter.	Lass mich nachdenken.
+Det är en bra fråga.	Das ist eine gute Frage.
+Sammanfattningsvis ...	Zusammenfassend ...
+Till exempel ...	Zum Beispiel ...
+Med andra ord ...	Mit anderen Worten ...
+Får jag avbryta?	Darf ich unterbrechen?
+Kan vi prata om det senare?	Können wir später darüber reden?
+Jag är inte säker.	Ich bin mir nicht sicher.
+Vi får se.	Mal sehen.
+Det beror på.	Das kommt darauf an.
+Jag tror det.	Ich glaube schon.
+Jag tror inte det.	Ich glaube nicht.
+Helt rätt.	Ganz genau.
+Precis.	Genau.
+Vad synd!	Wie schade!
+Ärligt talat ...	Ehrlich gesagt ...
+Som jag ser det ...	So wie ich es sehe ...
+Det låter bra.	Das klingt gut.
+Det är upp till dig.	Das ist deine Entscheidung.
+Jag förstår vad du menar.	Ich verstehe, was du meinst.
+Kan du ge ett exempel?	Kannst du ein Beispiel geben?
+Vad gäller saken?	Worum geht es?
+Låt oss börja.	Lass uns anfangen.
+Är det något mer?	Gibt es noch etwas?
+Tack för samtalet.	Danke für das Gespräch.

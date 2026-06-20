@@ -18,6 +18,7 @@
 #include <SD.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <esp_heap_caps.h>
+#include <esp_random.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -41,6 +42,9 @@ constexpr int kMaxDecks = 64;
 constexpr int kMaxCards = 2000;     // PSRAM-Hartgrenze (Überlauf-Schutz)
 constexpr int kNameLen  = 48;
 constexpr uint32_t kClockOk = 1700000000UL;   // Systemzeit gilt als gestellt
+
+// Zufall für das Mischen der Übungs-Warteschlange (kein Seed nötig, HW-RNG).
+uint32_t rnd(uint32_t n) { return n ? esp_random() % n : 0; }
 
 // --- Persistenz-Karte ---------------------------------------------------------
 struct LCard {
@@ -258,7 +262,10 @@ void parseDeckFile() {
   Serial.printf("[CARDS] Deck %s: %d Karten\n", s_deckName, s_cardCount);
 }
 
-// Warteschlange aus fälligen Karten bauen (ohne gestellte Uhr: alle).
+// Warteschlange für eine Übung bauen: fällige Karten sammeln (ohne gestellte
+// Uhr: alle), gemischt, dann nach Box aufsteigend (wenig Gelerntes zuerst), und
+// auf kSessionLimit (10) Karten begrenzt. Falsch beantwortete kommen in rate()
+// innerhalb der Sitzung erneut dran, ohne neue Karten über das Limit zu holen.
 void buildQueue() {
   uint32_t now = (uint32_t)timesync::now();
   bool clockOk = now >= kClockOk;
@@ -267,6 +274,9 @@ void buildQueue() {
     if (!clockOk || flashcards::isDue(s_cards[i].box, s_cards[i].lastSeen, now))
       s_queue[s_queueLen++] = i;
   }
+  flashcards::shuffle(s_queue, s_queueLen, rnd);
+  flashcards::stableSortByBox(s_queue, s_queueLen, [](int i) { return s_cards[i].box; });
+  if (s_queueLen > flashcards::kSessionLimit) s_queueLen = flashcards::kSessionLimit;
   s_qpos = 0;
 }
 

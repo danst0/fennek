@@ -165,24 +165,59 @@ void quizMid(Adafruit_GFX& g) {
                opChar(s_problem.op), (long)s_problem.b);
       break;
   }
-  // Lange (Finanz-)Aufgaben kleiner setzen, damit sie auf 240 px passen.
-  uint8_t qsize = (strlen(q) > 11) ? 2 : 3;
+  constexpr int kMargin = 6;
+  const int maxW = W - 2 * kMargin;
   uint16_t bw, bh;
-  gui::textBounds(g, q, &bw, &bh);
-  gui::printAt(g, (W - (int)bw) / 2, ANSW_Y + (qsize == 2 ? 6 : 0), q, qsize);
 
-  // Antwort-Eingabe (mit Cursor, solange nicht bewertet).
+  // Größte Schriftgröße (maxSize..1), bei der `text` in maxW passt. textBounds
+  // misst bei der aktuell gesetzten TextSize -> vor jeder Messung setTextSize.
+  auto fitSize = [&](const char* text, uint8_t maxSize) -> uint8_t {
+    for (uint8_t s = maxSize; s > 1; s--) {
+      g.setTextSize(s);
+      gui::textBounds(g, text, &bw, &bh);
+      if ((int)bw <= maxW) return s;
+    }
+    return 1;
+  };
+  // Eine zentrierte Zeile bei Größe `size` setzen (misst neu bei dieser Größe).
+  auto drawCentered = [&](int y, const char* text, uint8_t size) {
+    g.setTextSize(size);
+    gui::textBounds(g, text, &bw, &bh);
+    int x = (W - (int)bw) / 2;
+    if (x < kMargin) x = kMargin;
+    gui::printAt(g, x, y, text, size);
+  };
+
+  // Aufgabe und Antwort werden auto-skaliert (lange CFO-Aufgaben/Eingaben
+  // schrumpfen 3->2->1, statt über den Rand zu laufen).
+  uint8_t qsize = fitSize(q, 3);
+
   char ans[16];
   snprintf(ans, sizeof(ans), "%s%s", s_input, s_answered ? "" : "_");
-  gui::textBounds(g, ans[0] ? ans : " ", &bw, &bh);
-  gui::printAt(g, (W - (int)bw) / 2, ANSW_Y + 44, ans, 3);
+  const char* ansShown = ans[0] ? ans : " ";
+  uint8_t asize = fitSize(ansShown, 3);
 
+  char fb[40];
   if (s_answered) {
-    char fb[40];
     if (s_lastCorrect) snprintf(fb, sizeof(fb), "Richtig!");
     else snprintf(fb, sizeof(fb), "Falsch: %ld", (long)s_problem.answer);
-    gui::textBounds(g, fb, &bw, &bh);
-    gui::printAt(g, (W - bw) / 2, ANSW_Y + 80, fb, 2);
+  }
+  uint8_t fsize = s_answered ? fitSize(fb, 2) : 0;
+
+  // Vertikal mittig im Streifen: Blockhöhe aus den gewählten Größen rechnen
+  // (9 px/Zeile pro Größe, vgl. drawWrapped), gap zwischen den Zeilen.
+  constexpr int gap = 12;
+  int hQ = 9 * qsize, hA = 9 * asize, hF = s_answered ? 9 * fsize : 0;
+  int blockH = hQ + gap + hA + (s_answered ? gap + hF : 0);
+  int y = ANSW_Y + (ANSW_H - blockH) / 2;
+  if (y < ANSW_Y + 2) y = ANSW_Y + 2;
+
+  drawCentered(y, q, qsize);
+  y += hQ + gap;
+  drawCentered(y, ans, asize);   // ans ohne Cursor ist nie leer-zentriert nötig
+  if (s_answered) {
+    y += hA + gap;
+    drawCentered(y, fb, fsize);
   }
 }
 

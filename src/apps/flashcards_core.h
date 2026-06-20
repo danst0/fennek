@@ -25,6 +25,37 @@ namespace flashcards {
 
 constexpr int kBoxCount = 5;
 
+// Eine Übung umfasst maximal so viele (verschiedene) Karten. Falsch beantwortete
+// werden innerhalb der Sitzung wiederholt, zählen aber nicht als neue Karte.
+constexpr int kSessionLimit = 10;
+
+// --- Auswahl: mischen + "bereits gelernte seltener" --------------------------
+// Beide Funktionen arbeiten auf einer Index-Liste (idx[0..n)), nicht auf den
+// Karten selbst — so bleibt der Core frei von der App-Kartenstruktur.
+
+// Fisher-Yates-Shuffle in-place. `rnd(m)` liefert eine Zahl in [0, m).
+inline void shuffle(int* idx, int n, uint32_t (*rnd)(uint32_t)) {
+  for (int i = n - 1; i > 0; i--) {
+    int j = (int)rnd((uint32_t)(i + 1));
+    int t = idx[i]; idx[i] = idx[j]; idx[j] = t;
+  }
+}
+
+// Stabile Sortierung nach Leitner-Box aufsteigend (niedrige Box zuerst =
+// weniger Gelerntes bevorzugt). Insertion-Sort: stabil, hält die zufällige
+// Reihenfolge innerhalb gleicher Box -> "Shuffle innerhalb gleicher Priorität".
+// `boxOf(i)` liefert die Box des Karten-Index i (Lambda/Funktor in der App).
+template <typename BoxFn>
+inline void stableSortByBox(int* idx, int n, BoxFn boxOf) {
+  for (int i = 1; i < n; i++) {
+    int v = idx[i];
+    uint8_t bv = boxOf(v);
+    int j = i - 1;
+    while (j >= 0 && boxOf(idx[j]) > bv) { idx[j + 1] = idx[j]; j--; }
+    idx[j + 1] = v;
+  }
+}
+
 // Intervall (Sekunden) bis eine Karte in Box `box` wieder fällig wird.
 inline uint32_t boxInterval(uint8_t box) {
   constexpr uint32_t kDay = 86400u;

@@ -26,9 +26,11 @@ Vorderseite<TAB>Rückseite
 ## Lernlogik (Leitner)
 
 Jede Karte wandert durch fünf Boxen. „Gewusst" schiebt eine Box höher (längeres
-Wiederholungs-Intervall: 1 / 3 / 7 / 16 Tage), „Falsch" zurück in Box 0. Die App
-zeigt pro Sitzung nur **fällige** Karten; falsch beantwortete kommen in derselben
-Sitzung noch einmal dran. Der Fortschritt wird je Deck unter
+Wiederholungs-Intervall: 1 / 3 / 7 / 16 Tage), „Falsch" zurück in Box 0. Eine
+**Übung umfasst maximal 10 Karten**: die App sammelt die **fälligen** Karten,
+**mischt** sie und nimmt bevorzugt die mit niedriger Box (also wenig Gelerntes —
+bereits Gelerntes kommt seltener dran). Falsch beantwortete Karten kommen in
+derselben Übung noch einmal dran. Der Fortschritt wird je Deck unter
 `/flashcards/.progress/<deck>.prg` gespeichert (über einen CRC der Vorderseite
 referenziert, übersteht also das Umsortieren oder Ergänzen des Decks).
 
@@ -38,6 +40,6 @@ referenziert, übersteht also das Umsortieren oder Ergänzen des Decks).
 
 ## Mitgelieferte Decks
 
-- `schwedisch-vokabeln.txt` — Grundwortschatz
-- `schwedisch-saetze.txt` — nützliche Sätze
-- `schwedisch-konversation.txt` — Gesprächsführung / Kommunikation
+- `schwedisch.txt` — komplettes Schwedisch-Deck (~700 Karten): Grundwortschatz,
+  Zahlen/Zeit, Alltag, Reise, Verben, Adjektive sowie nützliche Sätze und
+  Gesprächsführung — alles in einem Deck, gemischt abgefragt.
