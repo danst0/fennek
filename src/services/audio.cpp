@@ -182,6 +182,7 @@ void startCurrent(uint32_t startSec = 0) {
       BATTLOG_EVENT("Audio", "%s: %s", own, bn ? bn + 1 : p);
     }
   } else {
+    Serial.printf("[AUDIO] connecttoFS FEHLER: %s\n", p);
     board::dacPower(false);
     s_playing = false;
   }

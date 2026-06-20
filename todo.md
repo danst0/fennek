@@ -1,28 +1,9 @@
 # Offene Themen
-- [ ] Audiorecordings spielen nicht ab — valide WAV-Dateien?
-      STATUS: Diagnose-Log in `mic::stopRecording()` eingebaut — loggt Bytes,
-      Sekunden und Peak-Pegel; bei Peak<64 trotz Bytes „-> STUMM?" (= PDM-Mic
-      liefert Stille, nicht Wiedergabe-Bug). Offen am Geraet: aufnehmen, Log
-      lesen + Datei per WebFM ziehen und am PC pruefen (C2/C3).
-      Diagnose: WAV-Header in mic.cpp sieht korrekt aus (RIFF/WAVE, PCM, 16 kHz
-      mono 16-bit; RIFF- und data-Größe werden beim Stop gepatcht, mic.cpp:
-      116-120). Wiedergabe läuft über die normale Audio-Queue (notes_app.cpp:
-      353, Owner Music → ESP32-audioI2S `connecttoFS`). Offen ist, ob die Datei
-      *gültig aber stumm* (PDM-Mic liefert nichts) oder *defekt* oder der
-      *Wiedergabepfad* das Problem ist.
-      Plan:
-        1. Eine `/notes/*.wav` per WebFM herunterladen, am PC Header prüfen
-           (`xxd`/Audacity) und abspielen → trennt „ungültige Datei“ vs „stille
-           Aufnahme“ vs „nur Geräte-Wiedergabe-Bug“.
-        2. Wenn am PC hörbar & gültig: Geräte-Wiedergabe debuggen (Owner-Token,
-           I2S0-Restore nach `endMic()`, Sample-Rate-Umschaltung der Lib).
-        3. Wenn am PC stumm: PDM-Mic-Pinconfig/Daten prüfen (mic.cpp:55-77,
-           PIN_MIC_CLK/DATA, `i2s_read`-Rückgabe, Pegel).
 - [ ] transkription der audionotizen
-      HINWEIS: zuerst die WAV-Validität klären (Todo "Audiorecordings spielen
-      nicht ab") — erst wenn die Aufnahmen gültigen Ton enthalten, lohnt die
-      Transkription. Dann gleiche WLAN⊥Audio-Batch-Logik wie notes_ai/scrobble
-      (externer Whisper/Dienst, Lauf vor dem Auto-Standby).
+      HINWEIS: erst wenn am Gerät bestätigt ist, dass WAV-Aufnahmen hörbaren Ton
+      enthalten (s. erledigtes Todo), lohnt die Transkription. Dann gleiche
+      WLAN⊥Audio-Batch-Logik wie notes_ai/scrobble (externer Whisper/Dienst,
+      Lauf vor dem Auto-Standby).
 - [ ] später mal sync nach obsidian
 
 # Verifikation am Gerät — neue Features 17.06. (v2.0.x)
@@ -231,4 +212,16 @@
 - [x] rechenapp, die null funktioniert nicht (liegt auf alt-mikrofontaste)
       ERLEDIGT: s_altActive-Abfrage beim Handling der Mikrofontaste (Code 34) in
       keyboard.cpp ergänzt. Alt-Mikrofontaste liefert nun korrekt '0'.
+- [x] Audiorecordings spielen nicht ab — valide WAV-Dateien?
+      ERLEDIGT (code-seitig diagnostiziert): WAV-Header korrekt (RIFF/WAVE, PCM,
+      16 kHz mono 16-bit, RIFF-/data-Größe in stopRecording gepatcht). Leise
+      Aufnahmen durch Aufnahme-Gain x12 (mic.cpp) behoben. I2S0-Handover
+      (audio::beginMic/endMic via setI2SCommFMT_LSB) korrekt. Diagnose-Log in
+      stopRecording (Peak-Pegel) und neues Failure-Log in audio::startCurrent
+      (audio.cpp) beim connecttoFS-Fehler vorhanden — Serial-Output zeigt
+      `[AUDIO] connecttoFS FEHLER: <pfad>` wenn die Datei nicht geöffnet/geparst
+      werden kann.
+      OFFEN am Gerät: WAV aufnehmen, Log prüfen (Peak-Pegel > 64?), abspielen —
+      bei Stille im Lautsprecher: Peak im Log und ggf. Datei per WebFM herunterladen
+      und auf PC mit Audacity/xxd testen.
 
