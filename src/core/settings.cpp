@@ -591,6 +591,7 @@ uint32_t s_best2048 = 0;
 uint16_t s_minesWins = 0, s_minesBest = 0;
 uint16_t s_chessWins = 0;
 uint16_t s_tttWins = 0, s_tttDraws = 0;
+uint16_t s_sudSolved = 0, s_sudBest = 0;
 uint16_t s_mathBest = 0;
 // Kopfrechnen: adaptive Stufe je Modus, 2 Bit pro Modus (bis 8 Modi gepackt).
 // Default = alle Modi auf Stufe 1 (Mittel) -> 0b01 je Feld = 0x5555.
@@ -605,6 +606,8 @@ void gamesEnsure() {
   s_chessWins = s_prefs.getUShort("chwins", 0);
   s_tttWins   = s_prefs.getUShort("tttw", 0);
   s_tttDraws  = s_prefs.getUShort("tttd", 0);
+  s_sudSolved = s_prefs.getUShort("sudwon", 0);
+  s_sudBest   = s_prefs.getUShort("sudbest", 0);
   s_mathBest  = s_prefs.getUShort("mqbest", 0);
   s_mathLevels = s_prefs.getUShort("mqlvl", 0x5555);
 }
@@ -666,6 +669,20 @@ void addTttResult(bool win, bool draw) {
   if (!s_open) return;
   if (win)  { s_tttWins++;  s_prefs.putUShort("tttw", s_tttWins); }
   if (draw) { s_tttDraws++; s_prefs.putUShort("tttd", s_tttDraws); }
+}
+
+uint16_t sudokuSolved()  { gamesEnsure(); return s_sudSolved; }
+uint16_t sudokuBestSec() { gamesEnsure(); return s_sudBest; }
+
+void setSudokuResult(bool won, uint16_t sec) {
+  gamesEnsure();
+  if (!s_open || !won) return;
+  s_sudSolved++;
+  s_prefs.putUShort("sudwon", s_sudSolved);
+  if (s_sudBest == 0 || sec < s_sudBest) {
+    s_sudBest = sec;
+    s_prefs.putUShort("sudbest", sec);
+  }
 }
 
 uint16_t mathBestStreak() { gamesEnsure(); return s_mathBest; }
@@ -767,6 +784,8 @@ size_t exportIni(char* out, size_t cap) {
     "chess_wins = %u\n"
     "ttt_wins = %u\n"
     "ttt_draws = %u\n"
+    "sudoku_solved = %u\n"
+    "sudoku_best_sec = %u\n"
     "\n[state]\n"               // nur Backup — Import ueberspringt diese Sektion
     "last_app = %s\n"
     "last_track = %s\n"
@@ -783,6 +802,7 @@ size_t exportIni(char* out, size_t cap) {
     oturl,
     (unsigned long)best2048(), (unsigned)minesWins(), (unsigned)minesBestSec(),
     (unsigned)chessWins(), (unsigned)tttWins(), (unsigned)tttDraws(),
+    (unsigned)sudokuSolved(), (unsigned)sudokuBestSec(),
     lapp, ltrk, (unsigned long)lpos, lbook,
     (unsigned long)lastTime(), (unsigned)clockPpm());
 
@@ -885,6 +905,8 @@ int importIni(const char* text) {
       else if (strcmp(key, "chess_wins") == 0)     { restoreGameU16("chwins", (uint16_t)atoi(val), s_chessWins); applied++; }
       else if (strcmp(key, "ttt_wins") == 0)       { restoreGameU16("tttw", (uint16_t)atoi(val), s_tttWins); applied++; }
       else if (strcmp(key, "ttt_draws") == 0)      { restoreGameU16("tttd", (uint16_t)atoi(val), s_tttDraws); applied++; }
+      else if (strcmp(key, "sudoku_solved") == 0)  { restoreGameU16("sudwon", (uint16_t)atoi(val), s_sudSolved); applied++; }
+      else if (strcmp(key, "sudoku_best_sec") == 0){ restoreGameU16("sudbest", (uint16_t)atoi(val), s_sudBest); applied++; }
     }
     // [state] und unbekannte Sektionen: bewusst ignoriert.
   }

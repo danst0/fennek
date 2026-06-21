@@ -158,6 +158,7 @@
   X(GameMines,     "Minensucher",    "Campo minato",    "Minröjare",      "Minesweeper",     "Buscaminas") \
   X(GameChess,     "Schach",         "Scacchi",         "Schack",         "Chess",           "Ajedrez") \
   X(GameTtt,       "Tic-Tac-Toe",    "Tris",            "Tre i rad",      "Tic-tac-toe",     "Tres en raya") \
+  X(GameSudoku,    "Sudoku",         "Sudoku",          "Sudoku",         "Sudoku",          "Sudoku") \
   X(NoGameYet,     "Noch kein Spiel","Nessuna partita", "Inget spel än",  "No game yet",     "Sin partidas") \
   X(FmtBest,       "Best: %lu",      "Record: %lu",     "Bäst: %lu",      "Best: %lu",       "Récord: %lu") /* fmt: %lu */ \
   /* --- 2048 --- */ \

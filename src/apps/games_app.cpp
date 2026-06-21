@@ -16,17 +16,18 @@
 #include "apps/mines.h"
 #include "apps/chess.h"
 #include "apps/ttt.h"
+#include "apps/sudoku.h"
 
 namespace {
 
 using gui::Rect;
 
-enum Screen : uint8_t { MENU, G2048, GMINES, GCHESS, GTTT };
+enum Screen : uint8_t { MENU, G2048, GMINES, GCHESS, GTTT, GSUDOKU };
 
 Screen s_screen = MENU;
 int    s_sel = 0;
 
-constexpr int kEntries = 4;
+constexpr int kEntries = 5;
 
 struct Entry {
   i18n::Str   label;
@@ -35,18 +36,20 @@ struct Entry {
 };
 
 const Entry kMenu[kEntries] = {
-  {i18n::Str::Game2048,  G2048,  game2048_ui::menuLine},
-  {i18n::Str::GameMines, GMINES, mines_ui::menuLine},
-  {i18n::Str::GameChess, GCHESS, chess_ui::menuLine},
-  {i18n::Str::GameTtt,   GTTT,   ttt_ui::menuLine},
+  {i18n::Str::Game2048,   G2048,   game2048_ui::menuLine},
+  {i18n::Str::GameMines,  GMINES,  mines_ui::menuLine},
+  {i18n::Str::GameChess,  GCHESS,  chess_ui::menuLine},
+  {i18n::Str::GameTtt,    GTTT,    ttt_ui::menuLine},
+  {i18n::Str::GameSudoku, GSUDOKU, sudoku_ui::menuLine},
 };
 
-// 4 Buttons à 56 px (y 56..304) unter der Überschrift.
+// 5 Buttons à 46 px (y 56..310) unter der Überschrift.
 const Rect kBtn[kEntries] = {
-  {10,  56, 220, 56},
-  {10, 120, 220, 56},
-  {10, 184, 220, 56},
-  {10, 248, 220, 56},
+  {10,  56, 220, 46},
+  {10, 108, 220, 46},
+  {10, 160, 220, 46},
+  {10, 212, 220, 46},
+  {10, 264, 220, 46},
 };
 
 void openGame(int i) {
@@ -57,6 +60,7 @@ void openGame(int i) {
     case GMINES: mines_ui::enter();    break;
     case GCHESS: chess_ui::enter();    break;
     case GTTT:   ttt_ui::enter();      break;
+    case GSUDOKU: sudoku_ui::enter();  break;
     default: break;
   }
   Serial.printf("[GAME] öffne %s\n", i18n::tr(kMenu[i].label));
@@ -88,10 +92,10 @@ void menuDraw(Adafruit_GFX& g) {
     g.drawRoundRect(r.x, r.y, r.w, r.h, 6, GxEPD_BLACK);
     if (i == s_sel)
       g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 5, GxEPD_BLACK);
-    gui::printAt(g, r.x + 14, r.y + 10, i18n::tr(kMenu[i].label), 2);
+    gui::printAt(g, r.x + 14, r.y + 6, i18n::tr(kMenu[i].label), 2);
     char sub[48];
     kMenu[i].menuLine(sub, sizeof(sub));
-    gui::printAt(g, r.x + 14, r.y + 36, sub, 1);
+    gui::printAt(g, r.x + 14, r.y + 28, sub, 1);
   }
 }
 
@@ -105,6 +109,7 @@ class GamesApp : public App {
       case GMINES: return i18n::tr(i18n::Str::GameMines);
       case GCHESS: return i18n::tr(i18n::Str::GameChess);
       case GTTT:   return i18n::tr(i18n::Str::GameTtt);
+      case GSUDOKU: return i18n::tr(i18n::Str::GameSudoku);
       default:     return i18n::tr(i18n::Str::AppGames);
     }
   }
@@ -129,6 +134,7 @@ class GamesApp : public App {
       case GMINES: mines_ui::handleInput(e);    break;
       case GCHESS: chess_ui::handleInput(e);    break;
       case GTTT:   ttt_ui::handleInput(e);      break;
+      case GSUDOKU: sudoku_ui::handleInput(e);  break;
       default:     menuInput(e);                break;
     }
   }
@@ -139,6 +145,7 @@ class GamesApp : public App {
       case GMINES: mines_ui::draw(g);    break;
       case GCHESS: chess_ui::draw(g);    break;
       case GTTT:   ttt_ui::draw(g);      break;
+      case GSUDOKU: sudoku_ui::draw(g);  break;
       default:     menuDraw(g);          break;
     }
   }

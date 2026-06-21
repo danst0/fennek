@@ -16,6 +16,7 @@
 #include "apps/mines_core.h"
 #include "apps/ttt_core.h"
 #include "apps/chess_core.h"
+#include "apps/sudoku_core.h"   // header-only, kein zusätzliches .cpp im g++-Aufruf
 
 // --- Deterministischer Zufall (LCG) ------------------------------------------
 static uint32_t s_seed = 12345;
@@ -385,11 +386,78 @@ static int testChess() {
   return 0;
 }
 
+// =============================================================================
+// Sudoku
+// =============================================================================
+static int testSudoku() {
+  using namespace sudoku;
+
+  // solveFill: leeres Gitter -> vollständige, konfliktfreie Lösung.
+  uint8_t g[81];
+  for (int i = 0; i < 81; i++) g[i] = 0;
+  CHECK(solveFill(g, testRnd));
+  for (int i = 0; i < 81; i++) CHECK(g[i] >= 1 && g[i] <= 9);
+  // Konfliktfreiheit: jede Ziffer passt, wenn man sie testweise herausnimmt.
+  for (int i = 0; i < 81; i++) {
+    uint8_t v = g[i];
+    g[i] = 0;
+    CHECK(fits(g, i, v));
+    g[i] = v;
+  }
+
+  // countSolutions auf einem vollständigen Gitter == 1.
+  CHECK(countSolutions(g, 5) == 1);
+
+  // generate: alle Schwierigkeiten -> eindeutige Lösung, plausible Vorgabenzahl,
+  // sol[] gültig, given/cell konsistent.
+  const int diffs[3] = {EASY, MEDIUM, HARD};
+  for (int d = 0; d < 3; d++) {
+    Puzzle p;
+    generate(p, cluesFor((uint8_t)diffs[d]), testRnd);
+
+    int given = 0;
+    for (int i = 0; i < 81; i++) {
+      CHECK(p.given[i] == (p.cell[i] != 0));   // given <-> belegt
+      if (p.given[i]) { CHECK(p.cell[i] == p.sol[i]); given++; }  // Vorgabe stimmt
+      CHECK(p.sol[i] >= 1 && p.sol[i] <= 9);
+    }
+    CHECK(given >= cluesFor((uint8_t)diffs[d]));   // nie unter dem Ziel
+    CHECK(given <= 81);
+
+    // Eindeutigkeit: das ausgegrabene Rätsel hat genau eine Lösung.
+    CHECK(countSolutions(p.cell, 2) == 1);
+
+    // isSolved: leeres Rätsel nicht gelöst; vollständige Lösung eingetragen -> gelöst.
+    CHECK(!isSolved(p));
+    Puzzle full = p;
+    for (int i = 0; i < 81; i++) full.cell[i] = full.sol[i];
+    CHECK(isSolved(full));
+  }
+
+  // conflict: Dublette in Zeile/Spalte/Box wird erkannt.
+  {
+    Puzzle p;
+    for (int i = 0; i < 81; i++) { p.cell[i] = 0; p.given[i] = false; }
+    p.cell[0] = 5; p.cell[1] = 5;        // gleiche Zeile
+    CHECK(conflict(p, 0) && conflict(p, 1));
+    p.cell[1] = 0; p.cell[9] = 5;        // gleiche Spalte
+    CHECK(conflict(p, 0) && conflict(p, 9));
+    p.cell[9] = 0; p.cell[10] = 5;       // gleiche Box (0 und 10)
+    CHECK(conflict(p, 0) && conflict(p, 10));
+    p.cell[10] = 0;
+    CHECK(!conflict(p, 0));              // allein -> kein Konflikt
+  }
+
+  printf("Sudoku: ok\n");
+  return 0;
+}
+
 int main() {
   if (test2048()) return 1;
   if (testMines()) return 1;
   if (testTtt()) return 1;
   if (testChess()) return 1;
+  if (testSudoku()) return 1;
   printf("Alle Tests bestanden (%d Checks).\n", s_checks);
   return 0;
 }

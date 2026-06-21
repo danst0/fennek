@@ -1,4 +1,9 @@
 # Offene Themen
+- [ ] Akkuanzeige noch immer bei 72%
+- [ ] Kann die USB-C Geschwindigkeit zur SD-Karte beschleunigt werden (OTG)?
+- [ ] sonstige Optimierungen?
+- [ ] Podcast app deaktivieren, der WLAN Sync ist zu langsam.
+
 - [ ] transkription der audionotizen
       HINWEIS: erst wenn am Gerät bestätigt ist, dass WAV-Aufnahmen hörbaren Ton
       enthalten (s. erledigtes Todo), lohnt die Transkription. Dann gleiche
@@ -16,6 +21,24 @@
       MP3-Upload danach abspielbar; wifi stop -> Mesh empfaengt wieder).
 
 # Erledigt
+- [x] ich hätte gerne noch ein spiel, mach einen vorschlag
+      ERLEDIGT: Vorschlag Sudoku (passt ideal zum E-Ink: statisches 9×9-Gitter,
+      kein Flackern; rein arithmetisch host-testbar). Fünftes Spiel in der
+      „Spiele"-App. apps/sudoku.* (UI) + Arduino-freier apps/sudoku_core.h
+      (Generator + Solver, host-getestet, tools/host_test_games.cpp: testSudoku
+      prüft eindeutige Lösung, gültige sol[], Konflikt-Erkennung). Generator =
+      randomisiertes Backtracking für die Vollösung, dann Zellen ausgraben
+      solange eindeutig lösbar (countSolutions bricht bei 2 ab); Backtracker
+      iterativ/rekursionsfrei (81 tief würde den Loop-Task-Stack sprengen).
+      Schwierigkeit Leicht/Mittel/Schwer (40/32/26 Vorgaben), Touch-Tap/WASD-
+      Cursor, Zifferntasten 1–9 setzen, 0/Backspace/Mikrofon leeren, Konflikt-
+      zellen invertiert, „Gelöst"-Overlay mit Zeit. Beststände im NVS
+      (settings::sudokuSolved/sudokuBestSec, INI-Export/-Import ergänzt).
+      games_app-Menü auf 5 Einträge umgebaut (46-px-Buttons), i18n GameSudoku,
+      GAMES_SMOKE_TEST um Sudoku erweitert. Host-Tests grün (3068 Checks),
+      Firmware baut sauber.
+      OFFEN am Gerät: Generierungsdauer „Schwer" auf dem ESP32, Lesbarkeit der
+      26-px-Zellen am E-Ink, Ziffern-Eingabe-Ergonomie (Alt/Sym-Ebene).
 - [x] GPS Update der Uhr hat heute nie funktioniert
       ERLEDIGT (timesync.cpp): Zwei Fixes:
       (1) `gpsSync()`: `s_lastGpsMs` (gpsFresh) wird jetzt nur noch gesetzt, wenn

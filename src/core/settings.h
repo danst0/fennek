@@ -145,6 +145,9 @@ void     setChessGame(const void* buf, size_t n);   // n=0 löscht
 uint16_t tttWins();
 uint16_t tttDraws();
 void     addTttResult(bool win, bool draw);
+uint16_t sudokuSolved();                   // Anzahl gelöster Rätsel
+uint16_t sudokuBestSec();                  // 0 = noch keins gelöst
+void     setSudokuResult(bool won, uint16_t sec);
 uint16_t mathBestStreak();                 // Kopfrechnen: längste Antwort-Serie
 void     setMathBestStreak(uint16_t streak);   // schreibt nur bei neuem Rekord
 uint8_t  mathLevel(uint8_t mode);          // Kopfrechnen: adaptive Stufe je Modus (0..2)

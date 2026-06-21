@@ -231,7 +231,7 @@ void setup() {
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 
 #ifdef GAMES_SMOKE_TEST
-  // TEMP: alle vier Spiele einmal durchklicken (Draw-Pfade + Schach-KI-Task).
+  // TEMP: alle fünf Spiele einmal durchklicken (Draw-Pfade + Schach-KI-Task).
   Serial.println("[GAME] SMOKE: Start");
   appmgr::launch(games_app::get());
   appmgr::loop();                  // Spiele-Menü rendern
@@ -263,6 +263,15 @@ void setup() {
   gamesSmokeKey('s');              // -> Tic-Tac-Toe
   gamesSmokeKey('\r');
   gamesSmokeTap(48, 100);          // Zelle 0 setzen, Fennek antwortet
+  gamesSmokeKey('\b');             // zurück ins Menü
+  gamesSmokeKey('s');              // -> Sudoku
+  gamesSmokeKey('\r');             // generiert ein Rätsel (Solver/Generator)
+  gamesSmokeKey('d');              // Cursor bewegen
+  gamesSmokeKey('s');
+  gamesSmokeKey('5');              // Ziffer setzen (falls keine Vorgabe)
+  gamesSmokeKey('0');              // Zelle wieder leeren
+  gamesSmokeKey('m');              // Schwierigkeit wechseln -> neu generieren
+  gamesSmokeKey('\b');             // zurück ins Menü
   Serial.printf("[GAME] SMOKE: fertig — freier Heap %u KB\n",
                 (unsigned)(ESP.getFreeHeap() / 1024));
   appmgr::goHome();
