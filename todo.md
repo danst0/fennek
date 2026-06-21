@@ -14,9 +14,40 @@
       zeigt jetzt beide Werte nebeneinander (Gauge-SoC ungenutzt vs. Anzeige).
       Build OK. OFFEN am Geraet: `gauge` bei vollem Akku -> Anzeige ~100%? und
       ueber einen Entladezyklus pruefen, dass die % monoton fallen.
-- [ ] Kann die USB-C Geschwindigkeit zur SD-Karte beschleunigt werden (OTG)?
+- [x] Kann die USB-C Geschwindigkeit zur SD-Karte beschleunigt werden (OTG)?
+      ERLEDIGT (Analyse, keine Code-Aenderung — lohnt nicht):
+      Der Flaschenhals ist NICHT die Transport-Strecke (USB/WLAN), sondern der
+      geteilte HSPI-Bus, an dem die SD haengt: SPI_BUS_HZ = 4 MHz (config.h:30,
+      `SD.begin(PIN_SD_CS, g_spi, SPI_BUS_HZ)` board.cpp:90). 8 MHz korrumpiert
+      Writes (hardware-verifiziert) -> 4 MHz ist Hartgrenze. Das sind theoretisch
+      ~500 KB/s, real ~250-400 KB/s. Jede SD-Lesung — ob WebFM-WLAN oder USB —
+      laeuft durch genau diesen 4-MHz-Bus und kann ihn nicht ueberholen.
+      Warum OTG/USB-MSC nichts bringt:
+        1. ESP32-S3-USB ist nur Full-Speed (USB 1.1, 12 Mbit/s ~ 1 MB/s), kein
+           High-Speed-PHY. Selbst perfektes USB-MSC deckelt bei ~1 MB/s — und die
+           4-MHz-SD (~0,5 MB/s) liegt DARUNTER. USB entlastet die echte Grenze nicht.
+        2. USB-MSC braucht exklusiven Block-Zugriff: Host und gemountetes FAT der
+           Firmware duerfen die Karte nicht gleichzeitig anfassen (Korruption).
+           Man muesste alle Firmware-SD-Nutzung (Audio/Apps) waehrend des Transfers
+           stilllegen, und die MSC-Bloecke laufen weiter unter spiLock am geteilten
+           Bus. Grosse Architektur-Stoerung fuer null Geschwindigkeitsgewinn.
+        3. Echter Speedup-Pfad waere SD_MMC im 4-bit-Modus (SDIO, 20-40 MHz) —
+           ist aber NICHT verdrahtet: die SD teilt sich die HSPI-Pins bewusst mit
+           E-Ink/LoRa, es gibt keine dedizierten SDMMC-Datenleitungen. Geht nur
+           mit Hardware-Aenderung.
+      Fazit: USB-OTG/MSC bringt keinen messbaren Vorteil; der 4-MHz-SPI-SD-Bus
+      dominiert vor wie nach. Nicht umsetzen.
 - [ ] sonstige Optimierungen?
-- [ ] Podcast app deaktivieren, der WLAN Sync ist zu langsam.
+- [x] Podcast app deaktivieren, der WLAN Sync ist zu langsam.
+      ERLEDIGT (v2.5.9, Soft-Disable): Der Schmerzpunkt war der Auto-WLAN-Sync vor
+      dem Standby (`podcast::flushBeforeStandby()` in core/power.cpp) — brachte bei
+      JEDEM Standby das WLAN hoch und lud ueber den 4-MHz-SD-Bus eine (oft >100 MB)
+      Folge. Auskommentiert. Dazu: Launcher-Kachel (main.cpp:229) + App-Registrierung
+      (main.cpp:215) + `podcast::begin()` (main.cpp:151) auskommentiert -> App vom
+      Geraet verschwunden, Slot 13 (Seite 2) bleibt leer (Label None -> uebersprungen).
+      BEWUSST BEHALTEN fuer Reaktivierung: services/podcast.*, apps/podcast_app.*,
+      podcast_core.h (kompilieren weiter), Konsolen-Befehle `podcast …`, NVS-Toggle
+      `pcas`, i18n-Strings. Build OK (Flash 27,7 %). CLAUDE.md vermerkt den Status.
 
 - [ ] transkription der audionotizen
       HINWEIS: erst wenn am Gerät bestätigt ist, dass WAV-Aufnahmen hörbaren Ton

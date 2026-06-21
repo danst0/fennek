@@ -146,9 +146,9 @@ void setup() {
   // Scrobble-Queue (offene Einträge von SD laden); braucht SD + settings.
   scrobble::begin();
 
-  // Podcast: /podcasts + feeds.txt sicherstellen (Default-Feed anlegen). Leicht-
-  // gewichtig (kein Netz); der Sync läuft erst auf Nutzerwunsch bzw. vor Standby.
-  podcast::begin();
+  // Podcast deaktiviert (WLAN-Sync zu langsam, v2.5.9): /podcasts wird nicht mehr
+  // angelegt; App-Kachel + Auto-Sync-Hook sind aus. Code bleibt reaktivierbar.
+  // podcast::begin();
 
   // Wecker-Engine: Wecker aus NVS laden. Klingelt über die Audio-Queue, daher
   // nach audio::begin(); poll() läuft im loop(). Falls dieser Boot ein
@@ -212,7 +212,8 @@ void setup() {
   appmgr::add(gyro_app::get());
   appmgr::add(mathquiz_app::get());
   appmgr::add(flashcards_app::get());
-  appmgr::add(podcast_app::get());
+  // Podcast deaktiviert (WLAN-Sync zu langsam, v2.5.9): nicht registriert/keine Kachel.
+  // appmgr::add(podcast_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
   launcher::setTile(1, i18n::Str::TileBook,     book_app::get());
   launcher::setTile(2, i18n::Str::TileReader,   reader_app::get());
@@ -226,7 +227,8 @@ void setup() {
   launcher::setTile(10, i18n::Str::TileGyro,    gyro_app::get());   // Seite 2, Slot 0
   launcher::setTile(11, i18n::Str::TileMath,    mathquiz_app::get());
   launcher::setTile(12, i18n::Str::TileCards,   flashcards_app::get());
-  launcher::setTile(13, i18n::Str::TilePodcast, podcast_app::get());   // Seite 2, Slot 3
+  // Podcast deaktiviert (v2.5.9): Slot 13 bleibt leer (Seite 2, Slot 3).
+  // launcher::setTile(13, i18n::Str::TilePodcast, podcast_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 

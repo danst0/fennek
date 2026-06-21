@@ -328,9 +328,9 @@ void poll() {
     // (verwaltet WLAN selbst, mit Back-off). No-op ohne offene Notizen bzw.
     // ohne Konfiguration.
     notes_ai::flushBeforeStandby();
-    // Neueste Podcast-Folge(n) holen (Round-Robin, ein Feed je Standby; verwaltet
-    // WLAN selbst, mit Back-off). No-op ohne Auto-Sync/Feeds/Konfiguration.
-    podcast::flushBeforeStandby();
+    // Podcast deaktiviert (WLAN-Sync zu langsam, v2.5.9): kein Auto-Sync vor Standby
+    // mehr (brachte bei jedem Standby das WLAN hoch). Reaktivierbar.
+    // podcast::flushBeforeStandby();
     enterStandby();
   }
 }
