@@ -147,6 +147,8 @@ uint16_t tttDraws();
 void     addTttResult(bool win, bool draw);
 uint16_t mathBestStreak();                 // Kopfrechnen: längste Antwort-Serie
 void     setMathBestStreak(uint16_t streak);   // schreibt nur bei neuem Rekord
+uint8_t  mathLevel(uint8_t mode);          // Kopfrechnen: adaptive Stufe je Modus (0..2)
+void     setMathLevel(uint8_t mode, uint8_t level);   // schreibt nur bei Stufenwechsel
 
 // CRC32-Helfer (Cache-/Bookmark-Keys).
 uint32_t crc32(const char* s);

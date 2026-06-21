@@ -71,8 +71,12 @@ const Rect kReveal {10, 250, 220, 50};
 const Rect kWrong  {10, 250, 105, 50};
 const Rect kRight  {125, 250, 105, 50};
 
+// --- Layout: Übersicht (Statistik) -------------------------------------------
+const Rect kStudyBtn  {12,  256, 104, 50};
+const Rect kStatsBack {124, 256, 104, 50};
+
 // --- Zustand ------------------------------------------------------------------
-enum Screen { DECKS, STUDY, DONE };
+enum Screen { DECKS, STATS, STUDY, DONE };
 Screen s_screen = DECKS;
 
 char (*s_decks)[kNameLen] = nullptr;   // Deck-Dateinamen
@@ -286,6 +290,12 @@ void openDeck(int idx) {
   s_progDirty = false;
   parseDeckFile();
   loadProgress();
+  s_screen = STATS;   // erst Übersicht zeigen, Lernen startet der Nutzer
+  appmgr::markDirty();
+}
+
+// Aus der Übersicht eine Übung starten.
+void startStudy() {
   buildQueue();
   s_seen = 0; s_correct = 0;
   s_revealed = false;
@@ -395,6 +405,68 @@ void deckListDraw(Adafruit_GFX& g) {
   gui::drawButton(g, kDown, "S",    false);
 }
 
+// Übersicht: Gesamt/Bearbeitet/Fällig + Verteilung über die Leitner-Fächer.
+void statsDraw(Adafruit_GFX& g) {
+  g.setTextColor(GxEPD_BLACK);
+  char nm[kNameLen];
+  strncpy(nm, s_deckName, sizeof(nm) - 1); nm[sizeof(nm) - 1] = '\0';
+  size_t ln = strlen(nm);
+  if (ln > 4) nm[ln - 4] = '\0';   // ".txt"/".tsv" abschneiden
+  gui::printAt(g, 8, TOP + 4, nm, 2);
+  g.drawLine(0, HEADER_H, W, HEADER_H, GxEPD_BLACK);
+
+  if (s_cardCount == 0) {
+    gui::printAt(g, 14, 90, "Deck ist leer", 2);
+    gui::drawButton(g, kStatsBack, "Zurueck", true);
+    return;
+  }
+
+  // Karten je Box zählen + Bearbeitet/Fällig ermitteln.
+  int boxCnt[flashcards::kBoxCount] = {0};
+  int seen = 0, due = 0;
+  uint32_t now = (uint32_t)timesync::now();
+  bool clockOk = now >= kClockOk;
+  for (int i = 0; i < s_cardCount; i++) {
+    uint8_t b = s_cards[i].box;
+    if (b >= flashcards::kBoxCount) b = flashcards::kBoxCount - 1;
+    boxCnt[b]++;
+    if (s_cards[i].lastSeen != 0) seen++;
+    if (!clockOk || flashcards::isDue(s_cards[i].box, s_cards[i].lastSeen, now)) due++;
+  }
+
+  char s[40];
+  int y = LIST_Y + 4;
+  snprintf(s, sizeof(s), "Karten: %d", s_cardCount);
+  gui::printAt(g, 12, y, s, 2); y += 24;
+  snprintf(s, sizeof(s), "Bearbeitet: %d", seen);
+  gui::printAt(g, 12, y, s, 2); y += 24;
+  if (clockOk) snprintf(s, sizeof(s), "Faellig: %d", due);
+  else         snprintf(s, sizeof(s), "Faellig: alle");
+  gui::printAt(g, 12, y, s, 2); y += 30;
+
+  // Balken je Leitner-Fach (Label = Wiedervorlage-Intervall in Tagen).
+  static const char* kBoxLabel[flashcards::kBoxCount] = {"neu", "1T", "3T", "7T", "16T"};
+  int maxCnt = 1;
+  for (int b = 0; b < flashcards::kBoxCount; b++)
+    if (boxCnt[b] > maxCnt) maxCnt = boxCnt[b];
+  const int barX = 56, barMaxW = W - 12 - barX, barH = 14, rowH = 22;
+  for (int b = 0; b < flashcards::kBoxCount; b++) {
+    int ry = y + b * rowH;
+    gui::printAt(g, 12, ry + 3, kBoxLabel[b], 1);
+    int bw = (boxCnt[b] * barMaxW) / maxCnt;
+    g.drawRect(barX, ry, barMaxW, barH, GxEPD_BLACK);
+    if (bw > 0) g.fillRect(barX, ry, bw, barH, GxEPD_BLACK);
+    snprintf(s, sizeof(s), "%d", boxCnt[b]);
+    int tx = barX + bw + 4;
+    if (tx > W - 24) { tx = barX + bw - 14; g.setTextColor(GxEPD_WHITE); }  // Zahl in den Balken
+    gui::printAt(g, tx, ry + 3, s, 1);
+    g.setTextColor(GxEPD_BLACK);
+  }
+
+  gui::drawButton(g, kStudyBtn,  "Lernen",  true);
+  gui::drawButton(g, kStatsBack, "Zurueck", false);
+}
+
 void studyDraw(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
   char hdr[40];
@@ -466,6 +538,24 @@ void deckListInput(const InputEvent& e) {
   }
 }
 
+void statsInput(const InputEvent& e) {
+  if (e.type == InputEvent::TAP) {
+    if (s_cardCount == 0) {
+      if (kStatsBack.hit(e.x, e.y)) { s_screen = DECKS; appmgr::markDirty(); }
+      return;
+    }
+    if (kStudyBtn.hit(e.x, e.y))  { startStudy(); return; }
+    if (kStatsBack.hit(e.x, e.y)) { s_screen = DECKS; appmgr::markDirty(); return; }
+    return;
+  }
+  switch (e.key) {
+    case '\r': case ' ': if (s_cardCount > 0) startStudy(); break;
+    case '\b':
+    case 'q': case 'Q': s_screen = DECKS; appmgr::markDirty(); break;
+    default: break;
+  }
+}
+
 void studyInput(const InputEvent& e) {
   if (e.type == InputEvent::TAP) {
     if (!s_revealed) { s_revealed = true; appmgr::markDirty(); return; }
@@ -481,14 +571,14 @@ void studyInput(const InputEvent& e) {
     case 'a': case 'A': if (s_revealed) rate(false); break;
     case 'd': case 'D': if (s_revealed) rate(true);  break;
     case '\b':
-    case 'q': case 'Q': saveProgress(); s_screen = DECKS; appmgr::markDirty(); break;
+    case 'q': case 'Q': saveProgress(); s_screen = STATS; appmgr::markDirty(); break;
     default: break;
   }
 }
 
 void doneInput(const InputEvent& e) {
   if (e.type == InputEvent::TAP || e.key == '\r' || e.key == 'q' || e.key == 'Q' || e.key == '\b') {
-    s_screen = DECKS;
+    s_screen = STATS;   // zurück zur Übersicht (aktualisierte Fächer)
     appmgr::markDirty();
   }
 }
@@ -509,6 +599,7 @@ class FlashcardsApp : public App {
 
   void handleInput(const InputEvent& e) override {
     switch (s_screen) {
+      case STATS: statsInput(e);    break;
       case STUDY: studyInput(e);    break;
       case DONE:  doneInput(e);     break;
       default:    deckListInput(e); break;
@@ -517,6 +608,7 @@ class FlashcardsApp : public App {
 
   void draw(Adafruit_GFX& g) override {
     switch (s_screen) {
+      case STATS: statsDraw(g);    break;
       case STUDY: studyDraw(g);    break;
       case DONE:  doneDraw(g);     break;
       default:    deckListDraw(g); break;

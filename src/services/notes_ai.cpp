@@ -38,16 +38,17 @@ constexpr uint32_t kConnectTimeoutMs = 15000;
 constexpr uint32_t kGenTimeoutMs     = 120000;  // LLM-Generierung kann dauern
 constexpr uint32_t kReadTimeoutMs    = 30000;
 
-// System-Prompt: treu umformulieren, nur den Text zurueck. Der Weg zu Ollama
-// ist reines UTF-8/HTTP (keine CP437-Wandlung wie beim Display) — daher echte
-// Umlaute. Inhaltlich faithful: korrigieren statt umdichten.
+// System-Prompt: so WENIG wie moeglich aendern. Der Weg zu Ollama ist reines
+// UTF-8/HTTP (keine CP437-Wandlung wie beim Display) — daher echte Umlaute.
+// Ziel: nur Rechtschreibung/Umlaute/Zeichensetzung korrigieren, NICHT umdichten.
 const char* kSystem =
-  "Du bist ein sorgfältiger Lektor. Formuliere die folgende handschriftliche "
-  "Notiz in klares, gut lesbares Deutsch um: korrigiere Rechtschreibung, "
-  "Grammatik und Zeichensetzung und gliedere den Text sinnvoll. Erfinde dabei "
-  "keine neuen Inhalte und lasse nichts Inhaltliches weg. Antworte "
-  "ausschließlich mit dem überarbeiteten Notiztext, ohne Einleitung, "
-  "Erklärungen oder Anführungszeichen.";
+  "Du bist ein behutsamer Korrekturleser. Korrigiere in der folgenden Notiz nur "
+  "Rechtschreibung (besonders fehlende Umlaute wie ä/ö/ü/ß), Tippfehler und "
+  "Zeichensetzung. Behalte Wortwahl, Satzbau, Reihenfolge und den Stil der "
+  "Notiz so weit wie möglich bei — formuliere NICHT um und gliedere nicht neu. "
+  "Nur wenn ein Satz sonst unverständlich bliebe, ergänze minimal das Nötigste. "
+  "Erfinde keine Inhalte und lasse nichts weg. Antworte ausschließlich mit dem "
+  "korrigierten Notiztext, ohne Einleitung, Erklärungen oder Anführungszeichen.";
 
 // Back-off fuer den Pre-Standby-Lauf (RTC-RAM ueberlebt Deep Sleep), analog zu
 // services/scrobble.cpp.
@@ -401,7 +402,7 @@ bool ollamaGenerate(const char* base, const char* model, const char* note,
   lit("\",\"system\":\"");        jsonAppendEscaped(body, bodyCap, &bl, kSystem);
   lit("\",\"prompt\":\"");
   bool full = jsonAppendEscaped(body, bodyCap, &bl, note);
-  lit("\",\"stream\":false,\"options\":{\"temperature\":0.2}}");
+  lit("\",\"stream\":false,\"options\":{\"temperature\":0.1}}");
   if (!full) Serial.println("[NOTESAI] Warnung: Notiz fuer Request gekuerzt");
 
   String url = String(base) + "/api/generate";

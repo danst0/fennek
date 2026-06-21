@@ -20,6 +20,11 @@ constexpr uint32_t kConnectTimeoutMs = 15000;
 constexpr uint32_t kHttpTimeoutMs    = 15000;
 constexpr uint32_t kReadTimeoutMs    = 8000;
 
+// Aktiver UI-Fortschritts-Callback des On-Device-Pfads (nur gesetzt, solange
+// deviceApply() flasht). Der captureless Update.onProgress-Trampolin speist hier
+// ein. nullptr im Konsolen-/Web-Pfad (dort nur Serial).
+ota::ProgressFn s_uiCb = nullptr;
+
 // --- WLAN auf/zu (WLAN-Regel: Audio stop + Mesh suspend; wie notes_ai/scrobble) -
 bool wifiUp(const char* ssid, const char* pass) {
   audio::stop();
@@ -191,6 +196,7 @@ void otaProgress(size_t done, size_t total) {
   int pct = total ? (int)(done * 100 / total) : 0;
   if (pct != last && (pct % 10 == 0 || pct == 100)) {
     Serial.printf("[OTA] %d%%\n", pct);
+    if (s_uiCb) s_uiCb("Installiere Firmware", pct);   // E-Ink: 10%-Schritte, Ghosting-arm
     last = pct;
   }
 }
@@ -308,5 +314,61 @@ void runConsole(bool doApply, bool force) {
 
 void consoleCheck()             { runConsole(false, false); }
 void consoleUpdate(bool force)  { runConsole(true,  force); }
+
+// --- On-Device-Pfad (Settings-App) -------------------------------------------
+CheckResult deviceCheck(ProgressFn progress) {
+  CheckResult r;
+  snprintf(r.current, sizeof(r.current), "%s", FENNEK_VERSION);
+  if (webfm::state() != webfm::State::OFF) {
+    snprintf(r.err, sizeof(r.err), "WLAN belegt (Dateien-App?)");
+    return r;
+  }
+  char ssid[33], pass[65], url[160];
+  settings::wifiSsid(ssid, sizeof(ssid));
+  settings::wifiPass(pass, sizeof(pass));
+  settings::otaUrl(url, sizeof(url));
+  if (!ssid[0]) { snprintf(r.err, sizeof(r.err), "Keine WLAN-SSID"); return r; }
+
+  if (progress) progress("Verbinde WLAN", -1);
+  if (!wifiUp(ssid, pass)) {
+    snprintf(r.err, sizeof(r.err), "WLAN fehlgeschlagen");
+    wifiDown();
+    return r;
+  }
+
+  if (progress) progress("Pruefe Version", -1);
+  r = check(url);          // füllt ok/err/current/latest/url/updateAvail
+  wifiDown();
+  return r;
+}
+
+bool deviceApply(const char* downloadUrl, ProgressFn progress, char* errOut, size_t errCap) {
+  auto fail = [&](const char* m) -> bool {
+    if (errOut) { strncpy(errOut, m, errCap - 1); errOut[errCap - 1] = '\0'; }
+    return false;
+  };
+  if (!downloadUrl || !downloadUrl[0]) return fail("keine Firmware-URL");
+  if (webfm::state() != webfm::State::OFF) return fail("WLAN belegt (Dateien-App?)");
+
+  char ssid[33], pass[65];
+  settings::wifiSsid(ssid, sizeof(ssid));
+  settings::wifiPass(pass, sizeof(pass));
+  if (!ssid[0]) return fail("Keine WLAN-SSID");
+
+  if (progress) progress("Verbinde WLAN", -1);
+  if (!wifiUp(ssid, pass)) { wifiDown(); return fail("WLAN fehlgeschlagen"); }
+
+  if (progress) progress("Installiere Firmware", 0);
+  s_uiCb = progress;                 // otaProgress() speist ab jetzt die UI
+  char err[80] = "";
+  bool ok = apply(downloadUrl, err, sizeof(err));
+  s_uiCb = nullptr;
+  if (!ok) { wifiDown(); return fail(err); }
+
+  if (progress) progress("Neustart", 100);
+  delay(800);
+  ESP.restart();                     // kehrt nicht zurück
+  return true;                       // unerreichbar
+}
 
 }  // namespace ota

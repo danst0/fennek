@@ -46,6 +46,14 @@ const Rect kUp      {84,  BAR_Y, 72, 44};
 const Rect kDown    {162, BAR_Y, 72, 44};
 const Rect kRetrySD {20, 150, W - 40, 48};
 
+// --- Layout: Audionotiz-Player -----------------------------------------------
+constexpr int PLAY_PROG_Y = HEADER_H + 60;   // Zeit + Fortschrittsbalken
+constexpr int PLAY_PROG_H = 50;
+const Rect kPlBack10 {4,   BAR_Y, 56, 44};   // -10 s
+const Rect kPlPlay   {64,  BAR_Y, 56, 44};   // Play/Pause
+const Rect kPlFwd10  {124, BAR_Y, 56, 44};   // +10 s
+const Rect kPlList   {184, BAR_Y, 52, 44};   // zurück zur Liste
+
 // --- Layout: Editor ----------------------------------------------------------
 // Klassischer 6x8-Font, ganzzahlig skaliert über settings::fontScale (1/2). Der
 // Textkörper nutzt die Schriftgröße; die Kopfzeile (Dateiname) bleibt klein.
@@ -77,8 +85,15 @@ void applyFontScale() {
 }
 
 // --- Zustand -----------------------------------------------------------------
-enum Screen { LIST, EDIT, CONFIRM_DEL, RECORD };
+enum Screen { LIST, EDIT, CONFIRM_DEL, RECORD, PLAYER };
 Screen s_screen = LIST;
+
+// Audionotiz-Player: Datei der gerade abgespielten Notiz + zuletzt gezeigte
+// Sekunde (für den Region-Fortschritt, damit nicht der ganze Schirm blinkt).
+char     s_playFile[kFileLen] = "";
+char     s_playTitle[kTitleLen] = "";
+uint32_t s_lastShownSec = 0xFFFFFFFF;
+uint32_t s_lastProg     = 0;
 
 struct NoteEntry { char file[kFileLen]; char title[kTitleLen]; bool audio; uint16_t durSec; };
 NoteEntry* s_notes = nullptr;
@@ -105,6 +120,9 @@ int  s_layLines     = 0;
 int  s_layFirst     = 0;
 int  s_layLastY     = 0;
 int  s_fastRefreshes = 0;   // Schnell-Refreshes seit letztem Sauber-Durchlauf
+// Editor-Scroll: Zeilen, um die das sichtbare Fenster vom unteren Rand (Tail)
+// nach OBEN verschoben ist. 0 = Tail (Tippzeile sichtbar, wie bisher).
+int  s_editScroll   = 0;
 
 void markDirty() { appmgr::markDirty(); }
 
@@ -289,6 +307,7 @@ void openEditor(const char* file) {
   s_lastSave = millis();
   s_needEdit = false;
   s_fastRefreshes = 0;
+  s_editScroll = 0;   // beim Öffnen am Tail (Tippzeile) starten
   s_screen = EDIT;
   markDirty();   // erster Voll-Redraw zeichnet Titel + Body, setzt Layout-Basis
 }
@@ -360,6 +379,15 @@ void playEntry(int idx) {
   audio::queueBegin(audio::Owner::Music);
   audio::queueAdd(path);
   audio::queueCommit(0);
+  // Sofort in den Player wechseln + Vollrefresh anstoßen — die Wiedergabe selbst
+  // startet asynchron im Audio-Task, aber die UI reagiert ohne Wartezeit.
+  strncpy(s_playFile, s_notes[idx].file, sizeof(s_playFile) - 1);
+  s_playFile[sizeof(s_playFile) - 1] = '\0';
+  strncpy(s_playTitle, s_notes[idx].title, sizeof(s_playTitle) - 1);
+  s_playTitle[sizeof(s_playTitle) - 1] = '\0';
+  s_lastShownSec = 0xFFFFFFFF;
+  s_screen = PLAYER;
+  markDirty();
 }
 
 void moveSel(int delta) {
@@ -454,25 +482,33 @@ char s_ring[EDIT_ROWS_MAX][EDIT_COLS_MAX + 2];
 // in die nächste (statt mitten im Wort zu trennen). Überlange Wörter (> eine
 // Zeile) werden weiterhin hart umgebrochen. Notizen sind reines ASCII
 // (s. onEditKey), daher gilt Spalte == Byte.
-void computeLayout() {
-  int  total = 0;          // Index der aktuellen Zeile im Ring
-  int  col   = 0;          // bereits platzierte Spalten der aktuellen Zeile
-  bool fromNewline = true; // Zeilenanfang kommt von '\n'/Pufferstart (nicht von
-                           // weichem Umbruch) -> führende Leerzeichen bleiben
+// Bricht s_buf in Zeilen um und ruft fn(zeilenIndex, text) je fertiger Zeile.
+// Identische Umbruch-Logik wie zuvor, aber entkoppelt von der Speicherung —
+// so kann derselbe Code zuerst die Zeilen ZÄHLEN und dann nur das sichtbare
+// Fenster ABLEGEN (Voraussetzung fürs Hoch-Scrollen, der Ring fasst nur
+// s_editRows Zeilen). Gibt die Gesamtzahl der Zeilen zurück. Der Tipp-Cursor
+// "_" hängt nur am Tail (s_editScroll == 0) und ist in beiden Durchläufen
+// gleich -> konsistente Zeilenzahl.
+template <class Fn>
+int forEachLine(Fn&& fn) {
+  int  total = 0;
+  int  col   = 0;
+  bool fromNewline = true;
+  char line[EDIT_COLS_MAX + 2];
   char word[EDIT_COLS_MAX + 2];
   int  wlen = 0;
-  s_ring[0][0] = '\0';
+  line[0] = '\0';
 
   auto endLine = [&](bool soft) {
-    s_ring[total % s_editRows][col] = '\0';
-    total++; col = 0;
-    s_ring[total % s_editRows][0] = '\0';
+    line[col] = '\0';
+    fn(total, line);
+    total++; col = 0; line[0] = '\0';
     fromNewline = !soft;
   };
   auto placeWord = [&]() {
     if (wlen == 0) return;
     if (col > 0 && col + wlen > s_editCols) endLine(true);   // weicher Umbruch
-    for (int j = 0; j < wlen; j++) s_ring[total % s_editRows][col++] = word[j];
+    for (int j = 0; j < wlen; j++) line[col++] = word[j];
     wlen = 0;
   };
 
@@ -484,8 +520,7 @@ void computeLayout() {
       placeWord();
       // Trenn-Leerzeichen nur setzen, wenn Platz ist und es kein weicher
       // Zeilenanfang ist (sonst beginnt eine umgebrochene Zeile mit Space).
-      if (col < s_editCols && (col > 0 || fromNewline))
-        s_ring[total % s_editRows][col++] = ' ';
+      if (col < s_editCols && (col > 0 || fromNewline)) line[col++] = ' ';
       continue;
     }
     if (wlen >= s_editCols) placeWord();   // überlanges Wort: hart umbrechen
@@ -493,13 +528,34 @@ void computeLayout() {
   }
   placeWord();
 
-  // Cursor an die aktuelle Position hängen (auf neue Zeile, falls die volle).
+  // Cursor an die aktuelle Position hängen (auf neue Zeile, falls die volle) —
+  // nur am Tail. Beim Hoch-Scrollen lesen wir, kein Cursor.
   if (col >= s_editCols) endLine(true);
-  s_ring[total % s_editRows][col++] = '_';
-  s_ring[total % s_editRows][col]   = '\0';
+  if (s_editScroll == 0 && col <= EDIT_COLS_MAX) line[col++] = '_';
+  line[col] = '\0';
+  fn(total, line);
+  return total + 1;
+}
 
-  s_layLines = total + 1;
-  s_layFirst = s_layLines > s_editRows ? s_layLines - s_editRows : 0;
+void computeLayout() {
+  // 1) Zeilen zählen, um das sichtbare Fenster gegen den Scroll-Offset zu klemmen.
+  int totalLines = forEachLine([](int, const char*){});
+  int maxFirst = totalLines > s_editRows ? totalLines - s_editRows : 0;
+  if (s_editScroll < 0)        s_editScroll = 0;
+  if (s_editScroll > maxFirst) s_editScroll = maxFirst;   // nicht über den Anfang hinaus
+  int winFirst = maxFirst - s_editScroll;                 // 0..maxFirst
+
+  // 2) Nur die Fensterzeilen [winFirst, winFirst+s_editRows) in den Ring legen.
+  forEachLine([&](int L, const char* t) {
+    int slot = L - winFirst;
+    if (slot >= 0 && slot < s_editRows) {
+      strncpy(s_ring[slot], t, EDIT_COLS_MAX + 1);
+      s_ring[slot][EDIT_COLS_MAX + 1] = '\0';
+    }
+  });
+
+  s_layLines = totalLines;
+  s_layFirst = winFirst;
   s_layLastY = EDIT_Y + (s_layLines - 1 - s_layFirst) * s_editLineh;
 }
 
@@ -512,11 +568,16 @@ void drawEditor(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
   g.setTextSize(s_scale);
   int y = EDIT_Y;
-  for (int gi = s_layFirst; gi < s_layLines; gi++) {
+  for (int r = 0; r < s_editRows && s_layFirst + r < s_layLines; r++) {
     g.setCursor(EDIT_X, y);
-    gui::print(g, s_ring[gi % s_editRows]);
+    gui::print(g, s_ring[r]);
     y += s_editLineh;
   }
+  // Scroll-Hinweise: oben/unten ein kleines Dreieck, wenn es mehr Text gibt.
+  if (s_layFirst > 0)
+    gui::printAt(g, W - 12, EDIT_Y - 1, "\x1E", 1);                 // mehr oben
+  if (s_layFirst + s_editRows < s_layLines)
+    gui::printAt(g, W - 12, BAR_Y - 12, "\x1F", 1);                 // mehr unten
 
   gui::drawButton(g, kBack, i18n::tr(i18n::Str::BtnBackShort), false);
 }
@@ -527,7 +588,7 @@ void drawEditorLastLine(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
   g.setTextSize(s_scale);
   g.setCursor(EDIT_X, s_layLastY);
-  gui::print(g, s_ring[(s_layLines - 1) % s_editRows]);
+  gui::print(g, s_ring[s_layLines - 1 - s_layFirst]);
 }
 
 // Nach (gesammelten) Tastendrücken im Editor neu zeichnen. Schnellpfad: bleibt
@@ -577,6 +638,57 @@ void drawRecord(Adafruit_GFX& g) {
   gui::drawButton(g, kBack, "Stop", true);
 }
 
+// --- Zeichnen: Audionotiz-Player ---------------------------------------------
+// Ob die laufende Wiedergabe wirklich diese Notiz ist (Owner Music + Pfad-Match
+// wäre teuer; hier genügt Owner + aktiv, der Player gehört eh nur dieser App).
+bool playerActive(const audio::Status& st) {
+  return st.owner == audio::Owner::Music && st.pos >= 0;
+}
+
+void drawTimeAndBar(Adafruit_GFX& g, const audio::Status& st) {
+  char t1[12], t2[12];
+  snprintf(t1, sizeof(t1), "%lu:%02lu", (unsigned long)(st.posSec / 60), (unsigned long)(st.posSec % 60));
+  snprintf(t2, sizeof(t2), "%lu:%02lu", (unsigned long)(st.durSec / 60), (unsigned long)(st.durSec % 60));
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(2);
+  g.setCursor(6, PLAY_PROG_Y + 8); g.print(t1);
+  if (st.durSec > 0) {
+    int16_t bx, by; uint16_t bw, bh;
+    g.getTextBounds(t2, 0, 0, &bx, &by, &bw, &bh);
+    g.setCursor(W - 6 - (int)bw, PLAY_PROG_Y + 8); g.print(t2);
+  }
+  int barX = 6, barY = PLAY_PROG_Y + 34, barW = W - 12, barH = 12;
+  g.drawRect(barX, barY, barW, barH, GxEPD_BLACK);
+  if (st.durSec > 0 && st.posSec <= st.durSec) {
+    int fw = (int)((uint64_t)(barW - 2) * st.posSec / st.durSec);
+    if (fw > 0) g.fillRect(barX + 1, barY + 1, fw, barH - 2, GxEPD_BLACK);
+  }
+}
+
+void drawPlayer(Adafruit_GFX& g) {
+  audio::Status st = audio::status();
+  gui::printAt(g, 6, HEADER_Y, i18n::tr(i18n::Str::AppNotes), 2);
+  g.drawFastHLine(0, HEADER_H, W, GxEPD_BLACK);
+
+  gui::printAt(g, 6, HEADER_H + 12, s_playTitle[0] ? s_playTitle : "Sprachnotiz", 2);
+  if (!playerActive(st))
+    gui::printAt(g, 6, HEADER_H + 38, "(gestoppt)", 1);
+
+  drawTimeAndBar(g, st);
+
+  bool playing = playerActive(st) && st.playing && !st.paused;
+  gui::drawButton(g, kPlBack10, "<10", false);
+  gui::drawButton(g, kPlPlay, playing ? "||" : ">", true);
+  gui::drawButton(g, kPlFwd10, "10>", false);
+  gui::drawButton(g, kPlList, i18n::tr(i18n::Str::BtnBackShort), false);
+}
+
+// Nur den Zeit-/Balken-Streifen erneuern (kein Vollbild-Blitzen pro Sekunde).
+void drawProgStrip(Adafruit_GFX& g) {
+  g.fillRect(0, PLAY_PROG_Y, W, PLAY_PROG_H, GxEPD_WHITE);
+  drawTimeAndBar(g, audio::status());
+}
+
 // --- Interaktion -------------------------------------------------------------
 void onListTouch(int x, int y) {
   if (kBack.hit(x, y)) { appmgr::goHome(); return; }
@@ -610,10 +722,66 @@ void onListKey(char k) {
   }
 }
 
+// Wiedergabe fortsetzen oder (falls schon durchgelaufen/gestoppt) neu starten.
+void togglePlay() {
+  audio::Status st = audio::status();
+  if (playerActive(st)) {
+    audio::togglePause();
+  } else if (s_playFile[0]) {
+    char path[48];
+    notePath(s_playFile, path, sizeof(path));
+    audio::queueBegin(audio::Owner::Music);
+    audio::queueAdd(path);
+    audio::queueCommit(0);
+  }
+  markDirty();
+}
+
+void onPlayerTouch(int x, int y) {
+  if      (kPlPlay.hit(x, y))   { togglePlay(); return; }
+  else if (kPlBack10.hit(x, y)) audio::seekRel(-10);
+  else if (kPlFwd10.hit(x, y))  audio::seekRel(+10);
+  else if (kPlList.hit(x, y))   { s_screen = LIST; markDirty(); return; }
+  else return;
+  s_lastShownSec = 0xFFFFFFFF;   // Strip beim nächsten tick() neu zeichnen
+  markDirty();
+}
+
+void onPlayerKey(char k) {
+  switch (k) {
+    case '\r': case 'p': case 'P': togglePlay(); break;
+    case 'a': case 'A': audio::seekRel(-10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
+    case 'd': case 'D': audio::seekRel(+10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
+    case '\b':
+    case 'q': case 'Q': s_screen = LIST; markDirty(); break;
+    default: break;
+  }
+}
+
+// Editor-Touch: Zurück-Knopf oder Tipp-Zonen zum Scrollen (obere Bildhälfte =
+// hoch/älterer Text, untere = runter/Tail) — analog zur Lesen-App. Geblättert
+// wird seitenweise mit einer Zeile Überlappung.
+void scrollEditor(int lines) {
+  int before = s_editScroll;
+  s_editScroll += lines;          // computeLayout() klemmt gegen den Textanfang
+  if (s_editScroll < 0) s_editScroll = 0;
+  if (s_editScroll != before) markDirty();
+}
+
+void onEditTouch(int x, int y) {
+  if (kBack.hit(x, y)) { backToList(); return; }
+  if (y < EDIT_Y || y >= BAR_Y) return;          // außerhalb des Textkörpers
+  int step = s_editRows > 1 ? s_editRows - 1 : 1; // eine Zeile Überlappung
+  int mid  = (EDIT_Y + BAR_Y) / 2;
+  if (y < mid) scrollEditor(+step);              // obere Hälfte: nach oben
+  else         scrollEditor(-step);              // untere Hälfte: zum Tail
+}
+
 // Editor-Tasten ändern nur den Puffer und markieren s_needEdit; den (gesammelten)
 // Refresh erledigt flushEditorRefresh() in tick() — so kostet ein Tipp-Burst nur
 // EINEN Bildschirm-Refresh statt einen pro Zeichen.
 void onEditKey(char k) {
+  s_editScroll = 0;   // Tippen springt zurück an den Tail (Cursor sichtbar)
   if (k == '\b') {
     if (s_len == 0) { backToList(); return; }
     s_len--; s_buf[s_len] = '\0';
@@ -656,10 +824,11 @@ class NotesApp : public App {
     if (e.type == InputEvent::TAP) {
       switch (s_screen) {
         case LIST: onListTouch(e.x, e.y); break;
-        case EDIT: if (kBack.hit(e.x, e.y)) backToList(); break;
+        case EDIT: onEditTouch(e.x, e.y); break;
         case CONFIRM_DEL:
           if (kBack.hit(e.x, e.y)) { s_screen = LIST; markDirty(); }
           break;
+        case PLAYER: onPlayerTouch(e.x, e.y); break;
         // Erst nach 800 ms stoppen — sonst beendet der noch gehaltene Start-Tap
         // (CST328-Dauer-Taps bei gehaltenem Finger) die Aufnahme sofort wieder.
         case RECORD: if (millis() - s_recStartMs > 800) stopRecord(); break;
@@ -668,6 +837,7 @@ class NotesApp : public App {
       switch (s_screen) {
         case LIST: onListKey(e.key); break;
         case EDIT: onEditKey(e.key); break;
+        case PLAYER: onPlayerKey(e.key); break;
         case CONFIRM_DEL:
           if (e.key == '\r') deleteSel();
           else if (e.key == '\b' || e.key == 'q' || e.key == 'Q') { s_screen = LIST; markDirty(); }
@@ -690,6 +860,17 @@ class NotesApp : public App {
       power::noteActivity();   // Auto-Standby nicht ins Aufnehmen grätschen lassen
       if (millis() - s_recStartMs >= 5UL * 60UL * 1000UL) stopRecord();
     }
+    // Player: Zeit/Balken sekündlich als Region erneuern (kein Vollbild-Blitzen),
+    // nur wenn kein Vollrefresh ansteht und sich die Sekunde geändert hat.
+    if (s_screen == PLAYER && !appmgr::isDirty()) {
+      audio::Status st = audio::status();
+      if (playerActive(st) && st.playing && !st.paused &&
+          st.posSec != s_lastShownSec && millis() - s_lastProg >= 1000) {
+        display::renderRegion(drawProgStrip, PLAY_PROG_Y, PLAY_PROG_H);
+        s_lastShownSec = st.posSec;
+        s_lastProg = millis();
+      }
+    }
   }
 
   void draw(Adafruit_GFX& g) override {
@@ -699,6 +880,7 @@ class NotesApp : public App {
       case EDIT:        drawEditor(g); break;
       case CONFIRM_DEL: drawConfirmDel(g); break;
       case RECORD:      drawRecord(g); break;
+      case PLAYER:      drawPlayer(g); break;
     }
   }
 };

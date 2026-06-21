@@ -60,7 +60,18 @@ constexpr int ANSW_H = 108;
 enum Screen { MENU, QUIZ };
 Screen  s_screen = MENU;
 int     s_sel = 4;            // Menü-Auswahl (Default: Gemischt)
-uint8_t s_level = 1;          // 0..2
+uint8_t s_level = 1;          // 0..2 (angezeigte/aktive Stufe des Modus)
+
+// Adaptive Schwierigkeit: ein kontinuierlicher Skill-Zähler (0..3*kBand-1)
+// bewegt sich pro Antwort und bestimmt die Stufe (= s_skill / kBand). Richtige
+// Antworten heben langsam (~7 in Folge je Stufe), Fehler senken schneller
+// (~3 in Folge). Bei einem Stufenwechsel springt der Zähler in die Bandmitte
+// der neuen Stufe — das gibt Hysterese und verhindert Hin-und-Her an der Grenze.
+constexpr int kBand    = 100;   // Skill-Punkte pro Stufe
+constexpr int kStepUp  = 7;     // pro richtiger Antwort
+constexpr int kStepDn  = 18;    // pro falscher Antwort (Fehler wiegen schwerer)
+int  s_skill = 150;             // Start: Bandmitte Stufe 1
+bool s_levelChanged = false;    // kurzes "Stufe: …"-Feedback nach Wechsel
 
 uint16_t s_mask = 0;          // aktive Operationsmaske im Quiz
 Problem s_problem{};
@@ -70,6 +81,20 @@ bool    s_answered = false;
 bool    s_lastCorrect = false;
 
 int s_total = 0, s_correct = 0, s_streak = 0;
+
+// Stufe aus dem Skill-Zähler ableiten (auf 0..2 geklemmt).
+int levelFromSkill(int skill) {
+  int lv = skill / kBand;
+  return lv < 0 ? 0 : (lv > 2 ? 2 : lv);
+}
+
+// Persistierte adaptive Stufe des aktuell gewählten Modus laden; Zähler in die
+// Bandmitte setzen (so muss man erst eine halbe Stufe „erarbeiten“, bevor sie
+// kippt).
+void loadLevelForMode() {
+  s_level = settings::mathLevel((uint8_t)s_sel);
+  s_skill = s_level * kBand + kBand / 2;
+}
 
 // =============================================================================
 // Menü
@@ -96,33 +121,44 @@ void menuDraw(Adafruit_GFX& g) {
       g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 5, GxEPD_BLACK);
     gui::printAt(g, r.x + 12, r.y + 7, kModes[i].label, 2);
   }
-  gui::printAt(g, 10, 309, "W/S Modus  A/D Stufe  Enter Start", 1);
+  gui::printAt(g, 10, 309, "W/S Modus  A/D Stufe (passt sich an)  Enter", 1);
 }
 
 void startQuiz() {
   s_mask = kModes[s_sel].mask;
+  loadLevelForMode();          // adaptive Stufe des Modus übernehmen
   s_total = s_correct = s_streak = 0;
   s_input[0] = '\0';
   s_inputLen = 0;
   s_answered = false;
+  s_levelChanged = false;
   s_problem = generate(pickOp(s_mask, rnd), s_level, rnd);
   s_screen = QUIZ;
   Serial.printf("[MATH] Start: %s, Stufe %s\n", kModes[s_sel].label, kLevels[s_level]);
   appmgr::markDirty();
 }
 
+// Manuelle Stufen-Übersteuerung (A/D bzw. Tap): überschreibt die adaptive Stufe
+// des Modus und merkt sie. Der Skill-Zähler startet dann in der Bandmitte.
+void setLevelManual(uint8_t level) {
+  s_level = level > 2 ? 2 : level;
+  s_skill = s_level * kBand + kBand / 2;
+  settings::setMathLevel((uint8_t)s_sel, s_level);
+  appmgr::markDirty();
+}
+
 void menuInput(const InputEvent& e) {
   if (e.type == InputEvent::TAP) {
-    if (kLevelBtn.hit(e.x, e.y)) { s_level = (s_level + 1) % 3; appmgr::markDirty(); return; }
+    if (kLevelBtn.hit(e.x, e.y)) { setLevelManual((s_level + 1) % 3); return; }
     for (int i = 0; i < kNumModes; i++)
       if (modeBtn(i).hit(e.x, e.y)) { s_sel = i; startQuiz(); return; }
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': s_sel = (s_sel + kNumModes - 1) % kNumModes; appmgr::markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % kNumModes;            appmgr::markDirty(); break;
-    case 'a': case 'A': s_level = (s_level + 2) % 3;                appmgr::markDirty(); break;
-    case 'd': case 'D': s_level = (s_level + 1) % 3;                appmgr::markDirty(); break;
+    case 'w': case 'W': s_sel = (s_sel + kNumModes - 1) % kNumModes; loadLevelForMode(); appmgr::markDirty(); break;
+    case 's': case 'S': s_sel = (s_sel + 1) % kNumModes;            loadLevelForMode(); appmgr::markDirty(); break;
+    case 'a': case 'A': setLevelManual((s_level + 2) % 3);          break;
+    case 'd': case 'D': setLevelManual((s_level + 1) % 3);          break;
     case '\r':          startQuiz(); break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;
@@ -197,10 +233,14 @@ void quizMid(Adafruit_GFX& g) {
   const char* ansShown = ans[0] ? ans : " ";
   uint8_t asize = fitSize(ansShown, 3);
 
-  char fb[40];
+  char fb[56];
   if (s_answered) {
-    if (s_lastCorrect) snprintf(fb, sizeof(fb), "Richtig!");
-    else snprintf(fb, sizeof(fb), "Falsch: %ld", (long)s_problem.answer);
+    char base[24];
+    if (s_lastCorrect) snprintf(base, sizeof(base), "Richtig!");
+    else snprintf(base, sizeof(base), "Falsch: %ld", (long)s_problem.answer);
+    // Nach einem adaptiven Stufenwechsel kurz die neue Stufe anzeigen.
+    if (s_levelChanged) snprintf(fb, sizeof(fb), "%s  Stufe: %s", base, kLevels[s_level]);
+    else snprintf(fb, sizeof(fb), "%s", base);
   }
   uint8_t fsize = s_answered ? fitSize(fb, 2) : 0;
 
@@ -239,8 +279,26 @@ void nextProblem() {
   s_input[0] = '\0';
   s_inputLen = 0;
   s_answered = false;
+  s_levelChanged = false;
   s_problem = generate(pickOp(s_mask, rnd), s_level, rnd);
   appmgr::markDirty();
+}
+
+// Adaptive Stufe nach jeder Antwort nachführen: Zähler bewegen, ggf. Stufe
+// wechseln und merken. Bewusst „langsam“ — ein Stufenaufstieg braucht mehrere
+// richtige Antworten in Folge.
+void adaptDifficulty() {
+  s_skill += s_lastCorrect ? kStepUp : -kStepDn;
+  if (s_skill < 0) s_skill = 0;
+  if (s_skill > 3 * kBand - 1) s_skill = 3 * kBand - 1;
+  int nl = levelFromSkill(s_skill);
+  if (nl != s_level) {
+    s_level = (uint8_t)nl;
+    s_skill = nl * kBand + kBand / 2;     // Hysterese: Bandmitte der neuen Stufe
+    settings::setMathLevel((uint8_t)s_sel, s_level);
+    s_levelChanged = true;
+    Serial.printf("[MATH] Stufe angepasst: %s\n", kLevels[s_level]);
+  }
 }
 
 void submit() {
@@ -255,6 +313,7 @@ void submit() {
   } else {
     s_streak = 0;
   }
+  adaptDifficulty();
   s_answered = true;
   appmgr::markDirty();   // Feedback + Statistik (Voll-Refresh, 1x pro Aufgabe)
 }
@@ -308,7 +367,7 @@ class MathQuizApp : public App {
   const char* id() const override { return "Kopfrechnen"; }
   const char* name() const override { return i18n::tr(i18n::Str::AppMath); }
 
-  void onEnter() override { s_screen = MENU; }
+  void onEnter() override { s_screen = MENU; loadLevelForMode(); }
 
   void handleInput(const InputEvent& e) override {
     if (s_screen == QUIZ) quizInput(e);

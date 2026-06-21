@@ -592,6 +592,9 @@ uint16_t s_minesWins = 0, s_minesBest = 0;
 uint16_t s_chessWins = 0;
 uint16_t s_tttWins = 0, s_tttDraws = 0;
 uint16_t s_mathBest = 0;
+// Kopfrechnen: adaptive Stufe je Modus, 2 Bit pro Modus (bis 8 Modi gepackt).
+// Default = alle Modi auf Stufe 1 (Mittel) -> 0b01 je Feld = 0x5555.
+uint16_t s_mathLevels = 0x5555;
 
 void gamesEnsure() {
   if (s_gamesLoaded || !s_open) return;
@@ -603,6 +606,7 @@ void gamesEnsure() {
   s_tttWins   = s_prefs.getUShort("tttw", 0);
   s_tttDraws  = s_prefs.getUShort("tttd", 0);
   s_mathBest  = s_prefs.getUShort("mqbest", 0);
+  s_mathLevels = s_prefs.getUShort("mqlvl", 0x5555);
 }
 
 }  // namespace
@@ -671,6 +675,24 @@ void setMathBestStreak(uint16_t streak) {
   if (!s_open || streak <= s_mathBest) return;
   s_mathBest = streak;
   s_prefs.putUShort("mqbest", streak);
+}
+
+uint8_t mathLevel(uint8_t mode) {
+  gamesEnsure();
+  if (mode > 7) mode = 7;
+  uint8_t lv = (s_mathLevels >> (mode * 2)) & 0x3;
+  return lv > 2 ? 2 : lv;
+}
+
+void setMathLevel(uint8_t mode, uint8_t level) {
+  gamesEnsure();
+  if (!s_open || mode > 7) return;
+  if (level > 2) level = 2;
+  uint16_t v = (uint16_t)(s_mathLevels & ~(0x3u << (mode * 2)));
+  v |= (uint16_t)level << (mode * 2);
+  if (v == s_mathLevels) return;   // nur bei echtem Stufenwechsel schreiben
+  s_mathLevels = v;
+  s_prefs.putUShort("mqlvl", v);
 }
 
 uint32_t crc32(const char* s) {

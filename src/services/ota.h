@@ -46,4 +46,23 @@ void consoleCheck();
 // Versionsvergleich flashen (Re-Flash/Downgrade).
 void consoleUpdate(bool force);
 
+// --- On-Device-Pfad (Settings-App, blockierend mit UI-Fortschritt) -----------
+// UI-Fortschritts-Callback: phase = Kurztext ("Verbinde WLAN" …), pct = 0..100
+// oder <0 für „unbestimmt" (keine Prozentzahl). Wird synchron/blockierend aus
+// deviceCheck()/deviceApply() heraus aufgerufen — der Handler darf das E-Ink
+// aktualisieren (während des WLAN-Betriebs ruhen Audio + Mesh, der SPI-Bus ist
+// frei). Beide Funktionen sind blockierend und laufen nur aus loop()-Kontext
+// (Core 1), nie aus dem Audio-Task — wie der Konsolen-Pfad.
+typedef void (*ProgressFn)(const char* phase, int pct);
+
+// Bringt WLAN hoch, prüft das Manifest und schaltet WLAN wieder ab. Setzt
+// WLAN-Zugangsdaten (NVS) voraus und scheitert, wenn webfm bereits läuft.
+// progress (optional) bekommt die Phasen ("Verbinde WLAN"/"Pruefe Version").
+CheckResult deviceCheck(ProgressFn progress);
+
+// Bringt WLAN hoch und flasht die Firmware unter downloadUrl (Fortschritt via
+// progress, 0..100 %). Bei Erfolg Reboot (kehrt NICHT zurück); bei Fehler WLAN
+// runter, false und errOut trägt den Grund.
+bool deviceApply(const char* downloadUrl, ProgressFn progress, char* errOut, size_t errCap);
+
 }  // namespace ota

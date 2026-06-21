@@ -5,9 +5,11 @@
 #include "mesh_client.h"
 #include "config.h"
 #include "core/battery.h"
+#include "core/display.h"
 #include "core/gui.h"
 #include "core/settings.h"
 #include "core/i18n.h"
+#include "services/ota.h"
 #include "services/timesync.h"
 
 #include <Arduino.h>
@@ -40,7 +42,7 @@ enum RowId {
   ROW_LANG, ROW_STANDBY, ROW_FONT, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
   ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_AION, ROW_AIURL, ROW_AIMODEL,
-  ROW_OTAURL, ROW_OTAVER,
+  ROW_OTAURL, ROW_OTAVER, ROW_OTAGO,
   ROW_COUNT
 };
 
@@ -53,7 +55,7 @@ const RowId kTimeRows[]   = {ROW_TZ, ROW_TIME};
 const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
 const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
 const RowId kAiRows[]     = {ROW_AION, ROW_AIURL, ROW_AIMODEL};
-const RowId kOtaRows[]    = {ROW_OTAVER, ROW_OTAURL};
+const RowId kOtaRows[]    = {ROW_OTAVER, ROW_OTAGO, ROW_OTAURL};
 
 struct CatRows { const RowId* rows; int count; };
 const CatRows kCats[] = {
@@ -83,6 +85,16 @@ int  s_cat  = -1;          // -1 = Kategorie-Liste (Wurzel); sonst CAT_*
 int  s_sel  = 0;           // Index in der aktuellen Ebene (Kategorie bzw. Zeile)
 int  s_edit = -1;          // gerade editierte Zeile (RowId; -1 = keine)
 char s_editBuf[128] = "";  // groß genug für die Navidrome-URL (127)
+
+// --- OTA-Update (Aktions-Zeile in der Kategorie „Update") ----------------------
+// Zwei-Schritt-Bedienung wie das Web-UI: erst „Pruefen", bei Treffer „Installieren".
+bool s_otaReady = false;             // true = Update gefunden, zum Flashen bereit
+char s_otaStatus[40]  = "";          // Kurzstatus für die Zeile (Ergebnis/Fehler)
+char s_otaUrl[200]    = "";          // firmware.bin-URL aus dem letzten Check
+// Fortschrittsanzeige (captureless DrawFns lesen diese Statics):
+char s_otaPhase[40]      = "";       // aktueller Phasentext
+int  s_otaPct            = -1;       // 0..100, <0 = ohne Prozentzahl
+char s_otaLastPhase[40]  = "";       // letzte gezeichnete Phase (Voll- vs. Streifen-Refresh)
 
 // Per Tastatur editierbare Text-Zeilen (Enter startet, Enter speichert).
 bool rowEditable(int row) {
@@ -247,6 +259,7 @@ const char* rowName(int row) {
     case ROW_AIURL:    return "Server";
     case ROW_AIMODEL:  return "Modell";
     case ROW_OTAVER:   return "Version";
+    case ROW_OTAGO:    return "Aktualisieren";
     case ROW_OTAURL:   return "Quelle";
   }
   return "";
@@ -360,6 +373,11 @@ void rowValue(int row, char* v, size_t n) {
     case ROW_OTAVER:
       snprintf(v, n, "%s", FENNEK_VERSION);
       break;
+    case ROW_OTAGO:
+      // Ready: "Neu: <ver>" (Footer sagt „Enter installiert"); sonst Status/„Pruefen".
+      if (s_otaStatus[0]) snprintf(v, n, "%s", s_otaStatus);
+      else                snprintf(v, n, "Pruefen");
+      break;
     case ROW_OTAURL:
       if (s_edit == ROW_OTAURL) snprintf(v, n, "%s_", s_editBuf);
       else {
@@ -368,6 +386,92 @@ void rowValue(int row, char* v, size_t n) {
       }
       break;
   }
+}
+
+// --- OTA-Fortschrittsanzeige ----------------------------------------------------
+// Balken-Geometrie; der renderRegion-Streifen ist 8er-ausgerichtet (E-Ink).
+constexpr int kBarX = 14;
+constexpr int kBarY = 160;
+constexpr int kBarW = W - 28;
+constexpr int kBarH = 20;
+constexpr int kBarRegY = 152;        // Streifen deckt Balken + %-Zahl
+constexpr int kBarRegH = 56;
+
+void drawProgressBar(Adafruit_GFX& g) {
+  g.setTextColor(GxEPD_BLACK);
+  g.drawRect(kBarX, kBarY, kBarW, kBarH, GxEPD_BLACK);
+  int pct = s_otaPct < 0 ? 0 : (s_otaPct > 100 ? 100 : s_otaPct);
+  int fill = (kBarW - 4) * pct / 100;
+  if (fill > 0) g.fillRect(kBarX + 2, kBarY + 2, fill, kBarH - 4, GxEPD_BLACK);
+  char pc[8];
+  snprintf(pc, sizeof(pc), "%d%%", pct);
+  g.setTextSize(2);
+  uint16_t pw, ph;
+  gui::textBounds(g, pc, &pw, &ph);
+  g.setCursor(W / 2 - pw / 2, kBarY + kBarH + 8);
+  gui::print(g, pc);
+}
+
+// Captureless DrawFn fürs Vollbild-Fortschrittsframe (liest s_otaPhase/s_otaPct).
+void drawOtaFrame(Adafruit_GFX& g) {
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(2);
+  g.setCursor(10, 50);
+  gui::print(g, "Firmware-Update");
+  g.drawFastHLine(0, 74, W, GxEPD_BLACK);
+  g.setTextSize(1);
+  g.setCursor(12, 112);
+  gui::print(g, s_otaPhase);
+  if (s_otaPct >= 0) drawProgressBar(g);
+  g.setTextSize(1);
+  g.setCursor(12, 290);
+  gui::print(g, "Geraet NICHT ausschalten!");
+}
+
+// Fortschritts-Callback (an ota::deviceCheck/deviceApply übergeben). Bei
+// Phasenwechsel Vollbild, bei reiner %-Aktualisierung nur den Balkenstreifen —
+// das hält die häufigen Schreib-Updates flackerarm. Läuft blockierend im
+// loop()-Kontext (Audio/Mesh ruhen), darf also direkt aufs E-Ink zeichnen.
+void otaShow(const char* phase, int pct) {
+  s_otaPct = pct;
+  bool phaseChanged = strcmp(phase, s_otaLastPhase) != 0;
+  snprintf(s_otaPhase, sizeof(s_otaPhase), "%s", phase);
+  if (phaseChanged) {
+    snprintf(s_otaLastPhase, sizeof(s_otaLastPhase), "%s", phase);
+    display::render(drawOtaFrame, true);
+  } else {
+    display::renderRegion(drawProgressBar, kBarRegY, kBarRegH);
+  }
+}
+
+// „Aktualisieren"-Zeile: 1. Druck prüft, 2. Druck (wenn ready) flasht + rebootet.
+void runOtaAction() {
+  s_otaLastPhase[0] = '\0';          // erster Frame des Laufs immer Vollbild
+  s_otaPct = -1;
+
+  if (!s_otaReady) {
+    ota::CheckResult r = ota::deviceCheck(otaShow);
+    if (!r.ok) {
+      snprintf(s_otaStatus, sizeof(s_otaStatus), "%s", r.err);
+      s_otaReady = false;
+    } else if (r.updateAvail) {
+      snprintf(s_otaUrl, sizeof(s_otaUrl), "%s", r.url);
+      snprintf(s_otaStatus, sizeof(s_otaStatus), "Neu: %s", r.latest);
+      s_otaReady = true;
+    } else {
+      snprintf(s_otaStatus, sizeof(s_otaStatus), "Aktuell");
+      s_otaReady = false;
+    }
+    markDirty();                     // Progress-Frame durch Settings-Screen ersetzen
+    return;
+  }
+
+  // Bereit → flashen. Erfolg rebootet (kehrt nicht zurück), Fehler fällt durch.
+  char err[80] = "";
+  ota::deviceApply(s_otaUrl, otaShow, err, sizeof(err));
+  snprintf(s_otaStatus, sizeof(s_otaStatus), "%s", err[0] ? err : "Fehlgeschlagen");
+  s_otaReady = false;
+  markDirty();
 }
 
 // --- Treffer-Zonen (Touch) ------------------------------------------------------
@@ -438,7 +542,7 @@ void drawRow(Adafruit_GFX& g, int row, int y, bool selected) {
   if (selected) {
     g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
-    if (!rowEditable(row)) {             // Text-Zeilen werden per Enter editiert
+    if (!rowEditable(row) && row != ROW_OTAGO) {  // Text/Aktion: kein ◄/► (Enter)
       g.setTextSize(1);
       g.setCursor(vx - 15, y + 8);
       g.write((uint8_t)0x11);            // ◄
@@ -563,6 +667,7 @@ void onKey(char k) {
     case 'd': case 'D': changeRow(row, +1); break;
     case '\r':
       if (rowEditable(row)) startEdit(row);
+      else if (row == ROW_OTAGO) runOtaAction();
       else changeRow(row, +1);
       break;
     case '\b': case 'q': case 'Q':   // zurück zur Kategorie-Liste
@@ -600,6 +705,7 @@ void onTouch(int x, int y) {
   // Erster Tap wählt nur aus; Tap auf die ausgewählte Zeile ändert/öffnet.
   if (sidx != s_sel) { s_sel = sidx; markDirty(); return; }
   if (rowEditable(row)) { startEdit(row); return; }
+  if (row == ROW_OTAGO) { runOtaAction(); return; }
   changeRow(row, (x >= W / 2) ? +1 : -1);
 }
 
@@ -608,7 +714,10 @@ class SettingsApp : public App {
   const char* id()   const override { return "Einstellungen"; }
   const char* name() const override { return i18n::tr(i18n::Str::AppSettings); }
 
-  void onEnter() override { s_cat = -1; s_sel = 0; s_edit = -1; }
+  void onEnter() override {
+    s_cat = -1; s_sel = 0; s_edit = -1;
+    s_otaReady = false; s_otaStatus[0] = '\0';   // OTA-Zustand pro Sitzung frisch
+  }
 
   void onLeave() override {
     if (s_edit >= 0) finishEdit(true);
@@ -647,6 +756,7 @@ class SettingsApp : public App {
     g.setCursor(FOOT_X, 278);
     if (s_edit >= 0)                gui::print(g, i18n::tr(Str::HintEnterSave));
     else if (s_cat < 0)            gui::print(g, "Ordner oeffnen");
+    else if (curRow() == ROW_OTAGO) gui::print(g, s_otaReady ? "Enter installiert" : "Enter prueft");
     else if (curRow() == ROW_NAME) gui::print(g, i18n::tr(Str::HintNameEdit));
     else if (rowEditable(curRow())) gui::print(g, i18n::tr(Str::HintEdit));
     else                           gui::print(g, i18n::tr(Str::HintChange));
