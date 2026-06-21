@@ -52,10 +52,10 @@ RTC_DATA_ATTR uint32_t s_snoozeEpoch = 0;
 
 Preferences s_prefs;
 
-// byte0: bit0=enabled, bits1-3=signal (1..7, Bitmaske Ton/Blink/Vibra).
+// byte0: bit0=enabled, bits1-3=signal (1..7, Bitmaske Ton/Blink/Vibra), bit4=einmalig.
 uint32_t packAlarm(const alarmclock::Alarm& a) {
   uint8_t sig = (a.signal >= 1 && a.signal <= 7) ? a.signal : alarmclock::SIG_BOTH;
-  uint8_t b0  = (uint8_t)((a.enabled ? 1 : 0) | (sig << 1));
+  uint8_t b0  = (uint8_t)((a.enabled ? 1 : 0) | (sig << 1) | (a.once ? 0x10 : 0));
   return (uint32_t)b0 | ((uint32_t)a.hour << 8) |
          ((uint32_t)a.minute << 16) | ((uint32_t)a.dowMask << 24);
 }
@@ -64,6 +64,7 @@ alarmclock::Alarm unpackAlarm(uint32_t v) {
   a.enabled = (v & 0x01) != 0;
   uint8_t sig = (v >> 1) & 0x07;
   a.signal  = sig ? sig : alarmclock::SIG_BOTH;   // Altdaten (0) → beides
+  a.once    = (v & 0x10) != 0;
   a.hour    = (v >> 8) & 0xFF;
   a.minute  = (v >> 16) & 0xFF;
   a.dowMask = (v >> 24) & 0xFF;
@@ -92,7 +93,8 @@ void persist(int i) {
 int monIndex(const struct tm& lt) { return (lt.tm_wday + 6) % 7; }
 
 bool dowMatches(const alarmclock::Alarm& a, const struct tm& lt) {
-  return a.dowMask == 0 || (a.dowMask & (1 << monIndex(lt)));
+  // Einmalige Wecker feuern am nächsten hh:mm, unabhängig vom Wochentag.
+  return a.once || a.dowMask == 0 || (a.dowMask & (1 << monIndex(lt)));
 }
 
 // Tastatur-Backlight (GPIO42) schalten. Auf Boards ohne bestücktes Backlight
@@ -319,6 +321,7 @@ void poll() {
       char w[16];
       snprintf(w, sizeof(w), "Wecker %d", i);
       startRing(w, s_alarms[i].signal);
+      if (s_alarms[i].once) { s_alarms[i].enabled = false; persist(i); }  // einmalig: danach aus
       return;
     }
   }

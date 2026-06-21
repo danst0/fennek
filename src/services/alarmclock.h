@@ -37,6 +37,7 @@ struct Alarm {
   uint8_t minute;    // 0..59
   uint8_t dowMask;   // bit0=Mo .. bit6=So; 0 = täglich
   uint8_t signal;    // SIG_TONE/BLINK/BOTH (1..3); 0 wird als BOTH gelesen
+  bool    once;      // einmalig: feuert am nächsten hh:mm (Tage egal) und schaltet sich danach selbst aus
 };
 
 void begin();        // lädt Wecker aus NVS

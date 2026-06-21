@@ -56,7 +56,7 @@ void cmdHelp() {
   Serial.println("[CON]   tz <POSIX-TZ>     - Zeitzone setzen (Default Europe/Berlin)");
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
   Serial.println("[CON]   alarm             - Wecker auflisten");
-  Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: taeglich|mo,di,..)");
+  Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: einmal|taeglich|mo,di,..)");
   Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|vibra|beides|alle / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
@@ -411,7 +411,8 @@ void alarmPrintList() {
     alarmclock::Alarm a = alarmclock::get(i);
     if (!a.enabled) { Serial.printf("[CON]   [%d] --:--  (aus)\n", i); continue; }
     char days[40] = "";
-    if (a.dowMask == 0) strcpy(days, "taeglich");
+    if (a.once) strcpy(days, "einmalig");
+    else if (a.dowMask == 0) strcpy(days, "taeglich");
     else for (int d = 0; d < 7; d++)
       if (a.dowMask & (1 << d)) { strcat(days, dn[d]); strcat(days, " "); }
     char sig[24] = "";
@@ -478,14 +479,16 @@ void cmdAlarm(const char* arg) {
     return;
   }
   const char* daysArg = strchr(sp, ' ');
+  const char* daysStr = daysArg ? daysArg + 1 : "";
   alarmclock::Alarm a = alarmclock::get(i);            // Signal/Rest erhalten
   a.enabled = true;
   a.hour = (uint8_t)hh;
   a.minute = (uint8_t)mm;
-  a.dowMask = alarmParseDays(daysArg ? daysArg + 1 : "");
+  a.once = strstr(daysStr, "einmal") || strstr(daysStr, "once") || strstr(daysStr, "1x");
+  a.dowMask = a.once ? 0 : alarmParseDays(daysStr);
   alarmclock::set(i, a);
   Serial.printf("[CON] Wecker %d: %02d:%02d %s gesetzt\n", i, hh, mm,
-                a.dowMask ? "(Wochentage)" : "(taeglich)");
+                a.once ? "(einmalig)" : a.dowMask ? "(Wochentage)" : "(taeglich)");
 }
 
 void cmdMsgs() {

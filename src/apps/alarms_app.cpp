@@ -28,11 +28,13 @@ const Rect kSnooze  {12, 232, 100, 56};       // Klingel-Bildschirm
 const Rect kStop    {128, 232, 100, 56};
 
 // Wiederholungs-Presets; eigene (per Konsole gesetzte) Masken zeigen "eigen".
-struct DayPreset { const char* name; uint8_t mask; };
+// "Einmalig" feuert am nächsten hh:mm und schaltet sich danach selbst aus.
+struct DayPreset { const char* name; uint8_t mask; bool once; };
 const DayPreset kDays[] = {
-  {"Taeglich",   0x00},
-  {"Werktags",   0x1F},   // Mo-Fr
-  {"Wochenende", 0x60},   // Sa+So
+  {"Einmalig",   0x00, true},
+  {"Taeglich",   0x00, false},
+  {"Werktags",   0x1F, false},   // Mo-Fr
+  {"Wochenende", 0x60, false},   // Sa+So
 };
 constexpr int kNumDays = (int)(sizeof(kDays) / sizeof(kDays[0]));
 
@@ -50,12 +52,13 @@ bool s_wasRinging = false;       // Flankenerkennung fürs Auto-Aufpoppen
 
 void markDirty() { appmgr::markDirty(); }
 
-void daysLabel(uint8_t mask, char* out, size_t n) {
+void daysLabel(uint8_t mask, bool once, char* out, size_t n) {
   for (int i = 0; i < kNumDays; i++)
-    if (kDays[i].mask == mask) { snprintf(out, n, "%s", kDays[i].name); return; }
+    if (kDays[i].mask == mask && kDays[i].once == once) { snprintf(out, n, "%s", kDays[i].name); return; }
   // Eigene Maske (Konsole): Kürzel auflisten.
   static const char* dn[7] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
   out[0] = '\0';
+  if (once) strncat(out, "1x ", n - strlen(out) - 1);
   for (int d = 0; d < 7; d++)
     if (mask & (1 << d)) { strncat(out, dn[d], n - strlen(out) - 1);
                            strncat(out, " ", n - strlen(out) - 1); }
@@ -63,9 +66,11 @@ void daysLabel(uint8_t mask, char* out, size_t n) {
 
 void cycleDays(int dir) {
   int idx = 0;
-  for (int i = 0; i < kNumDays; i++) if (kDays[i].mask == s_buf.dowMask) idx = i;
+  for (int i = 0; i < kNumDays; i++)
+    if (kDays[i].mask == s_buf.dowMask && kDays[i].once == s_buf.once) idx = i;
   idx = (idx + dir + kNumDays) % kNumDays;
   s_buf.dowMask = kDays[idx].mask;
+  s_buf.once    = kDays[idx].once;
 }
 
 // Signal-Presets, durch die das „Signal"-Feld im Editor zykelt.
@@ -162,7 +167,7 @@ void drawListRow(Adafruit_GFX& g, int i, int y) {
   alarmclock::Alarm a = alarmclock::get(i);
   if (a.enabled) {
     char days[32];
-    daysLabel(a.dowMask, days, sizeof(days));
+    daysLabel(a.dowMask, a.once, days, sizeof(days));
     snprintf(line, sizeof(line), "%02u:%02u", (unsigned)a.hour, (unsigned)a.minute);
     g.setCursor(10, y + 6);
     gui::print(g, line);
@@ -188,7 +193,7 @@ void fieldValue(int f, char* v, size_t n) {
   switch (f) {
     case F_HOUR:    snprintf(v, n, "%02u", (unsigned)s_buf.hour); break;
     case F_MIN:     snprintf(v, n, "%02u", (unsigned)s_buf.minute); break;
-    case F_DAYS:    daysLabel(s_buf.dowMask, v, n); break;
+    case F_DAYS:    daysLabel(s_buf.dowMask, s_buf.once, v, n); break;
     case F_SIGNAL:  snprintf(v, n, "%s", signalLabel(s_buf.signal)); break;
     case F_ENABLED: snprintf(v, n, "%s", s_buf.enabled ? "An" : "Aus"); break;
   }
