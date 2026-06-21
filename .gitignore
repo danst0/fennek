@@ -27,3 +27,6 @@ docs/promo-channels.md
 
 # Lokal generierte Kartenkacheln + PNG-Cache + Upload-Skripte/Logs (gross, nicht ins Repo)
 fennek_tiles/
+# Falls maps_tiles.py/run.sh mal ins Repo-Root schreibt (Default-Out ./sdcard):
+/sdcard/
+/tile_cache/
