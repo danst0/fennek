@@ -14,15 +14,24 @@
 #       --zoom 13-16 --out ./sdcard
 # Dann den Inhalt von ./sdcard auf die SD kopieren (es entsteht ./sdcard/maps).
 #
+# Kachelquelle per --preset wählen (oder --url für eine eigene):
+#   --preset standard   OSM-Standardlayer (Default)
+#   --preset cyclosm    CyclOSM — Rad-/Wegeinfrastruktur betont
+#   --preset topo       OpenTopoMap — Wanderwege/Pfade/Höhenlinien
+# Detailstufen (z14-16) lohnen sich bei cyclosm/topo am meisten.
+#
 # Hinweise:
-#  * Standard-Tile-Server = OSM-Standardlayer. Bitte die OSM-Tile-Usage-Policy
-#    beachten (kein Massen-/Bulk-Download); für größere Gebiete einen eigenen
-#    Renderer/MBTiles-Server nutzen (--url anpassen). User-Agent wird gesetzt.
-#  * Schwellwert/Invert je nach Layer anpassen (--threshold, --invert).
+#  * Jede Quelle hat eine eigene Tile-Usage-Policy (kein Massen-/Bulk-Download);
+#    für größere Gebiete einen eigenen Renderer/MBTiles-Server nutzen
+#    (--url anpassen). User-Agent wird gesetzt.
+#  * Schwellwert/Invert je nach Layer anpassen (--threshold, --invert); der
+#    Preset-Default für --threshold ist je Layer abgestimmt.
+#  * Der PNG-Cache wird je Quelle getrennt abgelegt (<cache>/<preset>).
 #
 # Abhängigkeit: Pillow  (pip install pillow)
 # =============================================================================
 import argparse
+import hashlib
 import math
 import os
 import sys
@@ -35,8 +44,24 @@ except ImportError:
     sys.exit("Pillow fehlt — bitte 'pip install pillow' ausführen.")
 
 TILE_PX = 256
-DEFAULT_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 USER_AGENT = "fennek-maps-tiles/1.0 (https://github.com/danst0/fennek)"
+
+# Fertige Kachelquellen. Jede hat eine eigene Nutzungsrichtlinie (kein Bulk-
+# Download!) — für große Gebiete einen eigenen Renderer nutzen. Der Default-
+# Schwellwert ist je Layer abgestimmt (topo/cyclosm sind farbig/heller als der
+# Standardstil) und lässt sich mit --threshold übersteuern.
+PRESETS = {
+    # OSM-Standardlayer (Carto): kräftige Straßen, Wege eher schwach.
+    "standard": {"url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                 "threshold": 160},
+    # CyclOSM: hebt Rad-/Wegeinfrastruktur hervor.
+    "cyclosm": {"url": "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
+                "threshold": 190},
+    # OpenTopoMap: Wanderwege, Pfade, Höhenlinien (topografisch).
+    "topo": {"url": "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+             "threshold": 180},
+}
+DEFAULT_URL = PRESETS["standard"]["url"]
 
 
 def deg2tile(lat, lon, z):
@@ -98,17 +123,33 @@ def main():
                     help="Bounding-Box (zwei Eckpunkte, Reihenfolge egal)")
     ap.add_argument("--zoom", required=True, help="Zoom z oder Bereich z1-z2")
     ap.add_argument("--out", default="./sdcard", help="Zielwurzel (erzeugt <out>/maps)")
-    ap.add_argument("--url", default=DEFAULT_URL, help="Tile-URL-Template {z}/{x}/{y}")
+    ap.add_argument("--preset", choices=sorted(PRESETS), default="standard",
+                    help="Kachelquelle: standard | cyclosm (Radwege) | topo (Wanderwege)")
+    ap.add_argument("--url", default=None,
+                    help="Tile-URL-Template {z}/{x}/{y} (übersteuert --preset)")
     ap.add_argument("--cache", default="./tile_cache", help="PNG-Cache-Ordner ('' = aus)")
-    ap.add_argument("--threshold", type=int, default=160, help="Schwarz/Weiß-Schwelle 0..255")
+    ap.add_argument("--threshold", type=int, default=None,
+                    help="Schwarz/Weiß-Schwelle 0..255 (Default je nach --preset)")
     ap.add_argument("--invert", action="store_true", help="Schwarz/Weiß tauschen")
     ap.add_argument("--delay", type=float, default=0.2, help="Pause zwischen Downloads (s)")
     args = ap.parse_args()
 
+    # Preset auflösen; explizite --url/--threshold haben Vorrang.
+    preset = PRESETS[args.preset]
+    url_tmpl = args.url if args.url is not None else preset["url"]
+    threshold = args.threshold if args.threshold is not None else preset["threshold"]
+    print(f"Quelle: {args.preset} ({url_tmpl})  Schwelle={threshold}")
+
     lat1, lon1, lat2, lon2 = args.bbox
     lat_min, lat_max = min(lat1, lat2), max(lat1, lat2)
     lon_min, lon_max = min(lon1, lon2), max(lon1, lon2)
-    cache = args.cache or None
+    # PNG-Cache je Quelle trennen, sonst würde z/x/y.png einer Quelle für eine
+    # andere wiederverwendet (z. B. nach Wechsel standard -> topo).
+    cache = None
+    if args.cache:
+        key = (args.preset if args.url is None
+               else "custom-" + hashlib.md5(url_tmpl.encode()).hexdigest()[:8])
+        cache = os.path.join(args.cache, key)
     maps_root = os.path.join(args.out, "maps")
 
     total = made = skipped = 0
@@ -129,9 +170,9 @@ def main():
                     skipped += 1
                     continue
                 try:
-                    img = fetch_tile(args.url, z, x, y, cache)
+                    img = fetch_tile(url_tmpl, z, x, y, cache)
                     with open(out_path, "wb") as f:
-                        f.write(pack_1bit(img, args.threshold, args.invert))
+                        f.write(pack_1bit(img, threshold, args.invert))
                     made += 1
                     if cache is None or not os.path.exists(
                             os.path.join(cache or "", str(z), str(x), f"{y}.png")):
