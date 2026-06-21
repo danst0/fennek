@@ -6,6 +6,27 @@ are documented here. This file covers the five most recent minor versions.
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [2.5.x]
+
+### [2.5.0] — 2026-06-21
+
+#### Fixed
+- **Podcast downloads now resume and run ~7× faster.** Three issues fixed in the
+  podcast sync (`services/podcast`, `apps/podcast_app`):
+  - **Throughput** ~14 KB/s → ~100 KB/s: `WiFi.setSleep(false)` in `wifiUp()`.
+    The Arduino-ESP32 default modem sleep parked the Wi-Fi between DTIM beacons, so
+    data trickled in 16 KB bursts (~1 s apart). ~100 KB/s is now the practical
+    ceiling, bounded by the 4 MHz SD write speed (invariant 5).
+  - **Resume survives unclean resets**: the `.part` file is `flush()`ed every 4 MB.
+    Previously FatFs committed the file size only on `f.close()`, so a power loss,
+    crash, or firmware flash lost the whole partial download and the next sync
+    restarted at 0. The server (Freakshow/Podlove CDN) supports HTTP Range (206) —
+    the fault was device-side.
+  - **Less SPI contention during app sync**: the E-Ink progress refresh is throttled
+    from 1.5 s to 6 s (each partial refresh holds the shared HSPI bus ~650 ms,
+    blocking SD writes).
+- Added a 4 MB headless progress log line for console/pre-standby sync.
+
 ## [2.4.x]
 
 ### [2.4.7] — 2026-06-20

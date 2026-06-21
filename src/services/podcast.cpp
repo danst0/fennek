@@ -84,6 +84,9 @@ bool wifiUp(const char* ssid, const char* pass) {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
+  WiFi.setSleep(false);   // Modem-Sleep aus: sonst schläft das WiFi zwischen den
+                          // DTIM-Beacons und der Download bricht auf ~15 KB/s ein
+                          // (16-KB-Bursts mit ~1 s Pause). Aus = voller Durchsatz.
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
   return WiFi.status() == WL_CONNECTED;
@@ -246,6 +249,14 @@ bool downloadEpisode(const char* url, const char* dest, podcast::Progress prog, 
   int lastPct  = startPct - 1;
   if (prog && partSize > 0) prog(feedName, startPct);  // sofort aktuellen Stand zeigen
 
+  // Periodisches Flush: ohne f.flush() committet FatFs die Dateigröße erst beim
+  // f.close() ins Verzeichnis. Ein unsauberer Abbruch (Stromausfall, Crash,
+  // Firmware-Flash via RTS-Reset) verliert sonst die gesamte .part-Größe → der
+  // nächste Sync liest size()==0 und lädt das (oft >100 MB große) File neu. Alle
+  // 4 MB syncen macht den Fortschritt resume-fest; der Overhead (FAT-/Dir-Sektor)
+  // ist bei 4-MB-Abstand vernachlässigbar.
+  constexpr size_t kFlushEvery = 4u * 1024 * 1024;
+  size_t sinceFlush = 0;
   size_t written = 0; uint32_t last = millis(); bool ok = true;
   for (;;) {
     int av = st->available();
@@ -255,9 +266,16 @@ bool downloadEpisode(const char* url, const char* dest, podcast::Progress prog, 
       if (r > 0) {
         spiLock();
         size_t w = f.write(buf, r);                // SD: unter Lock
+        sinceFlush += w;
+        bool flushed = false;
+        if (sinceFlush >= kFlushEvery) { f.flush(); sinceFlush = 0; flushed = true; }  // Größe committen
         spiUnlock();
         if (w != (size_t)r) { ok = false; break; }
         written += r; last = millis();
+        if (flushed)  // headless-Feedback + Durchsatzmessung (alle 4 MB)
+          Serial.printf("[PODCAST] %s: %u/%u MB\n", feedName,
+                        (unsigned)((partSize + written) >> 20),
+                        (unsigned)(totalSize >> 20));
         power::noteActivity();                     // Standby-Timer zurücksetzen
         if (prog) {
           if (totalSize > 0) {

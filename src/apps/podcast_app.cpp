@@ -149,8 +149,12 @@ void onSyncProgress(const char* /*phase*/, int pct) {
   } else {
     s_syncMark++;
   }
+  // Jeder Partial-Refresh hält den HSPI-Bus ~650 ms und blockiert solange die
+  // SD-Writes des Downloads (E-Ink ⊥ SD am selben Bus). Selten aktualisieren,
+  // damit der Refresh nicht den halben Durchsatz frisst — der Nutzer braucht nur
+  // ein Lebenszeichen, keinen flüssigen Balken.
   uint32_t now = millis();
-  if (now - s_lastProgMs < 1500) return;  // max. alle 1,5 s
+  if (now - s_lastProgMs < 6000) return;  // max. alle 6 s
   s_lastProgMs = now;
   display::renderRegion(drawSyncProgressStrip, SYNC_STRIP_Y, SYNC_STRIP_H);
 }
