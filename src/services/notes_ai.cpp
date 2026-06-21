@@ -35,7 +35,12 @@ constexpr int kBodyCap   = 49152;  // JSON-Request (Notiz escaped + Wrapper)
 constexpr int kRespCap   = 49152;  // JSON-Response von Ollama
 
 constexpr uint32_t kConnectTimeoutMs = 15000;
-constexpr uint32_t kGenTimeoutMs     = 120000;  // LLM-Generierung kann dauern
+// HTTPClient::setTimeout() nimmt ein uint16_t (max. 65535 ms) — 120000 lief
+// still auf 54464 ms über. Das ist die Wartezeit auf die Antwort-Header, also
+// das Zeitfenster, in dem Ollama (stream:false) generieren darf, bevor das
+// erste Byte kommt. Wir schöpfen den uint16_t-Bereich knapp aus; der Body-Read
+// danach ist ohnehin separat über kReadTimeoutMs abgesichert.
+constexpr uint16_t kGenTimeoutMs     = 65000;   // LLM-Generierung kann dauern
 constexpr uint32_t kReadTimeoutMs    = 30000;
 
 // System-Prompt: so WENIG wie moeglich aendern. Der Weg zu Ollama ist reines
