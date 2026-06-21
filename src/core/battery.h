@@ -24,7 +24,8 @@ bool begin();
 
 uint16_t milliVolts();   // 0 bei I2C-Fehler
 uint8_t  percent();      // State of Charge 0..100
-bool     charging();     // mittlerer Strom > 0 (lädt)
+bool     charging();     // mittlerer Strom > 0 (lädt aktiv)
+bool     external();     // am Strom (lädt ODER voll am Kabel); DSG-Bit aus BatteryStatus
 
 // Read-only-Diagnose: dumpt Kapazitäts-/Statusregister des Gauge nach Serial
 // (Konsole `gauge`). Klärt, warum SoC nicht zur Spannung passt. Schreibt nichts.

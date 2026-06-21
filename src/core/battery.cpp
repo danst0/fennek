@@ -56,6 +56,18 @@ bool charging() {
   return mA > 0;
 }
 
+bool external() {
+  // BatteryStatus-Bit 0 (DSG) = 1, solange der Akku entlädt. Hängt das Gerät am
+  // Strom — egal ob es noch lädt oder voll am Kabel ruht (Strom ~0) — ist DSG=0.
+  // Damit verlässlicher als charging() (Mittelstrom>0), das bei vollem Akku auf
+  // false fällt. Bei I2C-Fehler liefert read16() 0 → external() meldet "am Strom";
+  // bewusst der sichere Default (kein Auto-Standby aus Fehlmessung mitten im
+  // Web-Transfer). Aufrufer prüfen ohnehin s_ready indirekt über percent() o.ä.
+  if (!s_ready) return false;
+  uint16_t bst = read16(REG_BATSTATUS);
+  return (bst & 0x0001) == 0;
+}
+
 // Read-only-Diagnose des BQ27220 (Konsole `gauge`). Liest die Kapazitäts- und
 // Status-Register, um zu prüfen, warum StateOfCharge nicht zur Spannung passt.
 // SoC = RemainingCapacity / FullChargeCapacity — ist FCC/DesignCapacity zu hoch

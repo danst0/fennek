@@ -295,11 +295,12 @@ void poll() {
   // Web-Dateiverwaltung am Netzteil nie automatisch einschlafen lassen: lange
   // WLAN-Transfers sollen nicht vom Idle-Timer gekappt werden (HTTP-Requests
   // zählen nicht als Aktivität). Nur am Strom — auf Akku bleibt der Standby aktiv,
-  // damit ein vergessener Server den Akku nicht leersaugt. Hinweis: bei vollem
-  // Akku kann charging() auf 0 fallen (Strom ~0) und der Standby greift doch.
+  // damit ein vergessener Server den Akku nicht leersaugt. external() (DSG-Bit)
+  // statt charging() (Mittelstrom>0), damit auch ein voller Akku am Kabel zählt —
+  // sonst greift der Standby trotz Netzteil, sobald der Lader auf ~0 abregelt.
   webfm::State fm = webfm::state();
   if ((fm == webfm::State::RUNNING || fm == webfm::State::CONNECTING) &&
-      battery::charging()) {
+      battery::external()) {
     s_lastActivity = now;
     return;
   }
