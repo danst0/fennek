@@ -135,10 +135,11 @@ class FilesApp : public App {
       appmgr::markDirty();
       return;
     }
-    // Request-Zähler gedrosselt nachziehen (max. alle 5 s ein Refresh —
-    // Invariante 7: E-Ink nur bei echter Änderung, koalesziert).
+    // Request-Zähler gedrosselt nachziehen (max. alle 50 s ein Refresh —
+    // Invariante 7: E-Ink nur bei echter Änderung, koalesziert). Der Zähler ist
+    // reine Info; ein häufigerer Voll-Redraw kostet nur sichtbares E-Ink-Flackern.
     if (st == webfm::State::RUNNING && webfm::requestCount() != s_shownReqs &&
-        millis() - s_lastReqDraw > 5000) {
+        millis() - s_lastReqDraw > 50000) {
       appmgr::markDirty();
     }
   }
