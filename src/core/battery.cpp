@@ -32,6 +32,38 @@ uint16_t read16(uint8_t reg) {
   return v;
 }
 
+// LiPo-Klemmenspannung (mV) -> Ladestand (%). Wir vertrauen dem Coulomb-Counter
+// (REG_SOC) auf diesem Gerät NICHT: die BQ27220 ist `sealed` und resynct ihren
+// FullChargeCapacity nur an einer sauberen, ununterbrochenen Vollladung. Auf dem
+// Dev-Gerät bricht das Laden staendig ab (Reboots beim Flashen), FCC driftet tief
+// (gemessen 1272 statt 1400 mAh) -> SoC haengt sichtbar fest (Symptom „immer 72%"
+// bei 4136 mV, obwohl die Spannung ~90% bedeutet). Die Spannung folgt dagegen dem
+// echten Ladestand. Unter der leichten, stetigen Last des E-Ink-Handhelds (WLAN
+// aus, ~100 mA) sackt die Klemmenspannung kaum unter die Ruhespannung; beim Laden
+// liest sie etwas optimistisch — fuer eine grobe %-Anzeige akzeptabel und in jedem
+// Fall besser als ein eingefrorener Zaehler. Stuetzstellen = typische Einzelzell-
+// Entladekurve, linear interpoliert.
+uint8_t percentFromMilliVolts(uint16_t mv) {
+  static const struct { uint16_t mv; uint8_t pct; } kCurve[] = {
+    {4200, 100}, {4150, 95}, {4110, 90}, {4080, 85}, {4020, 80}, {3980, 75},
+    {3950, 70},  {3910, 65}, {3870, 60}, {3850, 55}, {3840, 50}, {3820, 45},
+    {3800, 40},  {3790, 35}, {3770, 30}, {3750, 25}, {3730, 20}, {3710, 15},
+    {3690, 10},  {3610, 5},  {3500, 0},
+  };
+  if (mv >= kCurve[0].mv) return 100;
+  const uint8_t n = (uint8_t)(sizeof(kCurve) / sizeof(kCurve[0]));
+  if (mv <= kCurve[n - 1].mv) return 0;
+  for (uint8_t i = 1; i < n; ++i) {
+    if (mv >= kCurve[i].mv) {
+      // Zwischen kCurve[i] (niedriger) und kCurve[i-1] (hoeher) interpolieren.
+      uint16_t loMv = kCurve[i].mv,     hiMv = kCurve[i - 1].mv;
+      uint8_t  loPc = kCurve[i].pct,    hiPc = kCurve[i - 1].pct;
+      return (uint8_t)(loPc + (uint32_t)(mv - loMv) * (hiPc - loPc) / (hiMv - loMv));
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 namespace battery {
@@ -46,8 +78,9 @@ uint16_t milliVolts() { return s_ready ? read16(REG_VOLTAGE) : 0; }
 
 uint8_t percent() {
   if (!s_ready) return 0;
-  uint16_t soc = read16(REG_SOC);
-  return (uint8_t)(soc > 100 ? 100 : soc);
+  // Spannungsbasiert statt REG_SOC (driftender Coulomb-Counter, s.
+  // percentFromMilliVolts). milliVolts()==0 = I2C-Fehler -> 0.
+  return percentFromMilliVolts(read16(REG_VOLTAGE));
 }
 
 bool charging() {
@@ -98,7 +131,9 @@ void dumpGauge() {
   Serial.printf("[CON]   RemainingCap  = %u mAh\n", rm);
   Serial.printf("[CON]   FullChargeCap = %u mAh   <- SoC = RM/FCC\n", fcc);
   Serial.printf("[CON]   DesignCap     = %u mAh\n", dcap);
-  Serial.printf("[CON]   StateOfCharge = %u %%\n", soc);
+  Serial.printf("[CON]   StateOfCharge = %u %% (Gauge, ungenutzt)\n", soc);
+  Serial.printf("[CON]   -> Anzeige    = %u %% (spannungsbasiert)\n",
+                percentFromMilliVolts(mv));
   Serial.printf("[CON]   StateOfHealth = %u %% (0x%04X)\n", soh & 0xFF, soh);
   Serial.printf("[CON]   BatteryStatus = 0x%04X\n", bst);
   Serial.printf("[CON]   ControlStatus = 0x%04X (SEC=%u %s)\n", ctrl,

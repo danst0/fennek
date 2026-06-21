@@ -1,5 +1,19 @@
 # Offene Themen
-- [ ] Akkuanzeige noch immer bei 72%
+- [x] Akkuanzeige noch immer bei 72%
+      ERLEDIGT (battery.cpp): percent() liest nicht mehr das Gauge-SoC-Register
+      (REG_SOC), sondern leitet den Ladestand SPANNUNGSBASIERT aus der LiPo-
+      Entladekurve ab (percentFromMilliVolts, lineare Interpolation).
+      Diagnose: Die BQ27220 ist `sealed`; ihr Coulomb-Counter resynct FCC nur an
+      einer sauberen Vollladung. Auf dem Dev-Geraet (Reboots beim Flashen
+      unterbrechen das Laden) driftet FCC tief (1272 statt 1400 mAh) -> SoC haengt
+      bei 72% fest, obwohl 4136 mV auf einer echten LiPo-Kurve ~90% bedeuten. Der
+      v2.4.8-RM/DC-Versuch + v2.4.9-Revert kreisten beide ums Gauge-Register; die
+      eigentliche Ursache ist, dass das Register selbst unbrauchbar ist. Die
+      Klemmenspannung folgt dagegen dem realen Ladestand (unter der leichten,
+      stetigen E-Ink-Last sackt sie kaum unter die Ruhespannung). `gauge`-Dump
+      zeigt jetzt beide Werte nebeneinander (Gauge-SoC ungenutzt vs. Anzeige).
+      Build OK. OFFEN am Geraet: `gauge` bei vollem Akku -> Anzeige ~100%? und
+      ueber einen Entladezyklus pruefen, dass die % monoton fallen.
 - [ ] Kann die USB-C Geschwindigkeit zur SD-Karte beschleunigt werden (OTG)?
 - [ ] sonstige Optimierungen?
 - [ ] Podcast app deaktivieren, der WLAN Sync ist zu langsam.

@@ -5,13 +5,14 @@
 // battery.h — BQ27220-Fuel-Gauge (I2C 0x55), Lesezugriffe.
 //
 // Port aus archive_legacy/variants/lilygo_tdeck_pro/TDeckBoard.cpp. Wir lesen
-// nur (Spannung/SoC/Strom). Die Kalibrierung (DesignCapacity 1400 mAh) steckt im
-// batteriegepufferten RAM des Gauges und stammt aus der LilyGO-Werksfirmware —
-// in unserer Git-Historie gibt es keinen eigenen Kalibriercode. Die BQ27220 ist
-// `sealed`; SoC = RemainingCapacity / FullChargeCapacity und resynct sich nur an
-// einer sauberen, ununterbrochenen Vollladung (qualifiziertes Lade-Ende). Bricht
-// das Laden ständig ab (z.B. Reboots beim Flashen), driftet die SoC-Anzeige tief.
-// Diagnose read-only über die Konsole `gauge` (dumpGauge()).
+// nur (Spannung/SoC/Strom). Die BQ27220 ist `sealed`; ihr Coulomb-Counter (SoC =
+// RemainingCapacity / FullChargeCapacity) resynct sich nur an einer sauberen,
+// ununterbrochenen Vollladung. Bricht das Laden ständig ab (z.B. Reboots beim
+// Flashen), driftet FullChargeCapacity tief und die SoC-Anzeige bleibt sichtbar
+// hängen (Symptom „immer 72%"). Deshalb liefert percent() den Ladestand
+// SPANNUNGSBASIERT (LiPo-Entladekurve, s. percentFromMilliVolts in battery.cpp) —
+// die Klemmenspannung folgt dem echten Ladestand, der Gauge-SoC nicht. Das rohe
+// SoC-Register bleibt nur in der Diagnose `gauge` (dumpGauge()) sichtbar.
 // =============================================================================
 #pragma once
 
