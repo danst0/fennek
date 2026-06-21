@@ -245,9 +245,11 @@ bool apply(const char* downloadUrl, char* errOut, size_t errCap) {
   };
   if (!downloadUrl || !downloadUrl[0]) return fail("keine Firmware-URL");
 
-  // 302 selbst auflösen (GitHub -> objects.githubusercontent.com); umgeht die
-  // wackelige Cross-Host-Redirect-Logik von httpUpdate.
-  char finalUrl[300];
+  // 302 selbst auflösen (GitHub -> release-assets.githubusercontent.com); umgeht
+  // die wackelige Cross-Host-Redirect-Logik von httpUpdate. Die signierte
+  // Asset-URL ist lang (~900 Z. mit X-Amz-/sig-Query) — Puffer großzügig, sonst
+  // wird sie abgeschnitten und der Flash-GET liefert 4xx (httpUpdate-Fehler -104).
+  char finalUrl[1400];
   if (!resolveRedirect(downloadUrl, finalUrl, sizeof(finalUrl)))
     return fail("Redirect-Aufloesung fehlgeschlagen");
   Serial.printf("[OTA] Lade Firmware: %s\n", finalUrl);
