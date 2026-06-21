@@ -149,6 +149,22 @@ void drawNoTiles(Adafruit_GFX& g) {
   gui::print(g, "erzeugen -> /maps/{z}/{x}/{y}.bin");
 }
 
+// Halbtransparenter Hinweis, wenn an dieser Stelle/Zoomstufe keine Kacheln liegen
+// (die Zoom-Mechanik funktioniert — es fehlen nur die Detaildaten auf der SD).
+void drawNoDetail(Adafruit_GFX& g) {
+  int bw = 200, bh = 34;
+  int bx = OX + (VW - bw) / 2;
+  int by = OY + (VH - FOOT_H - bh) / 2;
+  g.fillRect(bx, by, bw, bh, GxEPD_WHITE);
+  g.drawRect(bx, by, bw, bh, GxEPD_BLACK);
+  g.setTextColor(GxEPD_BLACK);
+  g.setTextSize(1);
+  g.setCursor(bx + 8, by + 7);
+  gui::print(g, "Keine Kacheln in dieser");
+  g.setCursor(bx + 8, by + 19);
+  gui::print(g, "Detailstufe (- = rauszoomen)");
+}
+
 class MapsApp : public App {
  public:
   const char* id()   const override { return "Karten"; }
@@ -245,7 +261,10 @@ class MapsApp : public App {
 
   void draw(Adafruit_GFX& g) override {
     if (maps_tiles::maxZoom() < 0) { drawNoTiles(g); return; }
-    maps_tiles::blitViewport(g, s_lat, s_lon, s_zoom, OX, OY, VW, VH);
+    int drawn = maps_tiles::blitViewport(g, s_lat, s_lon, s_zoom, OX, OY, VW, VH);
+    // Keine Kachel im Blickfeld vorhanden (z. B. Detailstufe ohne Daten an dieser
+    // Stelle): das Punktraster allein wirkt wie ein Fehler — Klartext-Hinweis.
+    if (drawn == 0) drawNoDetail(g);
     drawMarker(g);
     drawFooter(g);
   }
