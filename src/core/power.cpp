@@ -138,6 +138,8 @@ void begin() {
 
 void noteActivity() { s_lastActivity = millis(); }
 
+uint32_t idleMs() { return millis() - s_lastActivity; }
+
 bool locked() { return s_locked; }
 
 void enterStandby() {

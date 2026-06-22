@@ -317,5 +317,13 @@ void loop() {
   alarmclock::poll();// Wecker: Fälligkeit prüfen + klingeln
   BATTLOG_POLL();    // Debug-Akku-Logger (no-op ohne -D BATTLOG)
   appmgr::loop();
-  delay(10);   // ~100 Hz Eingabe-Polling; gibt Core 1 frei
+
+  // Adaptives Eingabe-Polling: frische ~100 Hz, solange etwas passiert
+  // (Eingabe, laufende Wiedergabe hält power::idleMs() bei ~0, oder WLAN
+  // bedient gerade HTTP-Requests). Nach ein paar Sekunden Leerlauf auf ~30 Hz
+  // drosseln — spart Core-1-Wachzeit, ohne dass sich Touch/Tastatur träge
+  // anfühlen (Key-Repeat/Debounce sind millis()-basiert; Audio läuft auf
+  // Core 0). Greift nur im wachen Leerlauf vor dem Auto-Standby.
+  const bool busy = power::idleMs() < 3000 || webfm::state() != webfm::State::OFF;
+  delay(busy ? 10 : 33);
 }

@@ -186,7 +186,14 @@ void loop() {
   int16_t tx, ty;
   if (touch::poll(tx, ty) && !locked && millis() >= s_settleUntil) {
     power::noteActivity();
-    Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->id() : "-");
+    // Tap-Log gedrosselt (≥400 ms): ein gehaltener Finger meldet Dauer-Taps
+    // (bekannt kosmetisch) und flutete sonst die Serial-Konsole bei jedem
+    // Loop-Durchlauf. Die Tap-Verarbeitung selbst bleibt unberührt.
+    static uint32_t s_lastTapLog = 0;
+    if (millis() - s_lastTapLog >= 400) {
+      s_lastTapLog = millis();
+      Serial.printf("[APP] Tap @ %d,%d (%s)\n", tx, ty, s_cur ? s_cur->id() : "-");
+    }
     if (ty < STATUS_H) {
       if (s_cur != s_apps[0]) goHome();
     } else if (s_cur) {

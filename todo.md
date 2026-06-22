@@ -37,7 +37,34 @@
            mit Hardware-Aenderung.
       Fazit: USB-OTG/MSC bringt keinen messbaren Vorteil; der 4-MHz-SPI-SD-Bus
       dominiert vor wie nach. Nicht umsetzen.
-- [ ] sonstige Optimierungen?
+- [x] Welche sonstigen Optimierungen siehst du?
+      ANALYSE: Das meiste ist schon eng optimiert — NVS schreibt write-on-change +
+      Delta (settings.cpp:142-154, kein Flash-Wear), SD-Scans gechunkt + pausieren
+      bei Wiedergabe, Refreshes region-scoped, Audio auf eigenem Core mit 256-KB-
+      PSRAM-Read-Ahead. Die leichten Gewinne sind durch. Verbleibend (nach Wert):
+        1. Idle-CPU/Akku (Haupthebel): main loop() endete in festem `delay(10)`
+           (100-Hz-Busy-Poll) — auch wenn das Geraet wach, aber im Leerlauf ist
+           (statisches E-Ink, kein Audio) weckt Core 1 alle 10 ms zum Polling.
+        2. `[APP] Tap`-Serial-Spam (appmgr.cpp): feuerte pro Tap-Event; gehaltener
+           Finger (bekanntes kosmetisches Dauer-Tap-Problem) flutete Serial.
+        3. esp_pm Auto-Light-Sleep waere der groesste Idle-Strom-Hebel, aber
+           riskant mit I2S/SPI/Audio-Task — braucht Geraete-Strommessung. NICHT
+           umgesetzt (verletzt sonst die Verify-on-Device-Disziplin).
+        4. background()-Fan-out (alle Apps je Loop) ist absichtlich + billig
+           (No-op-Virtuals) — gelassen.
+      ERLEDIGT (umgesetzt, Build OK 27,7 %):
+        (1) Adaptives Eingabe-Polling (main.cpp): `power::idleMs()` (neuer Getter
+            in core/power, liefert ms seit letzter Aktivitaet; laufende Wiedergabe
+            haelt ihn bei ~0). Loop bleibt bei ~100 Hz solange busy (idleMs<3 s
+            ODER webfm bedient HTTP), drosselt sonst auf ~30 Hz (delay 33). Touch/
+            Tastatur bleiben reaktiv (Key-Repeat/Debounce millis()-basiert, Audio
+            auf Core 0); greift nur im wachen Leerlauf vor dem Auto-Standby.
+        (2) Tap-Log auf ≥400 ms gedrosselt (statischer Zeitstempel); Tap-
+            Verarbeitung selbst unberuehrt — Serial bleibt sauber bei gehaltenem
+            Finger.
+      OFFEN am Geraet: bestaetigen, dass sich Touch/Tippen im Leerlauf weiterhin
+      snappy anfuehlt (33-ms-Polling); optional Strommessung, ob der Idle-Drop
+      messbar ist. esp_pm-Light-Sleep separat evaluieren, wenn gewuenscht.
 - [x] Podcast app deaktivieren, der WLAN Sync ist zu langsam.
       ERLEDIGT (v2.5.9, Soft-Disable): Der Schmerzpunkt war der Auto-WLAN-Sync vor
       dem Standby (`podcast::flushBeforeStandby()` in core/power.cpp) — brachte bei

@@ -53,13 +53,22 @@ void noteResult() {
   }
 }
 
+// Zufälliges freies Feld — für gelegentliche Patzer der KI.
+int randomFreeMove(const ttt::Board& b) {
+  int free[9]; int n = 0;
+  for (int i = 0; i < 9; i++) if (!b.c[i]) free[n++] = i;
+  return n ? free[random(n)] : -1;
+}
+
 void place(int idx) {
   if (ttt::winner(s_board) || s_board.c[idx]) return;
   s_board.c[idx] = s_turn;
   s_turn = (uint8_t)(3 - s_turn);
   // Gegen das Gerät: Fennek (O) antwortet sofort — Minimax rechnet in <1 ms.
+  // Mit 20 % Wahrscheinlichkeit setzt Fennek auf ein zufälliges freies Feld.
   if (s_mode == 0 && s_turn == 2 && !ttt::winner(s_board)) {
-    int m = ttt::bestMove(s_board, 2);
+    int m = (random(5) == 0) ? randomFreeMove(s_board) : ttt::bestMove(s_board, 2);
+    if (m < 0) m = ttt::bestMove(s_board, 2);
     if (m >= 0) s_board.c[m] = 2;
     s_turn = 1;
   }

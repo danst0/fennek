@@ -15,6 +15,8 @@
 // =============================================================================
 #pragma once
 
+#include <stdint.h>
+
 namespace power {
 
 // Knopf-Pin konfigurieren, Aktivitäts-Timer starten.
@@ -23,6 +25,12 @@ void begin();
 // Vom appmgr bei jeder Nutzereingabe (Tap/Taste) aufrufen — setzt den
 // Inaktivitäts-Timer zurück.
 void noteActivity();
+
+// Millisekunden seit der letzten Aktivität (Eingabe oder laufende Wiedergabe
+// hält den Zähler bei ~0). Dient dem Hauptloop, das Eingabe-Polling im
+// Leerlauf zu drosseln (Strom sparen, ohne die Reaktionszeit spürbar zu
+// verschlechtern).
+uint32_t idleMs();
 
 // Einmal pro appmgr::loop() aufrufen: Knopf (kurz = Tastensperre, lang =
 // Standby) + Idle-Timeout. Löst bei Bedarf enterStandby() aus.
