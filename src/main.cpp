@@ -32,6 +32,8 @@
 #include "services/timesync.h"
 #include "services/scrobble.h"
 #include "services/podcast.h"
+#include "services/calendar.h"
+#include "services/reinschrift.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
 #include "services/battlog.h"
@@ -51,6 +53,8 @@
 #include "apps/mathquiz_app.h"
 #include "apps/flashcards_app.h"
 #include "apps/podcast_app.h"
+#include "apps/calendar_app.h"
+#include "apps/todo_app.h"
 
 #ifdef GAMES_SMOKE_TEST
 namespace {
@@ -150,6 +154,11 @@ void setup() {
   // angelegt; App-Kachel + Auto-Sync-Hook sind aus. Code bleibt reaktivierbar.
   // podcast::begin();
 
+  // Kalender (iCal-Feeds, read-only) + Todo (Reinschrift/WebDAV): Caches +
+  // Op-Queue von SD laden. Sync läuft blockierend auf Knopfdruck / vor Standby.
+  calendar::begin();
+  reinschrift_svc::begin();
+
   // Wecker-Engine: Wecker aus NVS laden. Klingelt über die Audio-Queue, daher
   // nach audio::begin(); poll() läuft im loop(). Falls dieser Boot ein
   // Wecker-Wake war (power::handleTimerWake → Vollboot), feuert poll() gleich.
@@ -212,6 +221,8 @@ void setup() {
   appmgr::add(gyro_app::get());
   appmgr::add(mathquiz_app::get());
   appmgr::add(flashcards_app::get());
+  appmgr::add(calendar_app::get());
+  appmgr::add(todo_app::get());
   // Podcast deaktiviert (WLAN-Sync zu langsam, v2.5.9): nicht registriert/keine Kachel.
   // appmgr::add(podcast_app::get());
   launcher::setTile(0, i18n::Str::TileMusic,    music_app::get());
@@ -227,8 +238,10 @@ void setup() {
   launcher::setTile(10, i18n::Str::TileGyro,    gyro_app::get());   // Seite 2, Slot 0
   launcher::setTile(11, i18n::Str::TileMath,    mathquiz_app::get());
   launcher::setTile(12, i18n::Str::TileCards,   flashcards_app::get());
-  // Podcast deaktiviert (v2.5.9): Slot 13 bleibt leer (Seite 2, Slot 3).
-  // launcher::setTile(13, i18n::Str::TilePodcast, podcast_app::get());
+  launcher::setTile(13, i18n::Str::TileCalendar, calendar_app::get());
+  launcher::setTile(14, i18n::Str::TileTodo,     todo_app::get());
+  // Podcast deaktiviert (v2.5.9): Code reaktivierbar.
+  // launcher::setTile(15, i18n::Str::TilePodcast, podcast_app::get());
   appmgr::begin();
   Serial.println("[FENNEK] Setup fertig — Launcher läuft.");
 

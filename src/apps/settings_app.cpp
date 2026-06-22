@@ -43,11 +43,14 @@ enum RowId {
   ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_AION, ROW_AIURL, ROW_AIMODEL,
   ROW_OTAURL, ROW_OTAVER, ROW_OTAGO,
+  ROW_TODOON, ROW_TODOURL, ROW_TODOUSER, ROW_TODOPASS, ROW_TODOPATH, ROW_TODOAUTO,
+  ROW_CALAUTO,
   ROW_COUNT
 };
 
 // --- Kategorien ("Ordner") ------------------------------------------------------
-enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_AI, CAT_OTA, CAT_COUNT };
+enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_AI, CAT_OTA,
+       CAT_TODO, CAT_CAL, CAT_COUNT };
 
 const RowId kRadioRows[]  = {ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME};
 const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY, ROW_FONT};
@@ -56,6 +59,8 @@ const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
 const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
 const RowId kAiRows[]     = {ROW_AION, ROW_AIURL, ROW_AIMODEL};
 const RowId kOtaRows[]    = {ROW_OTAVER, ROW_OTAGO, ROW_OTAURL};
+const RowId kTodoRows[]   = {ROW_TODOON, ROW_TODOURL, ROW_TODOUSER, ROW_TODOPASS, ROW_TODOPATH, ROW_TODOAUTO};
+const RowId kCalRows[]    = {ROW_CALAUTO};
 
 struct CatRows { const RowId* rows; int count; };
 const CatRows kCats[] = {
@@ -66,6 +71,8 @@ const CatRows kCats[] = {
   {kNavRows,    (int)(sizeof(kNavRows)    / sizeof(RowId))},
   {kAiRows,     (int)(sizeof(kAiRows)     / sizeof(RowId))},
   {kOtaRows,    (int)(sizeof(kOtaRows)    / sizeof(RowId))},
+  {kTodoRows,   (int)(sizeof(kTodoRows)   / sizeof(RowId))},
+  {kCalRows,    (int)(sizeof(kCalRows)    / sizeof(RowId))},
 };
 
 const char* catName(int c) {
@@ -77,6 +84,8 @@ const char* catName(int c) {
     case CAT_NAV:    return "Navidrome";
     case CAT_AI:     return "Ollama";
     case CAT_OTA:    return "Update";
+    case CAT_TODO:   return "Todo";
+    case CAT_CAL:    return "Kalender";
   }
   return "";
 }
@@ -101,7 +110,8 @@ bool rowEditable(int row) {
   return row == ROW_NAME || row == ROW_WSSID || row == ROW_WPASS ||
          row == ROW_TIME || row == ROW_NAVURL || row == ROW_NAVUSER ||
          row == ROW_NAVPASS || row == ROW_AIURL || row == ROW_AIMODEL ||
-         row == ROW_OTAURL;
+         row == ROW_OTAURL || row == ROW_TODOURL || row == ROW_TODOUSER ||
+         row == ROW_TODOPASS || row == ROW_TODOPATH;
 }
 
 // Auto-Standby-Stufen (Minuten; 0 = Aus).
@@ -203,6 +213,9 @@ void changeRow(int row, int dir) {
     markDirty();
     return;
   }
+  if (row == ROW_TODOON)   { settings::setTodoEnabled(!settings::todoEnabled());   markDirty(); return; }
+  if (row == ROW_TODOAUTO) { settings::setTodoAutoSync(!settings::todoAutoSync()); markDirty(); return; }
+  if (row == ROW_CALAUTO)  { settings::setCalAutoSync(!settings::calAutoSync());   markDirty(); return; }
   settings::MeshParams p = settings::meshParams();
   switch (row) {
     case ROW_PRESET: {
@@ -261,6 +274,13 @@ const char* rowName(int row) {
     case ROW_OTAVER:   return "Version";
     case ROW_OTAGO:    return "Aktualisieren";
     case ROW_OTAURL:   return "Quelle";
+    case ROW_TODOON:   return "Sync";
+    case ROW_TODOURL:  return "Server";
+    case ROW_TODOUSER: return "Benutzer";
+    case ROW_TODOPASS: return "Passwort";
+    case ROW_TODOPATH: return "Pfad";
+    case ROW_TODOAUTO: return "Auto-Sync";
+    case ROW_CALAUTO:  return "Auto-Sync";
   }
   return "";
 }
@@ -384,6 +404,31 @@ void rowValue(int row, char* v, size_t n) {
         settings::otaUrl(v, n);
         if (!v[0]) snprintf(v, n, "-");
       }
+      break;
+    case ROW_TODOON:
+      snprintf(v, n, "%s", settings::todoEnabled() ? "An" : "Aus");
+      break;
+    case ROW_TODOURL:
+      if (s_edit == ROW_TODOURL) snprintf(v, n, "%s_", s_editBuf);
+      else { settings::todoUrl(v, n); if (!v[0]) snprintf(v, n, "-"); }
+      break;
+    case ROW_TODOUSER:
+      if (s_edit == ROW_TODOUSER) snprintf(v, n, "%s_", s_editBuf);
+      else { settings::todoUser(v, n); if (!v[0]) snprintf(v, n, "-"); }
+      break;
+    case ROW_TODOPASS:
+      if (s_edit == ROW_TODOPASS) snprintf(v, n, "%s_", s_editBuf);
+      else { char pw[65]; settings::todoPass(pw, sizeof(pw)); snprintf(v, n, "%s", pw[0] ? "****" : "-"); }
+      break;
+    case ROW_TODOPATH:
+      if (s_edit == ROW_TODOPATH) snprintf(v, n, "%s_", s_editBuf);
+      else { settings::todoPath(v, n); if (!v[0]) snprintf(v, n, "-"); }
+      break;
+    case ROW_TODOAUTO:
+      snprintf(v, n, "%s", settings::todoAutoSync() ? "An" : "Aus");
+      break;
+    case ROW_CALAUTO:
+      snprintf(v, n, "%s", settings::calAutoSync() ? "An" : "Aus");
       break;
   }
 }
@@ -564,6 +609,10 @@ void startEdit(int row) {
     case ROW_AIURL:   settings::aiUrl(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_AIMODEL: settings::aiModel(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_OTAURL:  settings::otaUrl(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_TODOURL:  settings::todoUrl(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_TODOUSER: settings::todoUser(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_TODOPASS: settings::todoPass(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_TODOPATH: settings::todoPath(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_TIME: {
       // Mit der aktuellen lokalen Zeit als Vorlage vorbelegen.
       time_t    tt = (time_t)timesync::now();
@@ -592,6 +641,10 @@ void finishEdit(bool save) {
       case ROW_AIURL:   settings::setAiUrl(s_editBuf); break;
       case ROW_AIMODEL: settings::setAiModel(s_editBuf); break;
       case ROW_OTAURL:  settings::setOtaUrl(s_editBuf); break;
+      case ROW_TODOURL:  settings::setTodoUrl(s_editBuf); break;
+      case ROW_TODOUSER: settings::setTodoUser(s_editBuf); break;
+      case ROW_TODOPASS: settings::setTodoPass(s_editBuf); break;
+      case ROW_TODOPATH: settings::setTodoPath(s_editBuf); break;
       case ROW_TIME: {
         // "YYYY-MM-DD HH:MM" als lokale Zeit lesen → über die Zeitzone nach UTC.
         struct tm lt;
@@ -628,10 +681,14 @@ void onKey(char k) {
     // Eingabelimits je Feld: URL 127, Passwort 64, Benutzer 63, sonst 32.
     int maxLen;
     switch (s_edit) {
-      case ROW_NAVURL:  maxLen = 127; break;
+      case ROW_NAVURL:
+      case ROW_TODOURL:
+      case ROW_TODOPATH: maxLen = 127; break;
       case ROW_WPASS:
-      case ROW_NAVPASS: maxLen = 64;  break;
-      case ROW_NAVUSER: maxLen = 63;  break;
+      case ROW_NAVPASS:
+      case ROW_TODOPASS: maxLen = 64;  break;
+      case ROW_NAVUSER:
+      case ROW_TODOUSER: maxLen = 63;  break;
       default:          maxLen = 32;  break;
     }
     if (k >= 32 && k < 127) {

@@ -15,6 +15,8 @@
 #include "services/notes_ai.h"
 #include "services/scrobble.h"
 #include "services/podcast.h"
+#include "services/calendar.h"
+#include "services/reinschrift.h"
 #include "services/ota.h"
 #include "services/alarmclock.h"
 #include "services/settingsfile.h"
@@ -804,6 +806,50 @@ void handleLine(char* line) {
       Serial.printf("[CON]   [%d] %s  (%s)\n", i, f.name,
                     have ? loc.title : "keine Folge");
     }
+    return;
+  }
+  // --- Kalender (iCal, read-only) ---
+  if (strncmp(line, "cal feed ", 9) == 0) {
+    bool ok = calendar::addFeed(line + 9);
+    Serial.printf("[CON] Kalender-Feed %s: %s\n", ok ? "hinzugefuegt" : "Fehler", line + 9);
+    return;
+  }
+  if (strncmp(line, "cal rm ", 7) == 0) {
+    int idx = atoi(line + 7);
+    Serial.printf("[CON] Feed %d %s\n", idx, calendar::removeFeed(idx) ? "entfernt" : "Fehler");
+    return;
+  }
+  if (strcmp(line, "cal on") == 0)  { settings::setCalAutoSync(true);  Serial.println("[CON] Kalender-Auto-Sync EIN"); return; }
+  if (strcmp(line, "cal off") == 0) { settings::setCalAutoSync(false); Serial.println("[CON] Kalender-Auto-Sync AUS"); return; }
+  if (strcmp(line, "cal sync") == 0) {
+    char msg[64]; calendar::sync(msg, sizeof(msg));
+    Serial.printf("[CON] Kalender-Sync: %s\n", msg);
+    return;
+  }
+  if (strcmp(line, "cal") == 0) {
+    int n = calendar::feedCount();
+    Serial.printf("[CON] Kalender Auto-Sync=%s, %d Feed(s), %d Termine:\n",
+                  settings::calAutoSync() ? "an" : "aus", n, calendar::count());
+    for (int i = 0; i < n; ++i) { char u[160]; if (calendar::feedUrl(i, u, sizeof(u))) Serial.printf("[CON]   [%d] %s\n", i, u); }
+    return;
+  }
+  // --- Todo (Reinschrift via Nextcloud/WebDAV) ---
+  if (strncmp(line, "todo url ", 9) == 0)  { settings::setTodoUrl(line + 9);  Serial.printf("[CON] Todo-URL: '%s'\n", line + 9); return; }
+  if (strncmp(line, "todo user ", 10) == 0){ settings::setTodoUser(line + 10);Serial.printf("[CON] Todo-User: '%s'\n", line + 10); return; }
+  if (strncmp(line, "todo pass ", 10) == 0){ settings::setTodoPass(line + 10);Serial.println("[CON] Todo-Passwort gesetzt"); return; }
+  if (strncmp(line, "todo path ", 10) == 0){ settings::setTodoPath(line + 10);Serial.printf("[CON] Todo-Pfad: '%s'\n", line + 10); return; }
+  if (strcmp(line, "todo on") == 0)  { settings::setTodoEnabled(true);  Serial.println("[CON] Todo-Sync EIN"); return; }
+  if (strcmp(line, "todo off") == 0) { settings::setTodoEnabled(false); Serial.println("[CON] Todo-Sync AUS"); return; }
+  if (strcmp(line, "todo sync") == 0) {
+    char msg[64]; reinschrift_svc::sync(msg, sizeof(msg));
+    Serial.printf("[CON] Todo-Sync: %s\n", msg);
+    return;
+  }
+  if (strcmp(line, "todo") == 0) {
+    char url[160], path[160]; settings::todoUrl(url, sizeof(url)); settings::todoPath(path, sizeof(path));
+    Serial.printf("[CON] Todo=%s URL='%s' Pfad='%s'; %d Aufgaben, %d offen\n",
+                  settings::todoEnabled() ? "an" : "aus", url, path,
+                  reinschrift_svc::count(), reinschrift_svc::pendingCount());
     return;
   }
   if (strncmp(line, "ota url ", 8) == 0) {

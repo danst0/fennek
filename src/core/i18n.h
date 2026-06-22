@@ -43,6 +43,8 @@
   X(AppMath,       "Kopfrechnen",    "Calcolo",         "Huvudräkning",   "Mental Math",     "Cálculo") \
   X(AppCards,      "Karteikarten",   "Flashcard",       "Flashcards",     "Flashcards",      "Tarjetas") \
   X(AppPodcast,    "Podcast",        "Podcast",         "Podd",           "Podcast",         "Podcast") \
+  X(AppCalendar,   "Kalender",       "Calendario",      "Kalender",       "Calendar",        "Calendario") \
+  X(AppTodo,       "Todo",           "Attività",        "Att göra",       "Todo",            "Tareas") \
   /* --- Launcher-Kacheln (max 8 Zeichen) --- */ \
   X(TileMusic,     "Musik",          "Musica",          "Musik",          "Music",           "Música") \
   X(TileBook,      "Hörbuch",        "Ascolto",         "Ljudbok",        "Listen",          "Escuchar") \
@@ -58,6 +60,8 @@
   X(TileMath,      "Rechnen",        "Calcolo",         "Räkna",          "Math",            "Cálculo") \
   X(TileCards,     "Lernen",         "Studio",          "Plugga",         "Learn",           "Estudiar") \
   X(TilePodcast,   "Podcast",        "Podcast",         "Podd",           "Podcast",         "Podcast") \
+  X(TileCalendar,  "Kalender",       "Calend.",         "Kalender",       "Calendar",        "Calend.") \
+  X(TileTodo,      "Todo",           "Attività",        "Att göra",       "Todo",            "Tareas") \
   X(TileSoon,      "(bald)",         "(presto)",        "(snart)",        "(soon)",          "(pronto)") \
   X(FmtResume,     "Fortsetzen: %s", "Riprendi: %s",    "Fortsätt: %s",   "Resume: %s",      "Continuar: %s") /* fmt: %s */ \
   /* --- Gemeinsame Buttons --- */ \

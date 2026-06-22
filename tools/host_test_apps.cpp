@@ -1,6 +1,7 @@
 // =============================================================================
 // host_test_apps.cpp — Host-Tests für die Arduino-freien App-Cores
-// (mathquiz_core, flashcards_core). Nicht Teil des Firmware-Builds.
+// (mathquiz_core, flashcards_core, podcast_core, reinschrift_core, ical_core).
+// Nicht Teil des Firmware-Builds.
 //
 //   g++ -std=c++17 -O2 -I src tools/host_test_apps.cpp -o /tmp/apps_test && /tmp/apps_test
 //
@@ -13,6 +14,8 @@
 #include "apps/mathquiz_core.h"
 #include "apps/flashcards_core.h"
 #include "apps/podcast_core.h"
+#include "apps/reinschrift_core.h"
+#include "apps/ical_core.h"
 
 // --- Deterministischer Zufall (LCG) ------------------------------------------
 static uint32_t s_seed = 2025;
@@ -295,10 +298,239 @@ static int testPodcast() {
   return 0;
 }
 
+// =============================================================================
+// reinschrift (Todo-Parser + konfliktsicherer Merge)
+// =============================================================================
+static int testReinschrift() {
+  using namespace reinschrift;
+  Task t;
+
+  // Vollständige Zeile parsen.
+  CHECK(parseLine("- [ ] Putzen Fenster +Haushalt @Daheim due:2026-06-27T12:00 ~note:\"Fenster putzen\" ^Y64JiBDu", &t));
+  CHECK(!t.done);
+  CHECK(strcmp(t.title, "Putzen Fenster") == 0);
+  CHECK(strcmp(t.topic, "Haushalt") == 0);
+  CHECK(strcmp(t.context, "Daheim") == 0);
+  CHECK(strcmp(t.marker, "Y64JiBDu") == 0);
+  CHECK(t.dueEpoch != 0 && t.dueEpoch != kSomeday);
+
+  // Erledigt + „irgendwann" (Jahr 9999) + Wikilink statt note.
+  CHECK(parseLine("- [x] Sense entrosten +Sense @Keller due:9999-12-31T00:00 [[2025.md]] ^swbu95", &t));
+  CHECK(t.done);
+  CHECK(strcmp(t.title, "Sense entrosten") == 0);
+  CHECK(isSomeday(t.dueEpoch));
+
+  // Kein Attribut → ganzer Rest ist Titel.
+  CHECK(parseLine("- [ ] Einfach nur Text", &t));
+  CHECK(strcmp(t.title, "Einfach nur Text") == 0);
+  CHECK(t.dueEpoch == 0 && t.marker[0] == '\0');
+
+  // Header / Nicht-Aufgaben → false.
+  CHECK(!parseLine("### +Haushalt", &t));
+  CHECK(!parseLine("# Zentrale Aufgabenübersicht", &t));
+  CHECK(!parseLine("", &t));
+  CHECK(!parseLine("nur text", &t));
+
+  // Themen-Header erkennen.
+  char topic[kTopicLen];
+  CHECK(parseTopicHeader("### +Haushalt", topic, sizeof(topic)));
+  CHECK(strcmp(topic, "Haushalt") == 0);
+  CHECK(!parseTopicHeader("## Kein Plus", topic, sizeof(topic)));
+  CHECK(!parseTopicHeader("- [ ] x +Topic ^a", topic, sizeof(topic)));
+
+  // Fälligkeit relativ zu „jetzt" (Tag-genau).
+  uint32_t day = 86400u;
+  uint32_t now = 20000u * day + 5000u;            // irgendein Tag, mittags-ish
+  CHECK(isDueToday(19999u * day, now));            // gestern fällig → heute fällig
+  CHECK(isDueToday(20000u * day, now));            // heute
+  CHECK(!isDueToday(20001u * day, now));           // morgen
+  CHECK(isOverdue(19999u * day, now));
+  CHECK(!isOverdue(20000u * day, now));
+  CHECK(!isOverdue(kSomeday, now) && !isDueToday(kSomeday, now));
+
+  // --- Konfliktsicherer Merge ------------------------------------------------
+  const char* remote =
+    "# Zentrale Aufgabenübersicht\n"
+    "### +Haushalt\n"
+    "- [ ] Fenster putzen +Haushalt due:2026-06-27T12:00 ^aaa111\n"
+    "- [ ] Müll raus +Haushalt due:2026-06-21T12:00 ^bbb222\n"
+    "### +IT\n"
+    "- [ ] Backups prüfen +IT due:9999-12-31T00:00 ^ccc333\n";
+
+  // Lokale Ops: aaa111 abhaken, ccc333 auf morgen, neue Aufgabe unter +Haushalt.
+  Op ops[3];
+  memset(ops, 0, sizeof(ops));
+  ops[0].kind = OP_TOGGLE; strcpy(ops[0].marker, "aaa111"); ops[0].done = true;
+  ops[1].kind = OP_DUE;    strcpy(ops[1].marker, "ccc333"); strcpy(ops[1].value, "2026-06-23T12:00");
+  ops[2].kind = OP_ADD;    strcpy(ops[2].topic, "Haushalt");
+  strcpy(ops[2].line, "- [ ] Staubsaugen +Haushalt ^new999");
+
+  char out[2048];
+  CHECK(applyOps(remote, ops, 3, out, sizeof(out)));
+  CHECK(strstr(out, "- [x] Fenster putzen +Haushalt due:2026-06-27T12:00 ^aaa111") != nullptr);  // abgehakt
+  CHECK(strstr(out, "Müll raus") != nullptr);                       // FREMDE Zeile unverändert
+  CHECK(strstr(out, "- [x] Müll raus") == nullptr);                 // NICHT mit-abgehakt
+  CHECK(strstr(out, "Backups prüfen +IT due:2026-06-23T12:00") != nullptr);  // due ersetzt, nicht dupliziert
+  CHECK(strstr(out, "due:9999") == nullptr);
+  CHECK(strstr(out, "- [ ] Staubsaugen +Haushalt ^new999") != nullptr);      // neue Aufgabe da
+  // unter dem richtigen Header (vor „### +IT").
+  CHECK(strstr(out, "Staubsaugen") < strstr(out, "### +IT"));
+
+  // Konflikt-Szenario: ein anderes Gerät hat aaa111 GELÖSCHT (Marker fehlt
+  // remote). Unsere Toggle-Op darf nichts kaputtmachen und wird verworfen.
+  const char* remote2 =
+    "### +Haushalt\n"
+    "- [ ] Müll raus +Haushalt ^bbb222\n";
+  Op ops2[1]; memset(ops2, 0, sizeof(ops2));
+  ops2[0].kind = OP_TOGGLE; strcpy(ops2[0].marker, "aaa111"); ops2[0].done = true;
+  char out2[1024];
+  CHECK(applyOps(remote2, ops2, 1, out2, sizeof(out2)));
+  CHECK(strstr(out2, "Müll raus") != nullptr);     // fremder Stand bleibt
+  CHECK(strstr(out2, "aaa111") == nullptr);          // verschwundene Op nicht erfunden
+
+  // ADD ohne existierendes Thema → neues Thema am Ende.
+  Op ops3[1]; memset(ops3, 0, sizeof(ops3));
+  ops3[0].kind = OP_ADD; strcpy(ops3[0].topic, "Neu"); strcpy(ops3[0].line, "- [ ] Frisch +Neu ^z9");
+  char out3[1024];
+  CHECK(applyOps(remote2, ops3, 1, out3, sizeof(out3)));
+  CHECK(strstr(out3, "### +Neu") != nullptr);
+  CHECK(strstr(out3, "- [ ] Frisch +Neu ^z9") != nullptr);
+
+  // Marker-Generierung: 8 Base62-Zeichen, deterministisch über die Test-RNG.
+  char mk[kMarkerLen];
+  genMarker(mk, sizeof(mk), testRnd);
+  CHECK(strlen(mk) == 8);
+  for (int i = 0; mk[i]; i++) {
+    char c = mk[i];
+    CHECK((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
+  }
+
+  printf("  reinschrift ok\n");
+  return 0;
+}
+
+// =============================================================================
+// ical (Kalender-Parser + RRULE-Expansion)
+// =============================================================================
+static int feedAll(ical::Parser& p, const char* ics, ical::Event* events, int maxEv) {
+  int n = 0;
+  const char* line = ics;
+  char buf[512];
+  while (*line) {
+    const char* e = line;
+    while (*e && *e != '\n') e++;
+    size_t len = (size_t)(e - line);
+    if (len > 0 && line[len - 1] == '\r') len--;     // CRLF → drop CR
+    if (len > sizeof(buf) - 1) len = sizeof(buf) - 1;
+    memcpy(buf, line, len); buf[len] = '\0';
+    ical::Event ev;
+    if (p.feedLine(buf, &ev) && n < maxEv) events[n++] = ev;
+    line = (*e == '\n') ? e + 1 : e;
+  }
+  ical::Event ev;
+  if (p.finish(&ev) && n < maxEv) events[n++] = ev;
+  return n;
+}
+
+static int testIcal() {
+  using namespace ical;
+
+  // Zwei Events; eines all-day, eines mit Datum-Zeit; gefaltete SUMMARY-Zeile.
+  const char* ics =
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    "BEGIN:VEVENT\r\n"
+    "UID:abc-1\r\n"
+    "SUMMARY:Zahnarzt Termin sehr lang gefa\r\n"
+    " ltet und entfaltet\r\n"
+    "DTSTART:20260622T090000Z\r\n"
+    "DTEND:20260622T100000Z\r\n"
+    "LOCATION:Praxis\r\n"
+    "END:VEVENT\r\n"
+    "BEGIN:VEVENT\r\n"
+    "UID:abc-2\r\n"
+    "SUMMARY:Geburtstag\r\n"
+    "DTSTART;VALUE=DATE:20260625\r\n"
+    "END:VEVENT\r\n"
+    "END:VCALENDAR\r\n";
+
+  Parser p;
+  Event evs[8];
+  int n = feedAll(p, ics, evs, 8);
+  CHECK(n == 2);
+  CHECK(strcmp(evs[0].summary, "Zahnarzt Termin sehr lang gefaltet und entfaltet") == 0);
+  CHECK(!evs[0].allDay);
+  CHECK(strcmp(evs[0].location, "Praxis") == 0);
+  CHECK(evs[0].end > evs[0].start);
+  CHECK(evs[0].end - evs[0].start == 3600);   // 1 Stunde
+  CHECK(evs[1].allDay);
+  CHECK(strcmp(evs[1].summary, "Geburtstag") == 0);
+
+  // 2026-06-22T09:00:00Z als Epoche prüfen (über bekannte Tageszahl).
+  uint32_t start22 = (uint32_t)(detail::daysFromCivil(2026, 6, 22) * 86400L) + 9 * 3600;
+  CHECK(evs[0].start == start22);
+
+  // Einmaliges Event nur im Fenster.
+  int count = 0;
+  expand(evs[0], start22 - 86400, start22 + 86400, [&](uint32_t, uint32_t) { count++; });
+  CHECK(count == 1);
+  count = 0;
+  expand(evs[0], start22 + 7 * 86400, start22 + 14 * 86400, [&](uint32_t, uint32_t) { count++; });
+  CHECK(count == 0);   // außerhalb
+
+  // Wöchentliche Wiederholung, COUNT begrenzt, Fenster begrenzt.
+  const char* rec =
+    "BEGIN:VEVENT\r\n"
+    "SUMMARY:Standup\r\n"
+    "DTSTART:20260601T080000Z\r\n"
+    "DTEND:20260601T081500Z\r\n"
+    "RRULE:FREQ=WEEKLY;COUNT=10\r\n"
+    "END:VEVENT\r\n";
+  Parser p2;
+  Event r[2];
+  int rn = feedAll(p2, rec, r, 2);
+  CHECK(rn == 1);
+  CHECK(strcmp(r[0].rrule, "FREQ=WEEKLY;COUNT=10") == 0);
+  uint32_t s0 = (uint32_t)(detail::daysFromCivil(2026, 6, 1) * 86400L) + 8 * 3600;
+  CHECK(r[0].start == s0);
+  // Fenster über 10 Wochen → genau 10 Vorkommen (COUNT-Deckel).
+  int occ = 0;
+  expand(r[0], s0, s0 + 20u * 7 * 86400, [&](uint32_t, uint32_t) { occ++; });
+  CHECK(occ == 10);
+  // Engeres Fenster (3 Wochen ab Start) → 3 Vorkommen.
+  occ = 0;
+  expand(r[0], s0, s0 + 3u * 7 * 86400, [&](uint32_t, uint32_t) { occ++; });
+  CHECK(occ == 3);
+
+  // RRULE-Feld-Extraktion.
+  char v[16];
+  CHECK(rruleField("FREQ=DAILY;INTERVAL=2;COUNT=5", "INTERVAL", v, sizeof(v)));
+  CHECK(strcmp(v, "2") == 0);
+  CHECK(rruleField("FREQ=DAILY;INTERVAL=2;COUNT=5", "FREQ", v, sizeof(v)));
+  CHECK(strcmp(v, "DAILY") == 0);
+  CHECK(!rruleField("FREQ=DAILY", "UNTIL", v, sizeof(v)));
+
+  // Monatliche Wiederholung: 4 Monate Fenster → 4 Vorkommen.
+  const char* mon =
+    "BEGIN:VEVENT\r\nSUMMARY:Miete\r\nDTSTART:20260101T000000Z\r\n"
+    "RRULE:FREQ=MONTHLY\r\nEND:VEVENT\r\n";
+  Parser p3; Event m[2];
+  CHECK(feedAll(p3, mon, m, 2) == 1);
+  uint32_t ms = (uint32_t)(detail::daysFromCivil(2026, 1, 1) * 86400L);
+  occ = 0;
+  expand(m[0], ms, (uint32_t)(detail::daysFromCivil(2026, 5, 1) * 86400L), [&](uint32_t, uint32_t) { occ++; });
+  CHECK(occ == 4);   // Jan, Feb, Mär, Apr
+
+  printf("  ical ok\n");
+  return 0;
+}
+
 int main() {
   if (testMathquiz()) return 1;
   if (testFlashcards()) return 1;
   if (testPodcast()) return 1;
+  if (testReinschrift()) return 1;
+  if (testIcal()) return 1;
   printf("ALLE TESTS GRÜN (%d Checks)\n", s_checks);
   return 0;
 }

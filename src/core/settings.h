@@ -123,6 +123,29 @@ void setOtaUrl(const char* url);
 bool podcastAutoSync();                          // Default false
 void setPodcastAutoSync(bool on);
 
+// --- Todo/Reinschrift (services/reinschrift) ----------------------------------
+// Nextcloud-WebDAV: Basis-URL inkl. Schema, Benutzer + Passwort (Klartext, wie
+// WLAN) und Pfad der Markdown-Datenbank relativ zum WebDAV-Wurzelverzeichnis
+// (z. B. "Projekte/TodosDatenbank.md"). autoSync = Sync vor dem Auto-Standby.
+bool todoEnabled();                              // Default false
+void setTodoEnabled(bool on);
+void todoUrl(char* out, size_t n);               // "" = nicht konfiguriert
+void setTodoUrl(const char* url);
+void todoUser(char* out, size_t n);
+void setTodoUser(const char* user);
+void todoPass(char* out, size_t n);
+void setTodoPass(const char* pass);
+void todoPath(char* out, size_t n);              // WebDAV-Pfad der .md-Datei
+void setTodoPath(const char* path);
+bool todoAutoSync();                             // Default false
+void setTodoAutoSync(bool on);
+
+// --- Kalender (services/calendar) ---------------------------------------------
+// iCal-Feeds liegen in /calendar/feeds.txt; hier nur der Auto-Sync-Schalter
+// (Sync der Feeds vor dem Auto-Standby, wenn WLAN frei ist).
+bool calAutoSync();                              // Default false
+void setCalAutoSync(bool on);
+
 // --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
 uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)
 void     setLastTime(uint32_t epoch);

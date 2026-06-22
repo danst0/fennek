@@ -541,6 +541,81 @@ void setPodcastAutoSync(bool on) {
   s_prefs.putBool("pcas", on);
 }
 
+// --- Todo/Reinschrift (services/reinschrift) ----------------------------------
+namespace {
+
+bool s_todoLoaded = false;
+bool s_todoOn      = false;
+bool s_todoAuto    = false;
+char s_todoUrl[160]  = "";
+char s_todoUser[64]  = "";
+char s_todoPass[65]  = "";
+char s_todoPath[160] = "";
+
+void todoEnsure() {
+  if (s_todoLoaded || !s_open) return;
+  s_todoLoaded = true;
+  s_todoOn   = s_prefs.getBool("todoen", false);
+  s_todoAuto = s_prefs.getBool("todoauto", false);
+  if (s_prefs.isKey("todourl"))  s_prefs.getString("todourl",  s_todoUrl,  sizeof(s_todoUrl));
+  if (s_prefs.isKey("todousr"))  s_prefs.getString("todousr",  s_todoUser, sizeof(s_todoUser));
+  if (s_prefs.isKey("todopw"))   s_prefs.getString("todopw",   s_todoPass, sizeof(s_todoPass));
+  if (s_prefs.isKey("todopath")) s_prefs.getString("todopath", s_todoPath, sizeof(s_todoPath));
+}
+
+}  // namespace
+
+bool todoEnabled() { todoEnsure(); return s_todoOn; }
+void setTodoEnabled(bool on) {
+  todoEnsure();
+  if (!s_open || on == s_todoOn) return;
+  s_todoOn = on; s_prefs.putBool("todoen", on);
+}
+bool todoAutoSync() { todoEnsure(); return s_todoAuto; }
+void setTodoAutoSync(bool on) {
+  todoEnsure();
+  if (!s_open || on == s_todoAuto) return;
+  s_todoAuto = on; s_prefs.putBool("todoauto", on);
+}
+void todoUrl(char* out, size_t n)  { todoEnsure(); strncpy(out, s_todoUrl, n - 1);  out[n - 1] = '\0'; }
+void todoUser(char* out, size_t n) { todoEnsure(); strncpy(out, s_todoUser, n - 1); out[n - 1] = '\0'; }
+void todoPass(char* out, size_t n) { todoEnsure(); strncpy(out, s_todoPass, n - 1); out[n - 1] = '\0'; }
+void todoPath(char* out, size_t n) { todoEnsure(); strncpy(out, s_todoPath, n - 1); out[n - 1] = '\0'; }
+void setTodoUrl(const char* url) {
+  todoEnsure();
+  if (!s_open || !url || strcmp(url, s_todoUrl) == 0) return;
+  strncpy(s_todoUrl, url, sizeof(s_todoUrl) - 1); s_todoUrl[sizeof(s_todoUrl) - 1] = '\0';
+  s_prefs.putString("todourl", s_todoUrl);
+}
+void setTodoUser(const char* user) {
+  todoEnsure();
+  if (!s_open || !user || strcmp(user, s_todoUser) == 0) return;
+  strncpy(s_todoUser, user, sizeof(s_todoUser) - 1); s_todoUser[sizeof(s_todoUser) - 1] = '\0';
+  s_prefs.putString("todousr", s_todoUser);
+}
+void setTodoPass(const char* pass) {
+  todoEnsure();
+  if (!s_open || !pass || strcmp(pass, s_todoPass) == 0) return;
+  strncpy(s_todoPass, pass, sizeof(s_todoPass) - 1); s_todoPass[sizeof(s_todoPass) - 1] = '\0';
+  s_prefs.putString("todopw", s_todoPass);
+}
+void setTodoPath(const char* path) {
+  todoEnsure();
+  if (!s_open || !path || strcmp(path, s_todoPath) == 0) return;
+  strncpy(s_todoPath, path, sizeof(s_todoPath) - 1); s_todoPath[sizeof(s_todoPath) - 1] = '\0';
+  s_prefs.putString("todopath", s_todoPath);
+}
+
+// --- Kalender-Auto-Sync (services/calendar) -----------------------------------
+bool calAutoSync() {
+  if (!s_open) return false;
+  return s_prefs.getBool("calauto", false);
+}
+void setCalAutoSync(bool on) {
+  if (!s_open || on == calAutoSync()) return;
+  s_prefs.putBool("calauto", on);
+}
+
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
 // Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
 // ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.

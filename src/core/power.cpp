@@ -13,8 +13,10 @@
 #include "services/alarmclock.h"
 #include "services/audio.h"
 #include "services/battlog.h"
+#include "services/calendar.h"
 #include "services/notes_ai.h"
 #include "services/podcast.h"
+#include "services/reinschrift.h"
 #include "services/scrobble.h"
 #include "services/settingsfile.h"
 #include "services/timesync.h"
@@ -333,6 +335,10 @@ void poll() {
     // Podcast deaktiviert (WLAN-Sync zu langsam, v2.5.9): kein Auto-Sync vor Standby
     // mehr (brachte bei jedem Standby das WLAN hoch). Reaktivierbar.
     // podcast::flushBeforeStandby();
+    // Todo (Reinschrift/WebDAV) hochladen + Kalender-Feeds ziehen (beide
+    // verwalten WLAN selbst, mit Back-off; No-op ohne Konfig/Auto-Sync).
+    reinschrift_svc::flushBeforeStandby();
+    calendar::flushBeforeStandby();
     enterStandby();
   }
 }

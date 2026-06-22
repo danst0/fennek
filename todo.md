@@ -1,4 +1,23 @@
 # Offene Themen
+- [x] Kalender-App (iCal, Sparse Sync) + Todo-App (Reinschrift via Nextcloud/WebDAV)
+      ERLEDIGT (v2.6.1): Zwei neue Apps (Kacheln 13/14, Seite 2).
+      KALENDER (read-only): abonniert .ics-Feeds (`/calendar/feeds.txt`), zeigt
+      Agenda. Sparse = bedingter GET (304) + Streaming-Parse + Vorwaerts-Fenster
+      (56 Tage); Parser `apps/ical_core.h` (RFC-5545-Subset, RRULE DAILY/WEEKLY/
+      MONTHLY, host-getestet). Service `services/calendar.*`, Per-Feed-Cache
+      `/calendar/<slug>.bin`. Konsole `cal …`.
+      TODO (Reinschrift, ../TodosExtension): Sync der Markdown-DB ueber Nextcloud/
+      WebDAV (Basic-Auth, GET/PUT). KONFLIKTAUFLOESUNG zentral: nie blind
+      ueberschreiben — lokale Aenderungen sind eine ueber ^marker adressierte
+      Op-Queue (`/.fennek/todo_ops.tsv`); Sync = GET+ETag -> applyOps-Merge ->
+      PUT mit If-Match (412 -> einmal neu mergen). Fremde Edits an anderen
+      Aufgaben ueberleben. Core `apps/reinschrift_core.h` (host-getestet,
+      Merge-/Konflikt-Szenarien). Service `services/reinschrift.*`, App
+      `apps/todo_app` (abhaken/Quick-Add/heute-morgen/Filter). Konsole `todo …`.
+      Beide: Settings-Ordner „Todo"/„Kalender", WLAN ⊥ Audio, Sync per Button +
+      vor Auto-Standby (Back-off). Host-Tests gruen (608k Checks), Build OK.
+      OFFEN am Geraet: echter WebDAV-Roundtrip gegen globe.dumke.me + realer
+      .ics-Feed; Konflikt-Pfad (zwei Geraete) verifizieren; E-Ink-Ergonomie.
 - [x] Akkuanzeige noch immer bei 72%
       ERLEDIGT (battery.cpp): percent() liest nicht mehr das Gauge-SoC-Register
       (REG_SOC), sondern leitet den Ladestand SPANNUNGSBASIERT aus der LiPo-
