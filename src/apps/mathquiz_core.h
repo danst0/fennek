@@ -9,6 +9,13 @@
 //  - Subtraktion liefert NIE ein negatives Ergebnis (b <= a).
 //  - Division geht IMMER glatt auf (a = Quotient * b), Divisor >= 2.
 // Damit kommt die UI mit reiner Ziffern-Eingabe ohne Minus/Komma aus.
+//
+// Zeit-Ziel: jede Aufgabe soll in ~20 s lösbar sein. Dafür sind die Zahlen-
+// bereiche bewusst gedeckelt UND Aufgaben, die man im Kopf nur näherungsweise
+// rechnet (große Produkte, Geld-Prozente), tragen ein Schätzfenster `tol`:
+// eine Antwort innerhalb von ±tol zählt als „gut geschätzt" (s. accept()).
+// Schnelle, exakte Aufgaben (Plus/Minus, kleines 1x1, glatte Division,
+// Rule of 72) behalten tol=0 und verlangen weiter den genauen Wert.
 // =============================================================================
 #pragma once
 
@@ -41,7 +48,11 @@ struct Problem {
   int32_t a, b;     // Operanden (bei DIV gilt a / b)
   uint8_t op;       // Op
   int32_t answer;
+  int32_t tol;      // erlaubtes Schätzfenster (absolute Abweichung; 0 = exakt)
 };
+
+// Bewertung einer Antwort.
+enum Verdict : uint8_t { WRONG = 0, EXACT = 1, CLOSE = 2 };
 
 struct Range { int32_t lo, hi; };
 
@@ -51,7 +62,29 @@ inline int32_t pick(RndFn rnd, int32_t lo, int32_t hi) {
   if (hi <= lo) return lo;
   return lo + (int32_t)rnd((uint32_t)(hi - lo + 1));
 }
+// pct % des Betrags, aber mindestens 1 (sonst hätte ein kleiner Wert kein Fenster).
+inline int32_t pctOf(int32_t value, int pct) {
+  int32_t v = value < 0 ? -value : value;
+  int32_t t = v * pct / 100;
+  return t < 1 ? 1 : t;
+}
 }  // namespace detail
+
+// Schätzfenster (absolute Abweichung) für eine Aufgabe. Aufgaben, die man im
+// Kopf nur näherungsweise löst, bekommen ein prozentuales Fenster (das mit der
+// Stufe wächst); reine Kopf-Rechen-Aufgaben mit exakter Erwartung bleiben bei 0.
+inline int32_t toleranceFor(uint8_t op, uint8_t level, int32_t answer) {
+  switch (op) {
+    case MUL:                                  // großes 1x1: schätzbar ab Mittel
+      return level == 0 ? 0 : detail::pctOf(answer, level == 1 ? 5 : 10);
+    case PCT: case MARKUP: case DISCOUNT:      // Geldbeträge: immer schätzbar
+      return detail::pctOf(answer, level == 0 ? 2 : (level == 1 ? 4 : 7));
+    case SHARE: case GROWTH:                    // Prozent-Ergebnis: ±1..2 Punkte
+      return level == 2 ? 2 : 1;
+    default:                                     // ADD/SUB/DIV/RULE72: exakt
+      return 0;
+  }
+}
 
 // Erzeugt eine Aufgabe für Operation op und Stufe level (0=Leicht..2=Schwer).
 inline Problem generate(Op op, uint8_t level, RndFn rnd) {
@@ -74,8 +107,9 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
       break;
     }
     case MUL: {
-      static const Range ra[3] = {{1, 10}, {2, 12}, {2, 20}};
-      static const Range rb[3] = {{1, 10}, {2, 20}, {2, 50}};
+      // Bereiche gedeckelt (20-s-Ziel); große Produkte ab Mittel sind schätzbar.
+      static const Range ra[3] = {{1, 10}, {2, 12}, {2, 19}};
+      static const Range rb[3] = {{1, 10}, {2, 15}, {2, 30}};
       p.a = detail::pick(rnd, ra[level].lo, ra[level].hi);
       p.b = detail::pick(rnd, rb[level].lo, rb[level].hi);
       p.answer = p.a * p.b;
@@ -83,8 +117,9 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
     }
     case DIV: {
       // Quotient q und Divisor b ganzzahlig ziehen, a = q*b -> exakt teilbar.
-      static const Range rb[3] = {{2, 10}, {2, 12}, {2, 20}};
-      static const Range rq[3] = {{1, 10}, {2, 12}, {2, 50}};
+      // Divisor bleibt klein (<=12), damit die Division im Kopf rasch aufgeht.
+      static const Range rb[3] = {{2, 9}, {2, 10}, {2, 12}};
+      static const Range rq[3] = {{1, 10}, {2, 12}, {2, 30}};
       p.b = detail::pick(rnd, rb[level].lo, rb[level].hi);
       int32_t q = detail::pick(rnd, rq[level].lo, rq[level].hi);
       p.a = q * p.b;
@@ -131,7 +166,17 @@ inline Problem generate(Op op, uint8_t level, RndFn rnd) {
     }
     default: break;
   }
+  p.tol = toleranceFor(p.op, level, p.answer);
   return p;
+}
+
+// Bewertet eine eingegebene Antwort: exakt, gut geschätzt (innerhalb ±tol) oder
+// falsch. Eine gute Schätzung zählt für die Statistik wie eine richtige Antwort.
+inline Verdict accept(const Problem& p, int32_t given) {
+  if (given == p.answer) return EXACT;
+  int32_t d = given - p.answer;
+  if (d < 0) d = -d;
+  return (p.tol > 0 && d <= p.tol) ? CLOSE : WRONG;
 }
 
 // Wählt aus einer Operations-Bitmaske zufällig eine erlaubte Operation.

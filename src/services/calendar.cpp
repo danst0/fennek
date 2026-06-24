@@ -85,10 +85,16 @@ void writeFeeds(char urls[][192], int n) {
   spiUnlock();
 }
 
+// CalDAV-Feed? Erkennung über das Pseudo-Schema-Präfix "caldav:" in feeds.txt
+// (z. B. "caldav:https://p##-caldav.icloud.com/123/calendars/home/"). Dahinter
+// steht die echte URL, gegen die mit Basic-Auth ein REPORT läuft.
+bool isCaldav(const char* url) { return strncmp(url, "caldav:", 7) == 0; }
+const char* realUrl(const char* url) { return isCaldav(url) ? url + 7 : url; }
+
 // --- Per-Feed-Cache (.bin) ----------------------------------------------------
 void slugPaths(const char* url, char* bin, size_t bn, char* etag, size_t en) {
   char slug[48];
-  podcast::feedSlug(url, slug, sizeof(slug));
+  podcast::feedSlug(realUrl(url), slug, sizeof(slug));
   snprintf(bin,  bn, "/calendar/%s.bin",  slug);
   snprintf(etag, en, "/calendar/%s.etag", slug);
 }
@@ -216,6 +222,136 @@ bool fetchFeed(const char* url, const char* prevEtag, char* newEtag, size_t etag
   return true;
 }
 
+// --- CalDAV (iCloud u. a.): REPORT calendar-query mit Basic-Auth --------------
+constexpr size_t kXmlCap = 256 * 1024;       // REPORT-Antwort (zeitfenster-begrenzt)
+char* s_xml = nullptr;
+
+// UTC-Epoche → "YYYYMMDDTHHMMSSZ" (CalDAV time-range-Grenzen).
+void fmtUtcZ(uint32_t e, char* out) {
+  int y; unsigned m, d; ical::detail::civilFromEpoch(e, &y, &m, &d);
+  uint32_t tod = e % 86400u;
+  snprintf(out, 18, "%04d%02u%02uT%02u%02u%02uZ", y, m, d,
+           (unsigned)(tod / 3600), (unsigned)((tod % 3600) / 60), (unsigned)(tod % 60));
+}
+
+// Eine (XML-escapte) iCalendar-Zeile entescapen → out.
+void xmlUnescapeLine(const char* s, const char* e, char* out, size_t cap) {
+  size_t o = 0;
+  for (const char* p = s; p < e && o + 1 < cap; ) {
+    if (*p == '&') {
+      const char* sc = p + 1; const char* semi = sc;
+      while (semi < e && *semi != ';' && (size_t)(semi - sc) < 10) semi++;
+      if (semi < e && *semi == ';') {
+        size_t nlen = (size_t)(semi - sc);
+        if (nlen >= 2 && sc[0] == '#') {
+          uint32_t cp = (sc[1] == 'x' || sc[1] == 'X') ? (uint32_t)strtoul(sc + 2, nullptr, 16)
+                                                       : (uint32_t)strtoul(sc + 1, nullptr, 10);
+          if (cp == 13 || cp == 10) { p = semi + 1; continue; }   // CR/LF verwerfen
+          if (cp && cp < 128) { out[o++] = (char)cp; p = semi + 1; continue; }
+        } else if (nlen == 3 && memcmp(sc, "amp", 3) == 0)  { out[o++] = '&';  p = semi + 1; continue; }
+        else if (nlen == 2 && memcmp(sc, "lt", 2) == 0)     { out[o++] = '<';  p = semi + 1; continue; }
+        else if (nlen == 2 && memcmp(sc, "gt", 2) == 0)     { out[o++] = '>';  p = semi + 1; continue; }
+        else if (nlen == 4 && memcmp(sc, "quot", 4) == 0)   { out[o++] = '"';  p = semi + 1; continue; }
+        else if (nlen == 4 && memcmp(sc, "apos", 4) == 0)   { out[o++] = '\''; p = semi + 1; continue; }
+      }
+    }
+    out[o++] = *p++;
+  }
+  out[o] = '\0';
+}
+
+bool fetchCaldav(const char* url, const char* user, const char* pass,
+                 calendar::CalEvent* feedEv, int* feedN, uint32_t ws, uint32_t we) {
+  *feedN = 0;
+  if (!s_xml) {
+    s_xml = (char*)heap_caps_malloc(kXmlCap, MALLOC_CAP_SPIRAM);
+    if (!s_xml) { Serial.println("[CAL] kein PSRAM fuer CalDAV"); return false; }
+  }
+  // Server-seitige Zeitfilterung hält die Antwort klein.
+  char zs[18], ze[18];
+  fmtUtcZ(ws == 0 ? 0 : ws, zs);
+  fmtUtcZ(we == 0xFFFFFFFFu ? (uint32_t)(timesync::now() + 365u * 86400u) : we, ze);
+  String body =
+    String("<c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+           "<d:prop><c:calendar-data/></d:prop>"
+           "<c:filter><c:comp-filter name=\"VCALENDAR\"><c:comp-filter name=\"VEVENT\">"
+           "<c:time-range start=\"") + zs + "\" end=\"" + ze + "\"/>"
+           "</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>";
+
+  bool https = String(url).startsWith("https");
+  HTTPClient http; WiFiClientSecure cs; WiFiClient cp;
+  bool begun = https ? (cs.setInsecure(), http.begin(cs, url)) : http.begin(cp, url);
+  if (!begun) return false;
+  http.setTimeout(kHttpTimeoutMs);
+  http.setConnectTimeout(kHttpTimeoutMs);
+  http.setUserAgent("fennek");
+  if (user && user[0]) http.setAuthorization(user, pass);
+  http.addHeader("Depth", "1");
+  http.addHeader("Content-Type", "text/xml; charset=utf-8");
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+  int code = http.sendRequest("REPORT", (uint8_t*)body.c_str(), body.length());
+  if (code != 207 && code != 200) { Serial.printf("[CAL] REPORT HTTP %d\n", code); http.end(); return false; }
+
+  WiFiClient* st = http.getStreamPtr();
+  size_t o = 0; uint32_t idle = millis();
+  while ((http.connected() || st->available()) && o + 1 < kXmlCap) {
+    int avail = st->available();
+    if (avail <= 0) { if (millis() - idle > 6000) break; delay(2); continue; }
+    int want = (avail < (int)(kXmlCap - 1 - o)) ? avail : (int)(kXmlCap - 1 - o);
+    int r = st->read((uint8_t*)s_xml + o, want);
+    if (r > 0) { o += r; idle = millis(); }
+  }
+  s_xml[o] = '\0';
+  http.end();
+
+  // <calendar-data>…</calendar-data>-Bloecke aus dem multistatus ziehen, jeden
+  // (XML-escapt) als VCALENDAR an den iCal-Parser fuettern.
+  const char* end = s_xml + o;
+  ical::Parser parser;
+  int n = 0;
+  auto emit = [&](ical::Event& ev) {
+    ical::expand(ev, ws, we, [&](uint32_t s, uint32_t e) {
+      if (n >= kMaxPerFeed) return;
+      calendar::CalEvent& c = feedEv[n++];
+      c.start = s; c.end = e; c.allDay = ev.allDay ? 1 : 0;
+      strncpy(c.summary, ev.summary, sizeof(c.summary) - 1); c.summary[sizeof(c.summary) - 1] = '\0';
+      strncpy(c.location, ev.location, sizeof(c.location) - 1); c.location[sizeof(c.location) - 1] = '\0';
+    });
+  };
+
+  const char* p = s_xml;
+  char lbuf[320];
+  while (n < kMaxPerFeed) {
+    const char* cd = podcast::detail::ciFind(p, end, "calendar-data");
+    if (!cd) break;
+    const char* gt = (const char*)memchr(cd, '>', (size_t)(end - cd));
+    if (!gt) break;
+    if (gt > cd && gt[-1] == '/') { p = gt + 1; continue; }   // <calendar-data/>
+    const char* content = gt + 1;
+    const char* close = podcast::detail::ciFind(content, end, "calendar-data>");
+    const char* be = close ? close : end;
+    if (close) { while (be > content && *be != '<') be--; }    // bis zum "</" zurück
+
+    parser.reset();
+    for (const char* s = content; s < be; ) {
+      const char* nl = s;
+      while (nl < be && *nl != '\n') nl++;
+      const char* le = nl;
+      while (le > s && le[-1] == '\r') le--;
+      xmlUnescapeLine(s, le, lbuf, sizeof(lbuf));
+      ical::Event ev;
+      if (parser.feedLine(lbuf, &ev)) emit(ev);
+      s = (nl < be) ? nl + 1 : nl;
+    }
+    { ical::Event ev; if (parser.finish(&ev)) emit(ev); }
+    p = close ? close + 14 : end;
+  }
+
+  *feedN = n;
+  return true;
+}
+
 bool syncCore(bool useBackoff, char* log, size_t logN) {
   auto setLog = [&](const char* m) { if (log && logN) { strncpy(log, m, logN - 1); log[logN - 1] = '\0'; } };
 
@@ -250,6 +386,9 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
 
   int fetched = 0;
   if (connected) {
+    char cdUser[64], cdPass[65];
+    settings::calDavUser(cdUser, sizeof(cdUser));
+    settings::calDavPass(cdPass, sizeof(cdPass));
     uint32_t ws, we; window(&ws, &we);
     s_eventN = 0;
     calendar::CalEvent* feedEv = (calendar::CalEvent*)heap_caps_malloc(
@@ -260,8 +399,11 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
       slugPaths(urls[i], bin, sizeof(bin), etagPath, sizeof(etagPath));
       readEtag(etagPath, prevEtag, sizeof(prevEtag));
       int fn = 0;
-      if (fetchFeed(urls[i], prevEtag, newEtag, sizeof(newEtag), feedEv, &fn, ws, we)) {
-        // 200: frisch geparst → Cache schreiben, in Liste aufnehmen.
+      bool ok = isCaldav(urls[i])
+          ? fetchCaldav(realUrl(urls[i]), cdUser, cdPass, feedEv, &fn, ws, we)
+          : fetchFeed(urls[i], prevEtag, newEtag, sizeof(newEtag), feedEv, &fn, ws, we);
+      if (ok) {
+        // frisch geladen → Cache schreiben, in Liste aufnehmen.
         writeBin(bin, feedEv, fn);
         if (newEtag[0]) writeEtag(etagPath, newEtag);
         for (int k = 0; k < fn && s_eventN < kMaxEvents; k++) s_events[s_eventN++] = feedEv[k];

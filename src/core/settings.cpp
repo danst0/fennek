@@ -606,7 +606,19 @@ void setTodoPath(const char* path) {
   s_prefs.putString("todopath", s_todoPath);
 }
 
-// --- Kalender-Auto-Sync (services/calendar) -----------------------------------
+// --- Kalender (services/calendar) ---------------------------------------------
+namespace {
+bool s_calLoaded = false;
+char s_calUser[64] = "";
+char s_calPass[65] = "";
+void calEnsure() {
+  if (s_calLoaded || !s_open) return;
+  s_calLoaded = true;
+  if (s_prefs.isKey("caldavusr")) s_prefs.getString("caldavusr", s_calUser, sizeof(s_calUser));
+  if (s_prefs.isKey("caldavpw"))  s_prefs.getString("caldavpw",  s_calPass, sizeof(s_calPass));
+}
+}  // namespace
+
 bool calAutoSync() {
   if (!s_open) return false;
   return s_prefs.getBool("calauto", false);
@@ -614,6 +626,20 @@ bool calAutoSync() {
 void setCalAutoSync(bool on) {
   if (!s_open || on == calAutoSync()) return;
   s_prefs.putBool("calauto", on);
+}
+void calDavUser(char* out, size_t n) { calEnsure(); strncpy(out, s_calUser, n - 1); out[n - 1] = '\0'; }
+void calDavPass(char* out, size_t n) { calEnsure(); strncpy(out, s_calPass, n - 1); out[n - 1] = '\0'; }
+void setCalDavUser(const char* user) {
+  calEnsure();
+  if (!s_open || !user || strcmp(user, s_calUser) == 0) return;
+  strncpy(s_calUser, user, sizeof(s_calUser) - 1); s_calUser[sizeof(s_calUser) - 1] = '\0';
+  s_prefs.putString("caldavusr", s_calUser);
+}
+void setCalDavPass(const char* pass) {
+  calEnsure();
+  if (!s_open || !pass || strcmp(pass, s_calPass) == 0) return;
+  strncpy(s_calPass, pass, sizeof(s_calPass) - 1); s_calPass[sizeof(s_calPass) - 1] = '\0';
+  s_prefs.putString("caldavpw", s_calPass);
 }
 
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------

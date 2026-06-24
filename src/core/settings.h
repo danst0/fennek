@@ -141,10 +141,16 @@ bool todoAutoSync();                             // Default false
 void setTodoAutoSync(bool on);
 
 // --- Kalender (services/calendar) ---------------------------------------------
-// iCal-Feeds liegen in /calendar/feeds.txt; hier nur der Auto-Sync-Schalter
-// (Sync der Feeds vor dem Auto-Standby, wenn WLAN frei ist).
+// iCal-Feeds liegen in /calendar/feeds.txt; hier der Auto-Sync-Schalter (Sync
+// vor dem Auto-Standby) und optionale CalDAV-Zugangsdaten (Apple-ID +
+// App-spezifisches Passwort) für `caldav:`-Feeds (z. B. iCloud). Plain-`.ics`-
+// Feeds bleiben unauthentifiziert.
 bool calAutoSync();                              // Default false
 void setCalAutoSync(bool on);
+void calDavUser(char* out, size_t n);            // "" = keine Auth
+void setCalDavUser(const char* user);
+void calDavPass(char* out, size_t n);
+void setCalDavPass(const char* pass);
 
 // --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
 uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)

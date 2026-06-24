@@ -108,6 +108,42 @@ static int testMathquiz() {
       CHECK(p.answer >= 1);
     }
   }
+  // --- Schätz-Toleranz + acc() -----------------------------------------------
+  // Exakte Aufgaben (Plus/Minus/Geteilt/Rule72) haben kein Schätzfenster.
+  for (uint8_t lvl = 0; lvl < 3; lvl++) {
+    for (int i = 0; i < 500; i++) {
+      CHECK(generate(ADD, lvl, testRnd).tol == 0);
+      CHECK(generate(SUB, lvl, testRnd).tol == 0);
+      CHECK(generate(DIV, lvl, testRnd).tol == 0);
+      CHECK(generate(RULE72, lvl, testRnd).tol == 0);
+    }
+  }
+  // Mal: Leicht exakt (kleines 1x1), ab Mittel ein Schätzfenster.
+  for (int i = 0; i < 500; i++) {
+    CHECK(generate(MUL, 0, testRnd).tol == 0);
+    CHECK(generate(MUL, 1, testRnd).tol >= 1);
+    CHECK(generate(MUL, 2, testRnd).tol >= 1);
+  }
+  // Geld-Ops haben immer ein Fenster; SHARE/GROWTH ±1..2 Prozentpunkte.
+  for (uint8_t lvl = 0; lvl < 3; lvl++) {
+    for (int op = PCT; op <= DISCOUNT; op++)
+      CHECK(generate((Op)op, lvl, testRnd).tol >= 1);
+    CHECK(generate(SHARE, lvl, testRnd).tol >= 1 && generate(SHARE, lvl, testRnd).tol <= 2);
+    CHECK(generate(GROWTH, lvl, testRnd).tol >= 1 && generate(GROWTH, lvl, testRnd).tol <= 2);
+  }
+  // accept(): exakt, am Rand des Fensters noch CLOSE, knapp darüber WRONG.
+  {
+    Problem ex{}; ex.op = ADD; ex.answer = 42; ex.tol = 0;
+    CHECK(accept(ex, 42) == EXACT);
+    CHECK(accept(ex, 43) == WRONG);            // ohne Fenster zählt nur exakt
+    Problem es{}; es.op = MUL; es.answer = 700; es.tol = 70;
+    CHECK(accept(es, 700) == EXACT);
+    CHECK(accept(es, 770) == CLOSE);           // genau am Rand
+    CHECK(accept(es, 630) == CLOSE);           // auch nach unten
+    CHECK(accept(es, 771) == WRONG);           // knapp daneben
+    CHECK(accept(es, 500) == WRONG);
+  }
+
   // pickOp respektiert die Maske.
   for (int i = 0; i < 1000; i++) {
     Op o = pickOp(opBit(MUL) | opBit(DIV), testRnd);

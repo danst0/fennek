@@ -79,6 +79,13 @@ char    s_input[10] = "";
 int     s_inputLen = 0;
 bool    s_answered = false;
 bool    s_lastCorrect = false;
+uint8_t s_lastVerdict = WRONG;   // exakt / geschätzt / falsch (Feedback-Text)
+
+// Zeit-Ziel: jede Aufgabe in <= 20 s. Wir stoppen die Zeit pro Aufgabe und
+// zeigen die Sekunden im Feedback (kein Live-Countdown -> kein E-Ink-Geflacker).
+constexpr uint32_t kTargetSecs = 20;
+uint32_t s_qStartMs = 0;      // Startzeitpunkt der aktuellen Aufgabe
+uint32_t s_lastSecs = 0;      // gebrauchte Sekunden der letzten Antwort
 
 int s_total = 0, s_correct = 0, s_streak = 0;
 
@@ -133,6 +140,7 @@ void startQuiz() {
   s_answered = false;
   s_levelChanged = false;
   s_problem = generate(pickOp(s_mask, rnd), s_level, rnd);
+  s_qStartMs = millis();
   s_screen = QUIZ;
   Serial.printf("[MATH] Start: %s, Stufe %s\n", kModes[s_sel].label, kLevels[s_level]);
   appmgr::markDirty();
@@ -233,11 +241,17 @@ void quizMid(Adafruit_GFX& g) {
   const char* ansShown = ans[0] ? ans : " ";
   uint8_t asize = fitSize(ansShown, 3);
 
-  char fb[56];
+  char fb[72];
   if (s_answered) {
-    char base[24];
-    if (s_lastCorrect) snprintf(base, sizeof(base), "Richtig!");
-    else snprintf(base, sizeof(base), "Falsch: %ld", (long)s_problem.answer);
+    char base[40];
+    if (s_lastVerdict == EXACT)
+      snprintf(base, sizeof(base), "Richtig! (%lus)", (unsigned long)s_lastSecs);
+    else if (s_lastVerdict == CLOSE)   // gute Schätzung: exakten Wert mit zeigen
+      snprintf(base, sizeof(base), "Gut geschätzt! %ld (%lus)",
+               (long)s_problem.answer, (unsigned long)s_lastSecs);
+    else
+      snprintf(base, sizeof(base), "Falsch: %ld (%lus)",
+               (long)s_problem.answer, (unsigned long)s_lastSecs);
     // Nach einem adaptiven Stufenwechsel kurz die neue Stufe anzeigen.
     if (s_levelChanged) snprintf(fb, sizeof(fb), "%s  Stufe: %s", base, kLevels[s_level]);
     else snprintf(fb, sizeof(fb), "%s", base);
@@ -272,7 +286,11 @@ void quizDraw(Adafruit_GFX& g) {
   char stat[48];
   snprintf(stat, sizeof(stat), "Serie: %d   Richtig: %d/%d", s_streak, s_correct, s_total);
   gui::printAt(g, 10, 286, stat, 1);
-  gui::printAt(g, 10, 304, "Ziffern + Enter   Q = zurueck", 1);
+  // Schätz-Aufgaben (tol>0) erlauben gute Näherungen; Ziel-Zeit nennen.
+  if (s_problem.tol > 0)
+    gui::printAt(g, 10, 304, "Schaetzen zaehlt  Ziel <20s  Q=zurueck", 1);
+  else
+    gui::printAt(g, 10, 304, "Ziffern + Enter  Ziel <20s  Q=zurueck", 1);
 }
 
 void nextProblem() {
@@ -281,6 +299,7 @@ void nextProblem() {
   s_answered = false;
   s_levelChanged = false;
   s_problem = generate(pickOp(s_mask, rnd), s_level, rnd);
+  s_qStartMs = millis();
   appmgr::markDirty();
 }
 
@@ -304,7 +323,10 @@ void adaptDifficulty() {
 void submit() {
   if (s_inputLen == 0) return;
   long given = atol(s_input);
-  s_lastCorrect = (given == s_problem.answer);
+  s_lastSecs = (millis() - s_qStartMs) / 1000;
+  Verdict v = accept(s_problem, (int32_t)given);
+  s_lastVerdict = v;
+  s_lastCorrect = (v != WRONG);   // gute Schätzung zählt wie richtig
   s_total++;
   if (s_lastCorrect) {
     s_correct++;

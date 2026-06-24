@@ -819,6 +819,8 @@ void handleLine(char* line) {
     Serial.printf("[CON] Feed %d %s\n", idx, calendar::removeFeed(idx) ? "entfernt" : "Fehler");
     return;
   }
+  if (strncmp(line, "cal user ", 9) == 0) { settings::setCalDavUser(line + 9); Serial.printf("[CON] CalDAV-User: '%s'\n", line + 9); return; }
+  if (strncmp(line, "cal pass ", 9) == 0) { settings::setCalDavPass(line + 9); Serial.println("[CON] CalDAV-Passwort gesetzt"); return; }
   if (strcmp(line, "cal on") == 0)  { settings::setCalAutoSync(true);  Serial.println("[CON] Kalender-Auto-Sync EIN"); return; }
   if (strcmp(line, "cal off") == 0) { settings::setCalAutoSync(false); Serial.println("[CON] Kalender-Auto-Sync AUS"); return; }
   if (strcmp(line, "cal sync") == 0) {
