@@ -16,6 +16,7 @@
 #include "services/scrobble.h"
 #include "services/podcast.h"
 #include "services/calendar.h"
+#include "services/calibre_books.h"
 #include "services/reinschrift.h"
 #include "services/ota.h"
 #include "services/alarmclock.h"
@@ -102,6 +103,12 @@ void cmdHelp() {
   Serial.println("[CON]   podcast rm <idx>  - Feed entfernen");
   Serial.println("[CON]   podcast on|off    - Auto-Sync vor Standby ein/aus");
   Serial.println("[CON]   podcast sync      - neueste Folgen jetzt laden (WLAN)");
+  Serial.println("[CON]   calibre           - Calibre-Sync-Status");
+  Serial.println("[CON]   calibre url <url> - Calibre-Web (z. B. https://calibre.example)");
+  Serial.println("[CON]   calibre user/pass - Calibre-Web-Login (OPDS-Basic-Auth)");
+  Serial.println("[CON]   calibre shelf <s> - Buecherregal, Name oder ID (Default Fennek)");
+  Serial.println("[CON]   calibre on|off    - Auto-Sync vor Standby ein/aus");
+  Serial.println("[CON]   calibre sync      - neue Buecher jetzt laden (WLAN)");
   Serial.println("[CON]   ota               - OTA-Status (Version + Update-URL)");
   Serial.println("[CON]   ota url <url>     - Update-Quelle (GitHub-Release-API/Manifest)");
   Serial.println("[CON]   ota check         - auf neue Firmware pruefen (WLAN)");
@@ -852,6 +859,27 @@ void handleLine(char* line) {
     Serial.printf("[CON] Todo=%s URL='%s' Pfad='%s'; %d Aufgaben, %d offen\n",
                   settings::todoEnabled() ? "an" : "aus", url, path,
                   reinschrift_svc::count(), reinschrift_svc::pendingCount());
+    return;
+  }
+  // --- Calibre (E-Book-Pull-Sync vom Content Server) ---
+  if (strncmp(line, "calibre url ", 12) == 0)   { settings::setCalibreUrl(line + 12);   Serial.printf("[CON] Calibre-URL: '%s'\n", line + 12); return; }
+  if (strncmp(line, "calibre user ", 13) == 0)  { settings::setCalibreUser(line + 13);  Serial.printf("[CON] Calibre-User: '%s'\n", line + 13); return; }
+  if (strncmp(line, "calibre pass ", 13) == 0)  { settings::setCalibrePass(line + 13);  Serial.println("[CON] Calibre-Passwort gesetzt"); return; }
+  if (strncmp(line, "calibre shelf ", 14) == 0) { settings::setCalibreShelf(line + 14); Serial.printf("[CON] Calibre-Regal: '%s'\n", line + 14); return; }
+  if (strcmp(line, "calibre on") == 0)  { settings::setCalibreAutoSync(true);  Serial.println("[CON] Calibre-Auto-Sync EIN"); return; }
+  if (strcmp(line, "calibre off") == 0) { settings::setCalibreAutoSync(false); Serial.println("[CON] Calibre-Auto-Sync AUS"); return; }
+  if (strcmp(line, "calibre sync") == 0) {
+    char msg[64]; calibre_books::sync(msg, sizeof(msg));
+    Serial.printf("[CON] Calibre-Sync: %s\n", msg);
+    return;
+  }
+  if (strcmp(line, "calibre") == 0) {
+    char url[160], shelf[64];
+    settings::calibreUrl(url, sizeof(url));
+    settings::calibreShelf(shelf, sizeof(shelf));
+    Serial.printf("[CON] Calibre Auto-Sync=%s URL='%s' Regal='%s'; %d Buch/Buecher gesynct\n",
+                  settings::calibreAutoSync() ? "an" : "aus", url, shelf,
+                  calibre_books::syncedCount());
     return;
   }
   if (strncmp(line, "ota url ", 8) == 0) {

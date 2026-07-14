@@ -642,6 +642,64 @@ void setCalDavPass(const char* pass) {
   s_prefs.putString("caldavpw", s_calPass);
 }
 
+// --- Calibre-Buch-Sync (services/calibre_books) --------------------------------
+namespace {
+
+bool s_cbLoaded  = false;
+bool s_cbAuto    = false;
+char s_cbUrl[160]  = "";
+char s_cbUser[64]  = "";
+char s_cbPass[65]  = "";
+char s_cbShelf[64] = "";
+
+void cbEnsure() {
+  if (s_cbLoaded || !s_open) return;
+  s_cbLoaded = true;
+  s_cbAuto = s_prefs.getBool("cbauto", false);
+  if (s_prefs.isKey("cburl"))   s_prefs.getString("cburl",   s_cbUrl,   sizeof(s_cbUrl));
+  if (s_prefs.isKey("cbusr"))   s_prefs.getString("cbusr",   s_cbUser,  sizeof(s_cbUser));
+  if (s_prefs.isKey("cbpw"))    s_prefs.getString("cbpw",    s_cbPass,  sizeof(s_cbPass));
+  if (s_prefs.isKey("cbshelf")) s_prefs.getString("cbshelf", s_cbShelf, sizeof(s_cbShelf));
+  if (!s_cbShelf[0]) strcpy(s_cbShelf, "Fennek");
+}
+
+}  // namespace
+
+void calibreUrl(char* out, size_t n)   { cbEnsure(); strncpy(out, s_cbUrl,   n - 1); out[n - 1] = '\0'; }
+void calibreUser(char* out, size_t n)  { cbEnsure(); strncpy(out, s_cbUser,  n - 1); out[n - 1] = '\0'; }
+void calibrePass(char* out, size_t n)  { cbEnsure(); strncpy(out, s_cbPass,  n - 1); out[n - 1] = '\0'; }
+void calibreShelf(char* out, size_t n) { cbEnsure(); strncpy(out, s_cbShelf, n - 1); out[n - 1] = '\0'; }
+void setCalibreUrl(const char* url) {
+  cbEnsure();
+  if (!s_open || !url || strcmp(url, s_cbUrl) == 0) return;
+  strncpy(s_cbUrl, url, sizeof(s_cbUrl) - 1); s_cbUrl[sizeof(s_cbUrl) - 1] = '\0';
+  s_prefs.putString("cburl", s_cbUrl);
+}
+void setCalibreUser(const char* user) {
+  cbEnsure();
+  if (!s_open || !user || strcmp(user, s_cbUser) == 0) return;
+  strncpy(s_cbUser, user, sizeof(s_cbUser) - 1); s_cbUser[sizeof(s_cbUser) - 1] = '\0';
+  s_prefs.putString("cbusr", s_cbUser);
+}
+void setCalibrePass(const char* pass) {
+  cbEnsure();
+  if (!s_open || !pass || strcmp(pass, s_cbPass) == 0) return;
+  strncpy(s_cbPass, pass, sizeof(s_cbPass) - 1); s_cbPass[sizeof(s_cbPass) - 1] = '\0';
+  s_prefs.putString("cbpw", s_cbPass);
+}
+void setCalibreShelf(const char* shelf) {
+  cbEnsure();
+  if (!s_open || !shelf || strcmp(shelf, s_cbShelf) == 0) return;
+  strncpy(s_cbShelf, shelf, sizeof(s_cbShelf) - 1); s_cbShelf[sizeof(s_cbShelf) - 1] = '\0';
+  s_prefs.putString("cbshelf", s_cbShelf);
+}
+bool calibreAutoSync() { cbEnsure(); return s_cbAuto; }
+void setCalibreAutoSync(bool on) {
+  cbEnsure();
+  if (!s_open || on == s_cbAuto) return;
+  s_cbAuto = on; s_prefs.putBool("cbauto", on);
+}
+
 // --- Uhrzeit-Persistenz + Zeitzone (services/timesync) -------------------------
 // Nur Kaltstart-Fallback (Stromausfall/Reset); im Normalbetrieb überlebt die
 // ESP32-Systemzeit den Deep Sleep selbst. Schreibdrosselung liegt im Aufrufer.

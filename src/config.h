@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 // Firmware-Version (wird u. a. in der Optionen-App angezeigt).
-#define FENNEK_VERSION "v2.6.4"
+#define FENNEK_VERSION "v2.6.5"
 
 // -----------------------------------------------------------------------------
 // Peripherie-Power

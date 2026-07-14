@@ -152,6 +152,23 @@ void setCalDavUser(const char* user);
 void calDavPass(char* out, size_t n);
 void setCalDavPass(const char* pass);
 
+// --- Calibre-Buch-Sync (services/calibre_books) --------------------------------
+// Calibre-Web-URL inkl. Schema (z. B. https://calibre.dumke.me), Basic-Auth-
+// Zugangsdaten (Calibre-Web-Login; OPDS nutzt immer Basic) und das Bücherregal
+// (Shelf), das bestimmt, welche Bücher aufs Gerät kommen — Name oder numerische
+// Shelf-ID (Default "Fennek"). autoSync = Pull vor dem Auto-Standby (höchstens
+// alle 6 h).
+void calibreUrl(char* out, size_t n);            // "" = nicht konfiguriert
+void setCalibreUrl(const char* url);
+void calibreUser(char* out, size_t n);           // "" = keine Auth
+void setCalibreUser(const char* user);
+void calibrePass(char* out, size_t n);
+void setCalibrePass(const char* pass);
+void calibreShelf(char* out, size_t n);          // Default "Fennek"
+void setCalibreShelf(const char* shelf);
+bool calibreAutoSync();                          // Default false
+void setCalibreAutoSync(bool on);
+
 // --- Uhrzeit/Zeitzone (services/timesync) -------------------------------------
 uint32_t lastTime();                      // 0 = nie gespeichert (Kaltstart-Fallback)
 void     setLastTime(uint32_t epoch);

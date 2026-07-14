@@ -14,6 +14,7 @@
 #include "services/audio.h"
 #include "services/battlog.h"
 #include "services/calendar.h"
+#include "services/calibre_books.h"
 #include "services/notes_ai.h"
 #include "services/podcast.h"
 #include "services/reinschrift.h"
@@ -542,6 +543,9 @@ void poll() {
     // verwalten WLAN selbst, mit Back-off; No-op ohne Konfig/Auto-Sync).
     reinschrift_svc::flushBeforeStandby();
     calendar::flushBeforeStandby();
+    // Neue Buecher vom Calibre-Server ziehen (verwaltet WLAN selbst; hoechstens
+    // alle 6 h + Back-off — bringt NICHT jeden Standby das WLAN hoch).
+    calibre_books::flushBeforeStandby();
     enterStandby();
   }
 }
