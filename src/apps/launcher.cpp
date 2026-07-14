@@ -117,11 +117,18 @@ class LauncherApp : public App {
       g.drawRoundRect(r.x, r.y, r.w, r.h, 8, GxEPD_BLACK);
       if (slot == s_cursor)
         g.drawRoundRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, 7, GxEPD_BLACK);
-      // Belegte Kacheln zeigen ein Icon (zentriert); ohne Icon/ohne App fällt
-      // es auf den Text-Label zurück.
+      // Belegte Kacheln zeigen ein Icon links + kleines Label rechts daneben;
+      // ohne Icon/ohne App fällt es auf den großen Text-Label zurück.
       if (s_tiles[i].app &&
-          launcher_icons::draw(g, s_tiles[i].label, r.x + r.w / 2, r.y + r.h / 2))
+          launcher_icons::draw(g, s_tiles[i].label, r.x + 22, r.y + r.h / 2)) {
+        const char* label = i18n::tr(s_tiles[i].label);
+        g.setTextSize(1);
+        uint16_t bw, bh;
+        gui::textBounds(g, label, &bw, &bh);
+        g.setCursor(r.x + 44, r.y + (r.h - (int)bh) / 2);
+        gui::print(g, label);
         continue;
+      }
       g.setTextSize(2);
       uint16_t bw, bh;
       const char* label = i18n::tr(s_tiles[i].label);

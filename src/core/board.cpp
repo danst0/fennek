@@ -22,6 +22,7 @@ const gpio_num_t kHoldPins[] = {
   (gpio_num_t)PIN_PERF_POWERON, (gpio_num_t)PIN_DAC_EN, (gpio_num_t)PIN_LORA_EN,
   (gpio_num_t)PIN_EINK_CS, (gpio_num_t)PIN_LORA_CS, (gpio_num_t)PIN_SD_CS,
   (gpio_num_t)PIN_EINK_RST, (gpio_num_t)PIN_GPS_EN, (gpio_num_t)PIN_DRV_EN,
+  (gpio_num_t)PIN_KB_BL,   // Backlight-Gate LOW halten (floatete sonst im Schlaf)
 };
 }
 
@@ -67,6 +68,12 @@ void powerOn() {
   //    (GPIO2) LOW, ebenfalls über den Schlaf gehalten. Spart ~1-2 mA Standby.
   pinMode(PIN_DRV_EN, OUTPUT);
   digitalWrite(PIN_DRV_EN, LOW);
+
+  // 8) Tastatur-Backlight (GPIO42) definiert aus — der Pin trieb bisher nie
+  //    jemand außer dem Wecker-Blinken; undefiniert/floatend kann das Gate
+  //    des Backlight-FETs Strom ziehen. Auf Boards ohne Backlight harmlos.
+  pinMode(PIN_KB_BL, OUTPUT);
+  digitalWrite(PIN_KB_BL, LOW);
 }
 
 void initBus() {

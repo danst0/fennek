@@ -15,10 +15,15 @@
 # Dann den Inhalt von ./sdcard auf die SD kopieren (es entsteht ./sdcard/maps).
 #
 # Kachelquelle per --preset wählen (oder --url für eine eigene):
-#   --preset standard   OSM-Standardlayer (Default)
-#   --preset cyclosm    CyclOSM — Rad-/Wegeinfrastruktur betont
-#   --preset topo       OpenTopoMap — Wanderwege/Pfade/Höhenlinien
+#   --preset standard          OSM-Standardlayer (Default, direkt von OSM)
+#   --preset cyclosm           CyclOSM — Rad-/Wegeinfrastruktur betont
+#   --preset topo              OpenTopoMap — Wanderwege/Pfade/Höhenlinien
+#   --preset cassius           OSM Standard via lokalem Tile-Proxy (cassius:8765)
+#   --preset cassius-cyclosm   CyclOSM via Proxy
+#   --preset cassius-topo      Topo via Proxy
 # Detailstufen (z14-16) lohnen sich bei cyclosm/topo am meisten.
+# Mit cassius-Presets: erster Lauf lädt von OSM und cached auf cassius,
+# alle weiteren Läufe kommen sofort aus dem Proxy-Cache (--delay 0 möglich).
 #
 # Hinweise:
 #  * Jede Quelle hat eine eigene Tile-Usage-Policy (kein Massen-/Bulk-Download);
@@ -50,16 +55,28 @@ USER_AGENT = "fennek-maps-tiles/1.0 (https://github.com/danst0/fennek)"
 # Download!) — für große Gebiete einen eigenen Renderer nutzen. Der Default-
 # Schwellwert ist je Layer abgestimmt (topo/cyclosm sind farbig/heller als der
 # Standardstil) und lässt sich mit --threshold übersteuern.
+#
+# cassius-* — lokaler Tile-Proxy (http://cassius:8765) mit persistentem Cache;
+# kein OSM-Rate-Limit-Problem, --delay 0 möglich nach dem ersten Warm-up.
+# Setup: /home/danst/dockers/tile-proxy/ auf cassius.
+CASSIUS = "http://10.0.2.71:8765"
 PRESETS = {
     # OSM-Standardlayer (Carto): kräftige Straßen, Wege eher schwach.
-    "standard": {"url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                 "threshold": 160},
+    "standard":         {"url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                         "threshold": 160},
     # CyclOSM: hebt Rad-/Wegeinfrastruktur hervor.
-    "cyclosm": {"url": "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
-                "threshold": 190},
+    "cyclosm":          {"url": "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
+                         "threshold": 190},
     # OpenTopoMap: Wanderwege, Pfade, Höhenlinien (topografisch).
-    "topo": {"url": "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-             "threshold": 180},
+    "topo":             {"url": "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+                         "threshold": 180},
+    # Lokaler Cassius-Proxy — gleiche Layer, kein direkter OSM-Kontakt.
+    "cassius":          {"url": f"{CASSIUS}/osm/{{z}}/{{x}}/{{y}}.png",
+                         "threshold": 160},
+    "cassius-cyclosm":  {"url": f"{CASSIUS}/cyclosm/{{z}}/{{x}}/{{y}}.png",
+                         "threshold": 190},
+    "cassius-topo":     {"url": f"{CASSIUS}/topo/{{z}}/{{x}}/{{y}}.png",
+                         "threshold": 180},
 }
 DEFAULT_URL = PRESETS["standard"]["url"]
 
@@ -90,7 +107,7 @@ def pack_1bit(img, threshold, invert):
     return bytes(out)
 
 
-def fetch_tile(url_tmpl, z, x, y, cache_dir):
+def fetch_tile(url_tmpl, z, x, y, cache_dir, retries=3):
     """PNG-Kachel laden (mit lokalem Cache), als PIL-Image zurückgeben."""
     if cache_dir:
         cp = os.path.join(cache_dir, str(z), str(x), f"{y}.png")
@@ -98,8 +115,15 @@ def fetch_tile(url_tmpl, z, x, y, cache_dir):
             return Image.open(cp)
     url = url_tmpl.format(z=z, x=x, y=y)
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = r.read()
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read()
+            break
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(2 ** attempt)   # 1 s, 2 s
     if cache_dir:
         cp = os.path.join(cache_dir, str(z), str(x), f"{y}.png")
         os.makedirs(os.path.dirname(cp), exist_ok=True)

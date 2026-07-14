@@ -22,6 +22,19 @@ namespace power {
 // Knopf-Pin konfigurieren, Aktivitäts-Timer starten.
 void begin();
 
+// Ganz früh in setup() (direkt nach handleTimerWake) aufrufen: zählt abnormale
+// Resets (Panic/WDT/Brownout) im RTC-RAM. Drei in Folge = Crash-Boot-Schleife →
+// Not-Standby (nur Knopf-Wake, kehrt nicht zurück), statt den Akku bei ~100 mA
+// leerzubrennen. Normale Boots/2 min stabile Laufzeit setzen den Zähler zurück.
+void noteBoot();
+
+// Nach BATTLOG_BEGIN() im Vollboot aufrufen: loggt, in welcher Phase die letzte
+// Schlafperiode endete (Breadcrumb im RTC-RAM) und kippt die Wake-Historie
+// (Akku-Probe jedes Timer-Wakes) als battlog-Zeilen aus. Macht die bisher
+// unsichtbaren Standby-Tode (battery.log: 3x Tiefentladung 25.06.-07.07.26)
+// nachträglich diagnostizierbar.
+void logSleepDebug();
+
 // Vom appmgr bei jeder Nutzereingabe (Tap/Taste) aufrufen — setzt den
 // Inaktivitäts-Timer zurück.
 void noteActivity();

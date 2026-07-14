@@ -89,6 +89,11 @@ void setup() {
                 (int)esp_reset_reason(), (int)esp_sleep_get_wakeup_cause(),
                 (unsigned long long)esp_sleep_get_ext1_wakeup_status());
 
+  // Crash-Schleifen-Bremse: drei abnormale Resets (Panic/WDT/Brownout) in
+  // Folge → Not-Standby statt Akkutod durch Boot-Schleife (kehrt dann nicht
+  // zurück). Muss vor allem Crash-Anfälligen (SD, Library, Apps) laufen.
+  power::noteBoot();
+
   // 1) Power + Busse.
   board::powerOn();
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, I2C_HZ);
@@ -169,6 +174,17 @@ void setup() {
   BATTLOG_BEGIN();
   BATTLOG_EVENT("Wake", "Reset=%d Wake=%d", (int)esp_reset_reason(),
                 (int)esp_sleep_get_wakeup_cause());
+  // Schlaf-Diagnose aus dem RTC-RAM nachtragen: letzte Schlafphase (sauber?)
+  // + Akku-Probe jedes Timer-Wakes seit dem letzten Vollboot.
+  power::logSleepDebug();
+  // Nach abnormalem Reset (Panic/WDT/Brownout) sofort auf SD spülen — sonst
+  // hinterlässt eine Crash-Schleife keine Spur (der PSRAM-Ring stirbt mit).
+  {
+    esp_reset_reason_t rr = esp_reset_reason();
+    if (rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT ||
+        rr == ESP_RST_WDT || rr == ESP_RST_BROWNOUT)
+      BATTLOG_FLUSH("Crash-Boot");
+  }
 
   Serial.printf("[FENNEK] Künstler=%d Alben=%d Titel=%d Playlists=%d\n",
                 library::artistCount(), library::albumCount(),
@@ -218,7 +234,8 @@ void setup() {
   appmgr::add(notes_app::get());
   appmgr::add(alarms_app::get());
   appmgr::add(maps_app::get());
-  appmgr::add(gyro_app::get());
+  // Lage/Gyro deaktiviert: nicht registriert/keine Kachel.
+  // appmgr::add(gyro_app::get());
   appmgr::add(mathquiz_app::get());
   appmgr::add(flashcards_app::get());
   appmgr::add(calendar_app::get());
@@ -235,11 +252,12 @@ void setup() {
   launcher::setTile(7, i18n::Str::TileNotes,    notes_app::get());
   launcher::setTile(8, i18n::Str::TileAlarm,    alarms_app::get());
   launcher::setTile(9, i18n::Str::TileMaps,     maps_app::get());
-  launcher::setTile(10, i18n::Str::TileGyro,    gyro_app::get());   // Seite 2, Slot 0
-  launcher::setTile(11, i18n::Str::TileMath,    mathquiz_app::get());
-  launcher::setTile(12, i18n::Str::TileCards,   flashcards_app::get());
-  launcher::setTile(13, i18n::Str::TileCalendar, calendar_app::get());
-  launcher::setTile(14, i18n::Str::TileTodo,     todo_app::get());
+  // Lage/Gyro deaktiviert: Kachel entfällt, Seite 2 rückt auf.
+  // launcher::setTile(10, i18n::Str::TileGyro, gyro_app::get());
+  launcher::setTile(10, i18n::Str::TileMath,     mathquiz_app::get());   // Seite 2, Slot 0
+  launcher::setTile(11, i18n::Str::TileCards,    flashcards_app::get());
+  launcher::setTile(12, i18n::Str::TileCalendar, calendar_app::get());
+  launcher::setTile(13, i18n::Str::TileTodo,     todo_app::get());
   // Podcast deaktiviert (v2.5.9): Code reaktivierbar.
   // launcher::setTile(15, i18n::Str::TilePodcast, podcast_app::get());
   appmgr::begin();

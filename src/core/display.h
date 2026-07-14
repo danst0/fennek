@@ -36,6 +36,11 @@ void render(DrawFn draw, bool full = false);
 // x ist fix 0 / w fix volle Breite (E-Ink verlangt 8er-Ausrichtung in x).
 void renderRegion(DrawFn draw, int y, int h);
 
+// Panel-Controller in seinen eigenen Deep Sleep schicken (µA statt Standby-
+// Strom nach powerOff). Nur unmittelbar vor dem ESP32-Deep-Sleep aufrufen;
+// das stehende Bild bleibt erhalten, beginAfterSleep() weckt per RST wieder.
+void hibernate();
+
 int width();
 int height();
 

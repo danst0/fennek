@@ -26,6 +26,8 @@
 #include <Wire.h>
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <esp_sleep.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
 
 // PIN_USER_BTN (GPIO0) ist der seitliche Ausschaltknopf — zugleich der
 // Boot-Strapping-Pin. Standardverdrahtung: extern hochgezogen, gedrückt = LOW
@@ -63,6 +65,62 @@ bool     s_locked       = false; // Tastensperre aktiv?
 // Deep Sleep ohne NVS-Verschleiß, ist nach Kaltstart/Knopf-Boot egal.
 uint8_t s_sleepPct = 0;
 RTC_DATA_ATTR uint32_t s_timerWakes = 0;
+
+// --- Schlaf-Diagnose (RTC-RAM) ----------------------------------------------
+// Hintergrund: drei Tiefentladungen bis 0-2 % (25.06.-07.07.26) ohne jede
+// battlog-Spur — der Täter kann nur ein Pfad sein, der nichts loggt (Timer-
+// Wake-Minimalpfad, enterStandby nach dem Flush, Crash-Schleife vor
+// BATTLOG_BEGIN). Deshalb: Phase-Breadcrumb + Wake-Historie im RTC-RAM
+// (übersteht Deep Sleep UND Panic/WDT-Resets), beim nächsten Vollboot via
+// logSleepDebug() ins battlog gekippt.
+enum SleepPhase : uint8_t {
+  PH_SLEEP_OK = 0,    // sauber in Deep Sleep gegangen (auch Kaltstart-Default)
+  PH_STBY_EXPORT,     // enterStandby: Settings-Export + battlog-Flush
+  PH_STBY_RENDER,     // enterStandby: Schlafbild rendern
+  PH_STBY_WAIT,       // enterStandby: Knopf-Loslass-Warteschleife
+  PH_STBY_ARM,        // enterStandby: Holds/Wake-Quellen (auch Historien-Marker)
+  PH_WAKE_START,      // Timer-Wake: Minimalpfad betreten (auch Historien-Marker)
+  PH_WAKE_DISPLAY,    // Timer-Wake: Banner-/Vollbild-Refresh
+  PH_WAKE_ARM,        // Timer-Wake: Holds/Wake-Quellen vor dem Wiedereinschlafen
+};
+RTC_DATA_ATTR uint8_t s_sleepPhase = PH_SLEEP_OK;
+
+struct SleepSample {
+  uint32_t epoch;   // Systemzeit des Eintrags (übersteht Deep Sleep)
+  uint16_t mv;
+  uint8_t  pct;
+  uint8_t  phase;   // PH_WAKE_START = Timer-Wake, PH_STBY_ARM = Standby-Beginn
+};
+constexpr int kSleepHistMax = 48;
+RTC_DATA_ATTR SleepSample s_sleepHist[kSleepHistMax];
+RTC_DATA_ATTR uint8_t s_sleepHistN = 0;   // belegte Einträge (gedeckelt)
+RTC_DATA_ATTR uint8_t s_sleepHistW = 0;   // Schreibindex (Ring)
+
+// Crash-Schleifen-Zähler: abnormale Resets (Panic/WDT/Brownout) in Folge, ohne
+// dazwischen 2 min stabile Laufzeit (poll() löscht) oder sauberen Standby.
+RTC_DATA_ATTR uint8_t s_abnormalBoots = 0;
+
+void histAdd(uint8_t phase, uint8_t pct, uint16_t mv) {
+  SleepSample& e = s_sleepHist[s_sleepHistW];
+  e.epoch = (uint32_t)time(nullptr);
+  e.mv    = mv;
+  e.pct   = pct;
+  e.phase = phase;
+  s_sleepHistW = (uint8_t)((s_sleepHistW + 1) % kSleepHistMax);
+  if (s_sleepHistN < kSleepHistMax) s_sleepHistN++;
+}
+
+bool abnormalReset(esp_reset_reason_t rr) {
+  return rr == ESP_RST_PANIC || rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT ||
+         rr == ESP_RST_WDT || rr == ESP_RST_BROWNOUT;
+}
+
+// --- Tiefentladeschutz --------------------------------------------------------
+// Unter kCritPct (auf Batterie) keine Stunden-Wakes mehr — jeder Wake drückt
+// die fast leere Zelle weiter Richtung BMS-Abschaltung (2,9 V, battery.log
+// 05.-07.07.26). Der Wecker-Wake bleibt bis kCritAlarmPct erhalten.
+constexpr uint8_t kCritPct      = 5;
+constexpr uint8_t kCritAlarmPct = 3;
 
 // Absoluter Weckzeitpunkt (UTC-Epoche) des nächsten Weckers, beim Einschlafen
 // mit gültiger Zeitzone berechnet. 0 = kein Wecker. Liegt im RTC-RAM (übersteht
@@ -124,9 +182,36 @@ void drawSleepScreen(Adafruit_GFX& g) {
 }
 
 // Beide Aufwach-Quellen scharf machen: Knopf (EXT1) + Stunden-Timer.
+// Tiefentladeschutz: bei kritischem Akku auf Batterie kein Stunden-Timer mehr
+// (nur Knopf; ein anstehender Wecker weckt noch bis kCritAlarmPct).
 void armWakeups() {
   esp_sleep_enable_ext1_wakeup(1ULL << PIN_USER_BTN, WAKE_LEVEL);
+  if (s_sleepPct <= kCritPct && !battery::external()) {
+    if (s_alarmWakeEpoch && s_sleepPct > kCritAlarmPct) {
+      uint32_t now = (uint32_t)time(nullptr);
+      uint64_t us = (now < s_alarmWakeEpoch)
+          ? (uint64_t)(s_alarmWakeEpoch - now) * 1000000ULL : 1000000ULL;
+      esp_sleep_enable_timer_wakeup(us);
+    }
+    Serial.printf("[PWR] Akku kritisch (%u%%) — Schlaf ohne Stunden-Wake\n",
+                  (unsigned)s_sleepPct);
+    return;
+  }
   esp_sleep_enable_timer_wakeup(nextWakeUs());
+}
+
+// Alle Abschalt-/Deselect-Pegel setzen und über den Deep Sleep einfrieren.
+// Ohne das Hold floaten GPIO10/41/46 hochohmig, die Rails (Peripherie/DAC/LoRa)
+// kommen zurück -> ~50 mA Standby-Drain (gemessen: 94 %→5 % in ~29 h,
+// battery.log 14./15.06.2026). GPIO42 (Tastatur-Backlight-Gate) ebenfalls fest
+// LOW — floatete bisher im Schlaf.
+void freezeSleepPins() {
+  digitalWrite(PIN_EINK_CS, HIGH);
+  digitalWrite(PIN_LORA_CS, HIGH);
+  digitalWrite(PIN_SD_CS,   HIGH);
+  pinMode(PIN_KB_BL, OUTPUT);
+  digitalWrite(PIN_KB_BL, LOW);
+  board::holdSleepPins();
 }
 
 }  // namespace
@@ -138,6 +223,63 @@ void begin() {
   s_lastActivity = millis();
 }
 
+void noteBoot() {
+  // Crash-Schleifen-Bremse: drei abnormale Resets (Panic/WDT/Brownout) in
+  // Folge — ohne 2 min stabile Laufzeit oder sauberen Standby dazwischen —
+  // heißt Boot-Schleife (z. B. korrupte SD-Caches). Die brennt bei ~100 mA
+  // den Akku in unter einem Tag leer und hinterlässt keine battlog-Spur
+  // (der PSRAM-Ring stirbt mit jedem Reset). Dann: Not-Standby, nur der
+  // Knopf weckt — der nächste Knopf-Wake ist ein normaler Boot-Versuch
+  // (Reset-Grund DEEPSLEEP setzt den Zähler zurück).
+  esp_reset_reason_t rr = esp_reset_reason();
+  if (abnormalReset(rr)) s_abnormalBoots++;
+  else                   s_abnormalBoots = 0;
+  if (s_abnormalBoots < 3) return;
+
+  Serial.printf("[PWR] %u abnormale Resets in Folge (zuletzt %d) — "
+                "Not-Standby, nur Knopf weckt\n",
+                (unsigned)s_abnormalBoots, (int)rr);
+  board::powerOn();            // Pins definiert treiben, damit die Holds greifen
+  board::perfPower(false);
+  freezeSleepPins();
+  esp_sleep_enable_ext1_wakeup(1ULL << PIN_USER_BTN, WAKE_LEVEL);   // KEIN Timer
+  s_sleepPhase = PH_SLEEP_OK;
+  esp_deep_sleep_start();
+}
+
+void logSleepDebug() {
+  // Nach jedem Vollboot: Wie endete die letzte Schlafperiode? PH_SLEEP_OK =
+  // sauber; alles andere = Abbruch mitten in enterStandby()/Timer-Wake (etwa
+  // durch den Task-Watchdog) — genau die bisher unsichtbaren Fälle.
+  if (s_sleepPhase != PH_SLEEP_OK)
+    Serial.printf("[PWR] Letzte Schlafphase UNSAUBER beendet: Phase=%u\n",
+                  (unsigned)s_sleepPhase);
+#ifdef BATTLOG
+  BATTLOG_EVENT("Schlaf", "Phase=%u Wakes=%lu Crashes=%u",
+                (unsigned)s_sleepPhase, (unsigned long)s_timerWakes,
+                (unsigned)s_abnormalBoots);
+  // Wake-Historie (RTC-RAM) als battlog-Zeilen ausgeben: eine pro Timer-Wake/
+  // Standby-Beginn seit dem letzten Vollboot — zeigt beim nächsten Vorfall,
+  // in welcher Stunde der Akku wie schnell fiel.
+  int start = (s_sleepHistW + kSleepHistMax - s_sleepHistN) % kSleepHistMax;
+  for (int i = 0; i < s_sleepHistN; i++) {
+    const SleepSample& e = s_sleepHist[(start + i) % kSleepHistMax];
+    char ts[20] = "?";
+    if (e.epoch > 1500000000UL) {
+      time_t tt = (time_t)e.epoch;
+      struct tm tm;
+      localtime_r(&tt, &tm);
+      strftime(ts, sizeof(ts), "%d.%m. %H:%M", &tm);
+    }
+    BATTLOG_EVENT("Schlaf", "%s Ph=%u %u%% %umV",
+                  ts, (unsigned)e.phase, (unsigned)e.pct, (unsigned)e.mv);
+  }
+#endif
+  s_sleepHistN = 0;
+  s_sleepHistW = 0;
+  s_sleepPhase = PH_SLEEP_OK;
+}
+
 void noteActivity() { s_lastActivity = millis(); }
 
 uint32_t idleMs() { return millis() - s_lastActivity; }
@@ -146,6 +288,14 @@ bool locked() { return s_locked; }
 
 void enterStandby() {
   Serial.println("[FENNEK] Standby — gehe in Deep Sleep ...");
+
+  // Fallnetz: hängt irgendwas ab hier (SD-Export, E-Ink, I2C), beißt nach 60 s
+  // der Task-Watchdog (Panic-Reset → Vollboot → battlog-Zeile → Auto-Standby)
+  // statt still bei vollem Verbrauch zu stehen, bis der Akku leer ist.
+  esp_task_wdt_init(60, true);
+  esp_task_wdt_add(NULL);
+  s_abnormalBoots = 0;   // sauberer Standby = System gesund
+  s_sleepPhase = PH_STBY_EXPORT;
 
   // Aktuelle Uhrzeit ins NVS sichern (Fallback, falls der Akku im Schlaf stirbt;
   // die ESP32-Systemzeit selbst überlebt den Deep Sleep ohne Zutun).
@@ -170,10 +320,14 @@ void enterStandby() {
   BATTLOG_FLUSH("Standby");
 
   // 2) Schlafender Fennek aufs E-Ink (bleibt stromlos stehen) — vorher den
-  //    Akkustand lesen (I2C-Peripherie ist hier noch versorgt).
+  //    Akkustand lesen (I2C-Peripherie ist hier noch versorgt). Danach den
+  //    Panel-Controller in den eigenen Deep Sleep schicken (µA statt Standby).
   s_sleepPct = battery::percent();
   s_timerWakes = 0;
+  histAdd(PH_STBY_ARM, s_sleepPct, battery::milliVolts());   // Standby-Marker
+  s_sleepPhase = PH_STBY_RENDER;
   display::render(drawSleepScreen, true);
+  display::hibernate();
 
   // 3) Peripherie-Power aus (Keyboard/Touch/Sensoren).
   board::perfPower(false);
@@ -181,22 +335,26 @@ void enterStandby() {
   // 4) Auf STABILES Loslassen warten (300 ms durchgehend HIGH) — die
   //    Wake-Quelle ist "GPIO0 LOW"; Prellen oder ein halb gelöster Finger
   //    beendet den Schlaf sonst sofort wieder. Außerdem könnte der
-  //    Strapping-Pin beim Reset in den Download-Modus geraten.
+  //    Strapping-Pin beim Reset in den Download-Modus geraten. Nach 10 s
+  //    trotzdem schlafen: ein klemmender Knopf weckt dann sofort per EXT1
+  //    (Vollboot → Auto-Standby, begrenzt und geloggt) statt hier endlos bei
+  //    vollem Verbrauch zu kreisen.
+  s_sleepPhase = PH_STBY_WAIT;
+  uint32_t waitStart = millis();
   uint32_t hiSince = millis();
   for (;;) {
     if (btnPressed()) hiSince = millis();
     if (millis() - hiSince >= 300) break;
+    if (millis() - waitStart >= 10000) {
+      Serial.println("[PWR] Knopf bleibt LOW (klemmt?) — schlafe trotzdem");
+      break;
+    }
     delay(10);
   }
 
-  // 5) SPI-CS sauber deselektieren und alle Abschalt-/Deselect-Pegel über den
-  //    Deep Sleep einfrieren. Ohne dieses Hold floaten GPIO10/41/46 hochohmig,
-  //    die Rails (Peripherie/DAC/LoRa) kommen zurück → ~50 mA Standby-Drain
-  //    (gemessen: 94 %→5 % in ~29 h, battery.log 14./15.06.2026).
-  digitalWrite(PIN_EINK_CS, HIGH);
-  digitalWrite(PIN_LORA_CS, HIGH);
-  digitalWrite(PIN_SD_CS,   HIGH);
-  board::holdSleepPins();
+  // 5) SPI-CS deselektieren + Abschaltpegel über den Deep Sleep einfrieren.
+  s_sleepPhase = PH_STBY_ARM;
+  freezeSleepPins();
 
   // 6) Wake-Quellen = Knopf + Timer. Den nächsten Weckzeitpunkt JETZT berechnen
   //    (gültige Zeitzone) und absolut im RTC-RAM ablegen; armWakeups() leitet die
@@ -206,6 +364,7 @@ void enterStandby() {
     Serial.printf("[FENNEK] Nächster Wecker in %ld s\n",
                   (long)(s_alarmWakeEpoch - timesync::now()));
   armWakeups();
+  s_sleepPhase = PH_SLEEP_OK;
   esp_deep_sleep_start();
 }
 
@@ -225,6 +384,13 @@ bool handleTimerWake() {
     }
   }
 
+  // Fallnetz: hängt der Minimalpfad (I2C, E-Ink, NVS), beißt nach 30 s der
+  // Task-Watchdog (Panic-Reset → Vollboot → battlog-Zeile → Auto-Standby)
+  // statt still bis 0 % zu laufen — der Pfad loggt sonst per Design nichts.
+  esp_task_wdt_init(30, true);
+  esp_task_wdt_add(NULL);
+  s_sleepPhase = PH_WAKE_START;
+
   // Minimal-Pfad: nur Power, I2C (Akku-Gauge), Settings (Sprache des
   // Hinweis-Texts) und Display — kein SD-Mount, kein Audio, keine Apps.
   // Akku-% aufs Schlafbild, dann sofort zurück in den Deep Sleep.
@@ -237,35 +403,72 @@ bool handleTimerWake() {
 
   s_sleepPct = battery::percent();
   s_timerWakes++;
+  histAdd(PH_WAKE_START, s_sleepPct, battery::milliVolts());
   Serial.printf("[FENNEK] Timer-Wake #%lu: Akku %u%% — zurück in Deep Sleep\n",
                 (unsigned long)s_timerWakes, (unsigned)s_sleepPct);
 
-  display::beginAfterSleep();
-  if (s_timerWakes % kTimerWakeFullEvery == 0) {
-    display::render(drawSleepScreen, true);   // periodisch gegen Ghosting
+  // Tiefentladeschutz: bei kritischem Akku auf Batterie den Display-Refresh
+  // sparen (E-Ink-Booster ist der teuerste Teil des Wakes) — armWakeups()
+  // unten stellt dann auch den Stunden-Timer ab.
+  if (s_sleepPct <= kCritPct && !battery::external()) {
+    Serial.println("[PWR] Akku kritisch — kein Banner-Refresh");
   } else {
-    display::renderRegion(drawSleepBanner, kBannerY, kSleepImgH - kBannerY);
+    s_sleepPhase = PH_WAKE_DISPLAY;
+    display::beginAfterSleep();
+    if (s_timerWakes % kTimerWakeFullEvery == 0) {
+      display::render(drawSleepScreen, true);   // periodisch gegen Ghosting
+    } else {
+      display::renderRegion(drawSleepBanner, kBannerY, kSleepImgH - kBannerY);
+    }
+    display::hibernate();
   }
 
   // Wurde der Knopf während des Minimal-Fensters gedrückt, will der Nutzer
   // aufwecken: Peripherie anlassen und normal weiterbooten.
-  if (btnPressed()) return false;
+  if (btnPressed()) {
+    esp_task_wdt_delete(NULL);   // Vollboot: loop() füttert keinen WDT
+    return false;
+  }
 
   // Peripherie aus und — wie in enterStandby() — die Pegel über den Deep Sleep
   // einfrieren. powerOn() oben hat die Holds gelöst; ohne erneutes Hold würden
   // die Rails nach diesem ersten Stunden-Wake wieder floaten und Strom ziehen.
+  s_sleepPhase = PH_WAKE_ARM;
   board::perfPower(false);
-  digitalWrite(PIN_EINK_CS, HIGH);
-  digitalWrite(PIN_LORA_CS, HIGH);
-  digitalWrite(PIN_SD_CS,   HIGH);
-  board::holdSleepPins();
+  freezeSleepPins();
   armWakeups();
+  s_sleepPhase = PH_SLEEP_OK;
   esp_deep_sleep_start();    // kehrt nicht zurück
   return true;               // nie erreicht (beruhigt den Compiler)
 }
 
 void poll() {
   uint32_t now = millis();
+
+  // Crash-Schleifen-Zähler löschen, sobald das System 2 min stabil läuft.
+  if (s_abnormalBoots && now > 120000) s_abnormalBoots = 0;
+
+  // --- Tiefentladeschutz: ≤5 % auf Batterie → sofort Standby -----------------
+  // Bewusst VOR der Wiedergabe-Ausnahme unten: bei kritischem Akku wird auch
+  // laufende Musik abgeschnitten, statt bis zur BMS-Abschaltung (2,9 V) zu
+  // spielen. percent() ist spannungsbasiert; zwei Treffer im Abstand von 30 s
+  // filtern Einbrüche unter Last, mv>100 filtert I2C-Fehler (liefert 0).
+  static uint32_t s_critCheckMs = 0;
+  static uint8_t  s_critHits    = 0;
+  if (now - s_critCheckMs >= 30000) {
+    s_critCheckMs = now;
+    if (!battery::external() && battery::milliVolts() > 100 &&
+        battery::percent() <= kCritPct) {
+      if (++s_critHits >= 2) {
+        Serial.println("[PWR] Akku kritisch (<=5%) — Not-Standby");
+        BATTLOG_EVENT("Akku", "kritisch (%u%%) — Not-Standby",
+                      (unsigned)battery::percent());
+        enterStandby();          // kehrt nicht zurück
+      }
+    } else {
+      s_critHits = 0;
+    }
+  }
 
   // --- Knopf (OBERER Seitenknopf = GPIO0): kurz = Tastensperre, lang =
   //     Standby. Der UNTERE Seitenknopf ist der Hardware-Reset (RST/EN) —

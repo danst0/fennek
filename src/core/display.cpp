@@ -111,6 +111,13 @@ void renderRegion(DrawFn draw, int y, int h) {
   spiUnlock();
 }
 
+void hibernate() {
+  if (!s_initialized) return;
+  spiLock();
+  g_disp.hibernate();   // powerOff + Deep-Sleep-Kommando (Wake via RST)
+  spiUnlock();
+}
+
 int width()  { return g_disp.width(); }
 int height() { return g_disp.height(); }
 
