@@ -10,6 +10,7 @@
 #include "apps/mesh_client.h"
 #include "apps/reader_app.h"
 #include "apps/notes_app.h"
+#include "services/battlog.h"
 #include "services/webfm.h"
 #include "services/timesync.h"
 #include "services/notes_ai.h"
@@ -243,6 +244,12 @@ void cmdMeshLog() {
 // -D BATTLOG; ohne das Flag existiert die Datei nicht.
 void cmdBatLog() {
   if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
+  // Erst den PSRAM-Ring auf die SD spülen: sonst fehlen genau die Zeilen der
+  // laufenden Sitzung (der Ring wird nur alle 2 min bzw. vor dem Standby
+  // geschrieben) — und dazu gehören die „Schlaf"-Zeilen aus logSleepDebug(),
+  // also der Grund, warum man das Log überhaupt aufmacht. Da das Öffnen des
+  // USB-Ports das Gerät resettet, wäre der Ring beim nächsten Dump ohnehin weg.
+  BATTLOG_FLUSH("Konsole");
   const char* path = "/.fennek/battery.log";
   spiLock();
   if (!SD.exists(path)) {

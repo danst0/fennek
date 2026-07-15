@@ -89,6 +89,7 @@ RTC_DATA_ATTR uint8_t s_sleepPhase = PH_SLEEP_OK;
 struct SleepSample {
   uint32_t epoch;   // Systemzeit des Eintrags (übersteht Deep Sleep)
   uint16_t mv;
+  uint16_t rm;      // RemainingCapacity (mAh, Coulomb-Counter) — s. mA-Rechnung
   uint8_t  pct;
   uint8_t  phase;   // PH_WAKE_START = Timer-Wake, PH_STBY_ARM = Standby-Beginn
 };
@@ -101,10 +102,11 @@ RTC_DATA_ATTR uint8_t s_sleepHistW = 0;   // Schreibindex (Ring)
 // dazwischen 2 min stabile Laufzeit (poll() löscht) oder sauberen Standby.
 RTC_DATA_ATTR uint8_t s_abnormalBoots = 0;
 
-void histAdd(uint8_t phase, uint8_t pct, uint16_t mv) {
+void histAdd(uint8_t phase, uint8_t pct, uint16_t mv, uint16_t rm) {
   SleepSample& e = s_sleepHist[s_sleepHistW];
   e.epoch = (uint32_t)time(nullptr);
   e.mv    = mv;
+  e.rm    = rm;
   e.pct   = pct;
   e.phase = phase;
   s_sleepHistW = (uint8_t)((s_sleepHistW + 1) % kSleepHistMax);
@@ -262,6 +264,14 @@ void logSleepDebug() {
   // Wake-Historie (RTC-RAM) als battlog-Zeilen ausgeben: eine pro Timer-Wake/
   // Standby-Beginn seit dem letzten Vollboot — zeigt beim nächsten Vorfall,
   // in welcher Stunde der Akku wie schnell fiel.
+  //
+  // Der mA-Wert am Zeilenende ist die eigentliche Messung: aus dem Coulomb-
+  // Counter des Gauge (RemainingCapacity), nicht aus der Spannungskurve. Er gilt
+  // für die Spanne seit dem VORIGEN Eintrag. Lesart:
+  //   Ph=4 -> Ph=5  (Standby-Beginn bis 1. Wake) = fast reiner Deep-Sleep-Strom
+  //   Ph=5 -> Ph=5  (Wake zu Wake)               = Schlaf + ein Banner-Wake
+  // Erwartung für einen gesunden Deep Sleep: << 1 mA. Alles im zweistelligen
+  // mA-Bereich heißt, dass eine Rail durchläuft.
   int start = (s_sleepHistW + kSleepHistMax - s_sleepHistN) % kSleepHistMax;
   for (int i = 0; i < s_sleepHistN; i++) {
     const SleepSample& e = s_sleepHist[(start + i) % kSleepHistMax];
@@ -272,8 +282,21 @@ void logSleepDebug() {
       localtime_r(&tt, &tm);
       strftime(ts, sizeof(ts), "%d.%m. %H:%M", &tm);
     }
-    BATTLOG_EVENT("Schlaf", "%s Ph=%u %u%% %umV",
-                  ts, (unsigned)e.phase, (unsigned)e.pct, (unsigned)e.mv);
+    // Mittleren Strom seit dem vorigen Eintrag aus der Ladungsdifferenz bilden.
+    // Nur wenn beide Coulomb-Werte plausibel sind (0 = I2C-Fehler) und die Uhr
+    // zwischen den Einträgen vorwärts lief; sonst bleibt die Spalte leer.
+    char mA[16] = "";
+    if (i > 0) {
+      const SleepSample& p = s_sleepHist[(start + i - 1) % kSleepHistMax];
+      if (p.rm && e.rm && e.epoch > p.epoch) {
+        int32_t  dmah = (int32_t)p.rm - (int32_t)e.rm;   // >0 = entladen
+        uint32_t dsec = e.epoch - p.epoch;
+        snprintf(mA, sizeof(mA), " %ldmA", (long)(dmah * 3600 / (int32_t)dsec));
+      }
+    }
+    BATTLOG_EVENT("Schlaf", "%s Ph=%u %u%% %umV %umAh%s",
+                  ts, (unsigned)e.phase, (unsigned)e.pct, (unsigned)e.mv,
+                  (unsigned)e.rm, mA);
   }
 #endif
   s_sleepHistN = 0;
@@ -325,7 +348,11 @@ void enterStandby() {
   //    Panel-Controller in den eigenen Deep Sleep schicken (µA statt Standby).
   s_sleepPct = battery::percent();
   s_timerWakes = 0;
-  histAdd(PH_STBY_ARM, s_sleepPct, battery::milliVolts());   // Standby-Marker
+  // Standby-Marker. Der Coulomb-Stand wird hier gelesen, solange der I2C-Gauge
+  // noch versorgt ist und die Rails (DAC/LoRa/GPS) schon aus sind — die Differenz
+  // zum ersten Timer-Wake ist damit fast reiner Schlafstrom.
+  histAdd(PH_STBY_ARM, s_sleepPct, battery::milliVolts(),
+          battery::remainingCapacity());
   s_sleepPhase = PH_STBY_RENDER;
   display::render(drawSleepScreen, true);
   display::hibernate();
@@ -404,7 +431,10 @@ bool handleTimerWake() {
 
   s_sleepPct = battery::percent();
   s_timerWakes++;
-  histAdd(PH_WAKE_START, s_sleepPct, battery::milliVolts());
+  // Coulomb-Stand so früh wie möglich lesen — vor dem E-Ink-Refresh unten, damit
+  // die Differenz zum vorigen Eintrag den Schlaf misst und nicht den Wake.
+  histAdd(PH_WAKE_START, s_sleepPct, battery::milliVolts(),
+          battery::remainingCapacity());
   Serial.printf("[FENNEK] Timer-Wake #%lu: Akku %u%% — zurück in Deep Sleep\n",
                 (unsigned long)s_timerWakes, (unsigned)s_sleepPct);
 

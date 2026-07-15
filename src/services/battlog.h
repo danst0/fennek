@@ -6,10 +6,19 @@
 //
 // Zweck: den Batterieverbrauch verstehen. Schreibt eine Zeile pro Ereignis und
 // alle 60 s eine periodische Akku-Probe — jeweils mit Zeitstempel, Akkustand
-// (%, mV, lädt?) und dem Systemkontext (WLAN an/aus, Mesh-Chip an/aus) sowie
-// einer Kategorie + Notiz (App-Wechsel, Audio-Track, Standby/Wake, …). Der Ring
-// liegt im PSRAM; geschrieben wird gedrosselt und spätestens kurz vor dem
-// Standby nach /.fennek/battery.log (über WebFM herunterladbar).
+// (%, mV, mAh, Strom-Quelle) und dem Systemkontext (WLAN an/aus, Mesh-Chip
+// an/aus) sowie einer Kategorie + Notiz (App-Wechsel, Audio-Track, Standby/Wake,
+// …). Der Ring liegt im PSRAM; geschrieben wird gedrosselt und spätestens kurz
+// vor dem Standby nach /.fennek/battery.log (über WebFM herunterladbar).
+//
+// Auswertung — zwei Regeln, an denen sich schon eine Analyse verschluckt hat:
+//  1. NUR Zeilen mit „-" in der Strom-Spalte sind echte Akku-Messungen. „Kabel"
+//     heißt: hängt am USB, Akku voll, Lader terminiert — sieht wie traumhaft
+//     sparsamer Betrieb aus und ist in Wahrheit gar keine Messung.
+//  2. Für den Verbrauch die mAh-Spalte nehmen, nicht % oder mV: das ist der
+//     Coulomb-Counter des Gauge (echte Ladungsintegration), während percent()
+//     nur aus der Spannungskurve geschätzt ist. mA = Δ mAh * 3600 / Δ Sekunden.
+//     Den Deep-Sleep-Strom liefern die „Schlaf"-Zeilen aus power::logSleepDebug().
 //
 // Bewusst als abschaltbares Debug-Feature gebaut: ohne das Compile-Flag BATTLOG
 // kompilieren alle BATTLOG_*-Aufrufe zu Nichts (die .cpp ist komplett gegatet).

@@ -34,15 +34,17 @@ constexpr uint32_t kMaxFileSize = 256UL * 1024;   // Rotation (wie das Mesh-Log)
 constexpr uint32_t kSaneEpoch   = 1500000000UL;   // darunter Uhr ungültig
 
 // Flag-Bits im Entry.flags-Feld.
-constexpr uint8_t F_CHG  = 1;   // lädt
+constexpr uint8_t F_CHG  = 1;   // lädt aktiv (Mittelstrom > 0)
 constexpr uint8_t F_WIFI = 2;   // WLAN (webfm) an
 constexpr uint8_t F_MESH = 4;   // Mesh-Radio initialisiert (Chip an)
+constexpr uint8_t F_EXT  = 8;   // am Kabel (lädt ODER voll am Kabel), s.u.
 
 struct Entry {
   uint32_t epoch;     // UTC; 0/ungültig = Uhr noch nicht gesetzt
   uint16_t mv;        // Akkuspannung
+  uint16_t rm;        // RemainingCapacity (mAh, Coulomb-Counter)
   uint8_t  pct;       // Ladestand %
-  uint8_t  flags;     // F_CHG | F_WIFI | F_MESH
+  uint8_t  flags;     // F_CHG | F_WIFI | F_MESH | F_EXT
   char     cat[12];   // Kategorie (Boot/App/Audio/Mesh/WLAN/Standby/Wake/Akku/…)
   char     text[64];  // Notiz
 };
@@ -58,12 +60,15 @@ uint32_t          s_lastFlushMs  = 0;
 // auf dem Wire-Bus aufrufbar bleibt.
 volatile uint16_t s_cMv  = 0;
 volatile uint8_t  s_cPct = 0;
+volatile uint16_t s_cRm  = 0;
 volatile bool     s_cChg = false;
+volatile bool     s_cExt = false;
 bool              s_haveCharge = false;   // schon mal Lade-Status gesehen?
 
-uint8_t sysFlags(bool chg) {
+uint8_t sysFlags(bool chg, bool ext) {
   uint8_t f = 0;
   if (chg)                                 f |= F_CHG;
+  if (ext)                                 f |= F_EXT;
   if (webfm::state() != webfm::State::OFF) f |= F_WIFI;
   if (mesh_client::ready())                f |= F_MESH;   // beide nur Flag-Reads
   return f;
@@ -80,14 +85,25 @@ void append(const char* cat, const char* text) {
   Entry& e = s_ring[s_count++];
   e.epoch = timesync::now();
   e.mv    = s_cMv;
+  e.rm    = s_cRm;
   e.pct   = s_cPct;
-  e.flags = sysFlags(s_cChg);
+  e.flags = sysFlags(s_cChg, s_cExt);
   strncpy(e.cat,  cat,  sizeof(e.cat)  - 1); e.cat[sizeof(e.cat)   - 1] = '\0';
   strncpy(e.text, text, sizeof(e.text) - 1); e.text[sizeof(e.text) - 1] = '\0';
   xSemaphoreGive(s_mutex);
 }
 
-// Eine Zeile (Tab-getrennt) für die SD bauen.
+// Eine Zeile (Tab-getrennt) für die SD bauen. Spalten:
+//   Zeit | % | mV | mAh | Strom-Quelle | W: | M: | Kategorie | Notiz
+//
+// Die Strom-Quelle ist DREIwertig, und das ist wichtig: früher stand hier nur
+// charging() (Mittelstrom > 0) als „laedt"/„-". Bei vollem Akku am Kabel
+// terminiert der Lader, der Strom fällt auf ~0 -> die Spalte zeigte „-", obwohl
+// USB steckte und gar nicht aus dem Akku gezogen wurde. Solche Phasen sahen im
+// Log wie ein perfekter Standby aus (0,1 mV/h über 21 h) und haben die Analyse
+// vom 15.07.26 lange in die Irre geführt — zwei „Power-Fixes" wurden gegen
+// genau diese Phantom-Messungen „verifiziert". „Kabel" (external(), DSG-Bit)
+// macht den Fall jetzt explizit: nur Zeilen mit „-" sind echte Akku-Messungen.
 void formatLine(const Entry& e, char* out, size_t n) {
   char ts[24];
   if (e.epoch >= kSaneEpoch) {
@@ -99,9 +115,9 @@ void formatLine(const Entry& e, char* out, size_t n) {
     strncpy(ts, "0000-00-00 00:00:00", sizeof(ts));
     ts[sizeof(ts) - 1] = '\0';
   }
-  snprintf(out, n, "%s\t%u%%\t%umV\t%s\tW:%s\tM:%s\t%s\t%s\n",
-           ts, (unsigned)e.pct, (unsigned)e.mv,
-           (e.flags & F_CHG)  ? "laedt" : "-",
+  snprintf(out, n, "%s\t%u%%\t%umV\t%umAh\t%s\tW:%s\tM:%s\t%s\t%s\n",
+           ts, (unsigned)e.pct, (unsigned)e.mv, (unsigned)e.rm,
+           (e.flags & F_CHG)  ? "laedt" : (e.flags & F_EXT) ? "Kabel" : "-",
            (e.flags & F_WIFI) ? "an"    : "aus",
            (e.flags & F_MESH) ? "an"    : "aus",
            e.cat, e.text);
@@ -160,7 +176,9 @@ void begin() {
   // Erst-Probe, damit schon die Boot-Zeile einen echten Akkustand trägt.
   s_cMv  = battery::milliVolts();
   s_cPct = battery::percent();
+  s_cRm  = battery::remainingCapacity();
   s_cChg = battery::charging();
+  s_cExt = battery::external();
   s_haveCharge   = true;
   s_lastSampleMs = s_lastFlushMs = millis();
   append("Boot", "Fennek " FENNEK_VERSION);
@@ -186,10 +204,17 @@ void poll() {
     s_lastSampleMs = now;
     s_cMv  = battery::milliVolts();
     s_cPct = battery::percent();
-    bool chg  = battery::charging();
-    bool prev = s_cChg;
+    s_cRm  = battery::remainingCapacity();
+    bool chg     = battery::charging();
+    bool ext     = battery::external();
+    bool prevChg = s_cChg;
+    bool prevExt = s_cExt;
     s_cChg = chg;
-    if (s_haveCharge && chg != prev) append("Laden", chg ? "gestartet" : "beendet");
+    s_cExt = ext;
+    if (s_haveCharge && chg != prevChg) append("Laden", chg ? "gestartet" : "beendet");
+    // Das Kabel getrennt/gesteckt ist die Grenze zwischen echter Akku-Messung
+    // und Phantom-Phase — als eigenes Ereignis markieren, nicht nur als Spalte.
+    if (s_haveCharge && ext != prevExt) append("Kabel", ext ? "gesteckt" : "getrennt");
     s_haveCharge = true;
     append("Akku", "Probe");
   }

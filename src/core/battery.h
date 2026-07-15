@@ -28,6 +28,16 @@ uint8_t  percent();      // State of Charge 0..100
 bool     charging();     // mittlerer Strom > 0 (lädt aktiv)
 bool     external();     // am Strom (lädt ODER voll am Kabel); DSG-Bit aus BatteryStatus
 
+// RemainingCapacity (mAh) — der rohe Coulomb-Counter. Der ABSOLUTWERT ist auf
+// diesem Gerät unbrauchbar (FCC driftet, s.o.), die DIFFERENZ zweier Messungen
+// ist dagegen eine echte Ladungsintegration: (mAh_alt - mAh_neu) * 3600 / Sekunden
+// = mittlerer Strom in mA. Läuft im Deep Sleep weiter (der Gauge hängt direkt an
+// der Zelle) und ist damit das einzige Instrument, das den Standby-Verbrauch
+// misst, statt ihn aus der Spannungskurve zu raten. 0 bei I2C-Fehler.
+// Vorsicht: der Gauge korrigiert RM gelegentlich sprunghaft (Impedance Track) —
+// deshalb werden die Rohwerte mitgeloggt, damit ein Sprung sichtbar bleibt.
+uint16_t remainingCapacity();
+
 // Read-only-Diagnose: dumpt Kapazitäts-/Statusregister des Gauge nach Serial
 // (Konsole `gauge`). Klärt, warum SoC nicht zur Spannung passt. Schreibt nichts.
 void     dumpGauge();

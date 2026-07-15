@@ -89,6 +89,8 @@ bool charging() {
   return mA > 0;
 }
 
+uint16_t remainingCapacity() { return s_ready ? read16(REG_REMAINCAP) : 0; }
+
 bool external() {
   // BatteryStatus-Bit 0 (DSG) = 1, solange der Akku entlädt. Hängt das Gerät am
   // Strom — egal ob es noch lädt oder voll am Kabel ruht (Strom ~0) — ist DSG=0.
