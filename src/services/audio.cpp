@@ -3,6 +3,7 @@
 
 #include "audio.h"
 #include "core/board.h"
+#include "core/power.h"
 #include "config.h"
 #include "services/battlog.h"
 #include "services/scrobble.h"
@@ -311,10 +312,20 @@ void handle(const Msg& m) {
 
 void audioTask(void*) {
   uint32_t lastPos = 0;
+  bool boosted = false;   // hält bei aktivem Decodieren den 240-MHz-Boost
   for (;;) {
     // 1) Kommandos abarbeiten.
     Msg m;
     while (xQueueReceive(s_cmdQ, &m, 0) == pdTRUE) handle(m);
+
+    // MP3-Decode + SD-Read-Ahead brauchen den vollen Takt; im Leerlauf/Pause
+    // reicht der 80-MHz-Basistakt (power.h, CPU-Takt-Governor).
+    bool wantBoost = s_playing && !s_paused;
+    if (wantBoost != boosted) {
+      if (wantBoost) power::boostLock();
+      else           power::boostUnlock();
+      boosted = wantBoost;
+    }
 
     // 2) Sleep-Timer prüfen.
     if (s_sleepAt && (int32_t)(millis() - s_sleepAt) >= 0) {

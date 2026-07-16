@@ -338,6 +338,10 @@ void setup() {
     }
   }
 #endif
+
+  // Zuletzt: CPU-Basistakt 80 MHz aktivieren (Boot lief mit 240). Ab hier
+  // fordern Audio/WLAN/Schach/EPUB/Konsole bei Bedarf 240 MHz an (power.h).
+  power::boostBegin();
 }
 
 void loop() {

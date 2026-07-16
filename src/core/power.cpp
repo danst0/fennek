@@ -24,7 +24,11 @@
 #include "services/webfm.h"
 
 #include <Arduino.h>
+#include <WiFi.h>        // WiFi-Events für den CPU-Takt-Governor
 #include <Wire.h>
+#ifdef BATTBISECT
+#include <SD.h>          // bisectPersist() schreibt Messpunkte direkt auf die SD
+#endif
 #include <GxEPD2_BW.h>   // GxEPD_BLACK / GxEPD_WHITE
 #include <esp_sleep.h>
 #include <esp_system.h>
@@ -50,6 +54,11 @@ constexpr uint32_t SHORTPRESS_MIN_MS = 40;     // Entprellung des Kurzklicks
 // Refresh gegen E-Ink-Ghosting. SLEEP_WAKE_TEST verkürzt auf 60 s (Gerätetest).
 #ifdef SLEEP_WAKE_TEST
 constexpr uint64_t kTimerWakeUs = 60ULL * 1000000ULL;
+#elif defined(BATTBISECT)
+// Messreihe: 30 min je Schritt. Der Coulomb-Counter zählt in ganzen mAh — 30 min
+// trennen 22 mA (~11 mAh) und 4 mA (~2 mAh) klar. Kürzere Intervalle (verifiziert
+// mit 3 min) sammeln zwar korrekt Zeilen an, sind aber quantisierungsverrauscht.
+constexpr uint64_t kTimerWakeUs = 1800ULL * 1000000ULL;
 #else
 constexpr uint64_t kTimerWakeUs = 3600ULL * 1000000ULL;
 #endif
@@ -92,6 +101,7 @@ struct SleepSample {
   uint16_t rm;      // RemainingCapacity (mAh, Coulomb-Counter) — s. mA-Rechnung
   uint8_t  pct;
   uint8_t  phase;   // PH_WAKE_START = Timer-Wake, PH_STBY_ARM = Standby-Beginn
+  uint8_t  cfg;     // Rail-Konfiguration des Schlafs, der HIER beginnt (BATTBISECT)
 };
 constexpr int kSleepHistMax = 48;
 RTC_DATA_ATTR SleepSample s_sleepHist[kSleepHistMax];
@@ -102,6 +112,93 @@ RTC_DATA_ATTR uint8_t s_sleepHistW = 0;   // Schreibindex (Ring)
 // dazwischen 2 min stabile Laufzeit (poll() löscht) oder sauberen Standby.
 RTC_DATA_ATTR uint8_t s_abnormalBoots = 0;
 
+// --- Rail-Bisektion (nur mit -D BATTBISECT) ----------------------------------
+// Hintergrund: der Deep Sleep zieht gemessene 22 mA statt ~0,05 mA (Coulomb-
+// Counter, 15.07.26). Alle Rails sind nominell aus — „noch mehr aus" gibt es
+// also nicht. Deshalb der INVERSTEST: pro Schlafstunde wird genau eine Rail
+// absichtlich EINgeschaltet.
+//   Strom steigt spürbar  -> die Rail war im Basisfall wirklich aus (unschuldig)
+//   Strom bleibt bei ~22  -> sie lief die ganze Zeit; ihr Hold greift nicht
+// Der stündliche Banner-Wake kostet in jedem Intervall gleich viel und fällt
+// beim Vergleich gegen die Basis heraus.
+//
+// Ein Durchlauf = kBisectN Stunden ohne Kabel; danach zykliert die Tabelle
+// (Wiederholung = Drift-/Reproduzierbarkeitskontrolle).
+#ifdef BATTBISECT
+RTC_DATA_ATTR uint8_t s_bisectStep = 0;
+
+// Was die Konfiguration mit dem Pin macht, während er über den Schlaf gehalten
+// wird. HIGH/LOW treiben aktiv; INPUT gibt den Pin frei (hochohmig) — wichtig
+// für GPIO3, s.u.
+enum BisMode : uint8_t { BM_NONE, BM_HIGH, BM_INPUT };
+struct BisectCfg {
+  const char* name;
+  int         pin;    // -1 = nichts anfassen (Basismessung)
+  BisMode     mode;
+};
+// Reihe 3 (16.07.26) — Ursachentest, sicher. Reihe 1 ergab „LoRa an = 4 mA statt
+// 22" (n=1). Hypothese: nicht das Radio spart, sondern LORA_CS (GPIO3), das
+// freezeSleepPins() auf HIGH hält, speist den unversorgten SX1262 über seine
+// Schutzdioden (Back-Powering). Reihe 2 wollte das mit „CS LOW" prüfen — aber
+// GPIO3 ist ein STRAPPING-PIN; ihn im Schlaf LOW zu erzwingen kann den nächsten
+// Bootmodus stören (Reihe 2 lieferte keine Daten, Boot mit Reset=UNKNOWN).
+// Sicherer Test: CS nicht mehr HIGH treiben, sondern als INPUT freigeben (Float
+// = Default-Strapping-Zustand). Schließt sich der Parasitärpfad damit schon,
+// ist der Produktions-Fix „CS im Schlaf nicht treiben", ohne den Pin zu ziehen.
+// Je zwei Replikate, damit kein Fix auf n=1 steht.
+const BisectCfg kBisect[] = {
+  {"Basis",     -1,           BM_NONE},
+  {"LoRa an",   PIN_LORA_EN,  BM_HIGH},
+  {"CS float",  PIN_LORA_CS,  BM_INPUT},
+  {"Basis2",    -1,           BM_NONE},
+  {"LoRa an2",  PIN_LORA_EN,  BM_HIGH},
+  {"CS float2", PIN_LORA_CS,  BM_INPUT},
+};
+constexpr uint8_t kBisectN = (uint8_t)(sizeof(kBisect) / sizeof(kBisect[0]));
+
+const char* bisectName(uint8_t step) { return kBisect[step % kBisectN].name; }
+
+// Läuft am Ende von freezeSleepPins(), unmittelbar vor holdSleepPins() — das
+// latcht den dann anliegenden Pegel über den Deep Sleep. Darf die dort gesetzten
+// Pegel (u. a. LORA_CS HIGH) bewusst überschreiben; genau das ist der Test.
+void applyBisect() {
+  const BisectCfg& c = kBisect[s_bisectStep % kBisectN];
+  switch (c.mode) {
+    case BM_HIGH:  pinMode(c.pin, OUTPUT); digitalWrite(c.pin, HIGH); break;
+    case BM_INPUT: pinMode(c.pin, INPUT);  break;   // HIGH-Treiber loslassen
+    case BM_NONE:  break;
+  }
+  Serial.printf("[BISECT] Schlafschritt %u: %s\n",
+                (unsigned)(s_bisectStep % kBisectN), c.name);
+}
+
+// --- (1) Messpunkt sofort auf die SD --------------------------------------
+// Warum: Die per-Konfig-Auflösung lebte bisher nur im RTC-RAM und wurde beim
+// Wieder-Anstecken (Power-Cycle) gelöscht, BEVOR logSleepDebug() sie ausgeben
+// konnte — zweimal Datenverlust. Deshalb schreibt jeder Wake seinen Coulomb-
+// Stand zusätzlich nach /.fennek/bisect.log. Der SD-Mount kostet einen kurzen,
+// über ALLE Konfigurationen gleichen Stromstoß pro Wake → er hebt sich im
+// Konfig-Vergleich heraus, und er fällt NACH dem Coulomb-Read an, zählt also
+// gleichmäßig ins jeweils nächste Intervall. Offline: mA = Δ mAh / Δ t zweier
+// aufeinanderfolgender Zeilen, der Konfig-Name der ERSTEN Zeile gilt fürs
+// Intervall. Immun gegen RTC-Verlust.
+void bisectPersist(uint16_t rm, uint16_t mv, uint8_t pct) {
+  // Im Standby ist die SD schon gemountet (SD.begin() liefert dann false) — nur
+  // im Timer-Wake-Minimalpfad muss erst gemountet werden.
+  if (!board::sdReady() && !board::initSD()) return;
+  char line[80];
+  snprintf(line, sizeof(line), "%lu\t%umAh\t%umV\t%u%%\tstep%u\t%s\n",
+           (unsigned long)time(nullptr), (unsigned)rm, (unsigned)mv,
+           (unsigned)pct, (unsigned)(s_bisectStep % kBisectN),
+           bisectName(s_bisectStep));
+  spiLock();
+  SD.mkdir("/.fennek");
+  File f = SD.open("/.fennek/bisect.log", FILE_APPEND);
+  if (f) { f.print(line); f.close(); }
+  spiUnlock();
+}
+#endif
+
 void histAdd(uint8_t phase, uint8_t pct, uint16_t mv, uint16_t rm) {
   SleepSample& e = s_sleepHist[s_sleepHistW];
   e.epoch = (uint32_t)time(nullptr);
@@ -109,6 +206,11 @@ void histAdd(uint8_t phase, uint8_t pct, uint16_t mv, uint16_t rm) {
   e.rm    = rm;
   e.pct   = pct;
   e.phase = phase;
+#ifdef BATTBISECT
+  e.cfg   = s_bisectStep;   // Konfig des Schlafs, der nach diesem Eintrag beginnt
+#else
+  e.cfg   = 0;
+#endif
   s_sleepHistW = (uint8_t)((s_sleepHistW + 1) % kSleepHistMax);
   if (s_sleepHistN < kSleepHistMax) s_sleepHistN++;
 }
@@ -208,13 +310,59 @@ void armWakeups() {
 // kommen zurück -> ~50 mA Standby-Drain (gemessen: 94 %→5 % in ~29 h,
 // battery.log 14./15.06.2026). GPIO42 (Tastatur-Backlight-Gate) ebenfalls fest
 // LOW — floatete bisher im Schlaf.
+//
+// LORA_CS (GPIO3) wird bewusst NICHT auf HIGH getrieben, sondern als Input
+// freigegeben (holdSleepPins latcht ihn dann hochohmig): Ein aktiv getriebenes
+// HIGH speist den unversorgten SX1262 (LORA_EN LOW) über seine Schutzdioden
+// rückwärts und verbrennt ~18 mA. Gemessen per Coulomb-Counter (Bisektion
+// 16./17.07.26, n=3): CS HIGH = 22,6 mA, CS floatend = 4,0 mA Standby. Im Schlaf
+// ist die CPU aus, es gibt keinen SPI-Verkehr → kein Bus-Konflikt durch das
+// nicht-deselektierte CS, und das Modul ist ohnehin stromlos.
 void freezeSleepPins() {
   digitalWrite(PIN_EINK_CS, HIGH);
-  digitalWrite(PIN_LORA_CS, HIGH);
+  pinMode(PIN_LORA_CS, INPUT);   // NICHT HIGH treiben — s.o. (Back-Powering)
   digitalWrite(PIN_SD_CS,   HIGH);
   pinMode(PIN_KB_BL, OUTPUT);
   digitalWrite(PIN_KB_BL, LOW);
+#ifdef BATTBISECT
+  // Zuletzt vor dem Latch: die Messkonfiguration darf die Pegel oben
+  // überschreiben (genau darum geht es beim „CS low"-Test) — und muss vor
+  // holdSleepPins() liegen, weil das den anliegenden Pegel einfriert.
+  applyBisect();
+#endif
   board::holdSleepPins();
+}
+
+// --- CPU-Takt-Governor (siehe power.h) ------------------------------------------
+// Mutex statt Spinlock: setCpuFrequencyMhz() ruft bei registrierten
+// APB-Callbacks (UART-HAL) in Treiber-Locks hinein — das darf nicht in einer
+// Critical Section passieren. Alle Aufrufer sind Tasks (Audio Core 0, Schach,
+// Loop, WiFi-Event-Task), nie ISRs.
+SemaphoreHandle_t s_boostMux = nullptr;
+int  s_boostN      = 0;      // aktive 240-MHz-Anforderungen
+bool s_boostGovern = false;  // erst ab boostBegin(); der Boot läuft mit 240 MHz
+
+void applyBoostLocked() {    // nur unter s_boostMux aufrufen
+  if (!s_boostGovern) return;
+  setCpuFrequencyMhz(s_boostN > 0 ? 240 : 80);   // no-op bei unverändertem Takt
+}
+
+// Zentraler WLAN-Haken: jede WiFi-Nutzung (webfm, Scrobble, OTA, Kalender,
+// Calibre, Todo, NTP, …) boostet automatisch — schnellerer Transfer heißt
+// kürzere Funkzeit, das WLAN-Radio (~100 mA) dominiert die Rechnung. Läuft im
+// WiFi-Event-Task und erreicht so auch blockierende Sync-Flows.
+void onWifiBoost(arduino_event_id_t ev) {
+  static bool s_wifiHeld = false;   // nur vom Event-Task berührt
+  bool up = (ev == ARDUINO_EVENT_WIFI_STA_START || ev == ARDUINO_EVENT_WIFI_AP_START);
+  if (up && !s_wifiHeld) {
+    s_wifiHeld = true;
+    power::boostLock();
+  } else if (!up && s_wifiHeld && WiFi.getMode() == WIFI_OFF) {
+    // STA_STOP/AP_STOP: erst freigeben, wenn wirklich alles aus ist
+    // (webfm kann zwischen STA und AP wechseln).
+    s_wifiHeld = false;
+    power::boostUnlock();
+  }
 }
 
 }  // namespace
@@ -224,6 +372,37 @@ namespace power {
 void begin() {
   pinMode(PIN_USER_BTN, INPUT);   // externer Pull-up am Strapping-Pin
   s_lastActivity = millis();
+  s_boostMux = xSemaphoreCreateMutex();
+}
+
+void boostLock() {
+  if (!s_boostMux) return;   // vor begin(): Boot läuft ohnehin mit 240 MHz
+  xSemaphoreTake(s_boostMux, portMAX_DELAY);
+  s_boostN++;
+  applyBoostLocked();
+  xSemaphoreGive(s_boostMux);
+}
+
+void boostUnlock() {
+  if (!s_boostMux) return;
+  xSemaphoreTake(s_boostMux, portMAX_DELAY);
+  if (s_boostN > 0) s_boostN--;
+  applyBoostLocked();
+  xSemaphoreGive(s_boostMux);
+}
+
+void boostBegin() {
+  WiFi.onEvent(onWifiBoost, ARDUINO_EVENT_WIFI_STA_START);
+  WiFi.onEvent(onWifiBoost, ARDUINO_EVENT_WIFI_STA_STOP);
+  WiFi.onEvent(onWifiBoost, ARDUINO_EVENT_WIFI_AP_START);
+  WiFi.onEvent(onWifiBoost, ARDUINO_EVENT_WIFI_AP_STOP);
+  if (!s_boostMux) return;
+  xSemaphoreTake(s_boostMux, portMAX_DELAY);
+  s_boostGovern = true;
+  applyBoostLocked();
+  xSemaphoreGive(s_boostMux);
+  Serial.printf("[PWR] CPU-Governor aktiv: %lu MHz (Basis 80, Boost 240)\n",
+                (unsigned long)getCpuFrequencyMhz());
 }
 
 void noteBoot() {
@@ -285,13 +464,20 @@ void logSleepDebug() {
     // Mittleren Strom seit dem vorigen Eintrag aus der Ladungsdifferenz bilden.
     // Nur wenn beide Coulomb-Werte plausibel sind (0 = I2C-Fehler) und die Uhr
     // zwischen den Einträgen vorwärts lief; sonst bleibt die Spalte leer.
-    char mA[16] = "";
+    // Der mA-Wert gehört zum Intervall, das beim VORIGEN Eintrag begann — also
+    // auch dessen Rail-Konfiguration (cfg), nicht die von diesem Eintrag.
+    char mA[32] = "";
     if (i > 0) {
       const SleepSample& p = s_sleepHist[(start + i - 1) % kSleepHistMax];
       if (p.rm && e.rm && e.epoch > p.epoch) {
         int32_t  dmah = (int32_t)p.rm - (int32_t)e.rm;   // >0 = entladen
         uint32_t dsec = e.epoch - p.epoch;
-        snprintf(mA, sizeof(mA), " %ldmA", (long)(dmah * 3600 / (int32_t)dsec));
+        long     ma   = (long)(dmah * 3600 / (int32_t)dsec);
+#ifdef BATTBISECT
+        snprintf(mA, sizeof(mA), " %ldmA [%s]", ma, bisectName(p.cfg));
+#else
+        snprintf(mA, sizeof(mA), " %ldmA", ma);
+#endif
       }
     }
     BATTLOG_EVENT("Schlaf", "%s Ph=%u %u%% %umV %umAh%s",
@@ -348,11 +534,18 @@ void enterStandby() {
   //    Panel-Controller in den eigenen Deep Sleep schicken (µA statt Standby).
   s_sleepPct = battery::percent();
   s_timerWakes = 0;
+#ifdef BATTBISECT
+  s_bisectStep = 0;   // jeder frische Standby startet die Messreihe neu
+#endif
   // Standby-Marker. Der Coulomb-Stand wird hier gelesen, solange der I2C-Gauge
   // noch versorgt ist und die Rails (DAC/LoRa/GPS) schon aus sind — die Differenz
   // zum ersten Timer-Wake ist damit fast reiner Schlafstrom.
-  histAdd(PH_STBY_ARM, s_sleepPct, battery::milliVolts(),
-          battery::remainingCapacity());
+  uint16_t smv = battery::milliVolts();
+  uint16_t srm = battery::remainingCapacity();
+  histAdd(PH_STBY_ARM, s_sleepPct, smv, srm);
+#ifdef BATTBISECT
+  bisectPersist(srm, smv, s_sleepPct);   // (1) Ankerzeile fürs erste Intervall
+#endif
   s_sleepPhase = PH_STBY_RENDER;
   display::render(drawSleepScreen, true);
   display::hibernate();
@@ -431,10 +624,17 @@ bool handleTimerWake() {
 
   s_sleepPct = battery::percent();
   s_timerWakes++;
+#ifdef BATTBISECT
+  s_bisectStep++;   // vor histAdd: der Eintrag trägt die Konfig des NÄCHSTEN Schlafs
+#endif
   // Coulomb-Stand so früh wie möglich lesen — vor dem E-Ink-Refresh unten, damit
   // die Differenz zum vorigen Eintrag den Schlaf misst und nicht den Wake.
-  histAdd(PH_WAKE_START, s_sleepPct, battery::milliVolts(),
-          battery::remainingCapacity());
+  uint16_t wmv = battery::milliVolts();
+  uint16_t wrm = battery::remainingCapacity();
+  histAdd(PH_WAKE_START, s_sleepPct, wmv, wrm);
+#ifdef BATTBISECT
+  bisectPersist(wrm, wmv, s_sleepPct);   // (1) sofort auf SD, immun gegen RTC-Verlust
+#endif
   Serial.printf("[FENNEK] Timer-Wake #%lu: Akku %u%% — zurück in Deep Sleep\n",
                 (unsigned long)s_timerWakes, (unsigned)s_sleepPct);
 

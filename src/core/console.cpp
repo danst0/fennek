@@ -63,6 +63,7 @@ void cmdHelp() {
   Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: einmal|taeglich|mo,di,..)");
   Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|vibra|beides|alle / sound <pfad> / test / stop / snooze");
   Serial.println("[CON]   mesh init         - Mesh-Radio initialisieren");
+  Serial.println("[CON]   mesh eco [on|off] - RX-Duty-Cycle (Radio-Sparmodus) zeigen/setzen");
   Serial.println("[CON]   advert            - Zero-Hop-Advert senden (mit Akku-Telemetrie)");
   Serial.println("[CON]   advert flood      - Flood-Advert (mehrhopfaehig, erreicht entfernte Nodes)");
   Serial.println("[CON]   pos [<lat> <lon>] - Node-Position zeigen/setzen (Standortbake im Advert)");
@@ -281,6 +282,35 @@ void cmdBatLog() {
   Serial.println("\n[CON] --- battlog Ende ---");
 }
 
+// Beliebige SD-Textdatei gechunkt über Serial ausgeben (SD-Read unter spiLock,
+// Serial danach) — z. B. `cat /.fennek/bisect.log`.
+void cmdCat(const char* path) {
+  if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
+  spiLock();
+  bool ok = SD.exists(path);
+  File f = ok ? SD.open(path, FILE_READ) : File();
+  uint32_t sz = f ? f.size() : 0;
+  spiUnlock();
+  if (!ok || !f) { Serial.printf("[CON] %s nicht lesbar\n", path); return; }
+  Serial.printf("[CON] %s (%u Bytes):\n", path, (unsigned)sz);
+  static char buf[1025];
+  uint32_t off = 0;
+  while (off < sz) {
+    spiLock();
+    f.seek(off);
+    int rd = f.read((uint8_t*)buf, 1024);
+    spiUnlock();
+    if (rd <= 0) break;
+    buf[rd] = '\0';
+    Serial.print(buf);
+    off += rd;
+  }
+  spiLock();
+  f.close();
+  spiUnlock();
+  Serial.println("\n[CON] --- cat Ende ---");
+}
+
 // Bekannte Geräte auf dem geteilten I2C-Bus (SDA 13 / SCL 14) benennen, damit
 // der Scan auf einen Blick verrät, ob ein Hardware-RTC bestückt ist.
 const char* i2cKnownName(uint8_t addr) {
@@ -317,9 +347,12 @@ void cmdI2cScan() {
 }
 
 void cmdStatus() {
-  Serial.printf("[CON] Heap=%uKB PSRAM=%uKB Akku=%umV/%u%%%s SD=%s\n",
+  // Hinweis: Die Konsole selbst hält während des Befehls den 240-MHz-Boost —
+  // der Wert zeigt also den Boost-Takt, nicht den Leerlauf-Basistakt (80).
+  Serial.printf("[CON] Heap=%uKB PSRAM=%uKB CPU=%luMHz Akku=%umV/%u%%%s SD=%s\n",
                 (unsigned)(ESP.getFreeHeap() / 1024),
                 (unsigned)(ESP.getFreePsram() / 1024),
+                (unsigned long)getCpuFrequencyMhz(),
                 battery::milliVolts(), battery::percent(),
                 battery::charging() ? "+" : "",
                 board::sdReady() ? "ja" : "nein");
@@ -691,6 +724,18 @@ void handleLine(char* line) {
     return;
   }
   if (strcmp(line, "mesh init") == 0)       { ensureMesh(); return; }
+  if (strncmp(line, "mesh eco", 8) == 0) {
+    const char* a = line + 8;
+    while (*a == ' ') a++;
+    if (*a) {
+      settings::setMeshEco(strcmp(a, "on") == 0 || strcmp(a, "1") == 0);
+      // Läuft das Radio schon, sofort umschalten (armiert den Empfang neu).
+      if (mesh_client::ready()) mesh_client::applyRadioParams();
+    }
+    Serial.printf("[CON] Mesh RX-Sparmodus (Duty-Cycle): %s\n",
+                  settings::meshEco() ? "an" : "aus");
+    return;
+  }
   if (strcmp(line, "contacts reset") == 0)  {
     if (!ensureMesh()) return;
     mesh_client::resetContacts();
@@ -705,6 +750,7 @@ void handleLine(char* line) {
   if (strcmp(line, "i2cscan") == 0)         { cmdI2cScan(); return; }
   if (strcmp(line, "ls") == 0)              { cmdLs("/"); return; }
   if (strncmp(line, "ls ", 3) == 0)         { cmdLs(line + 3); return; }
+  if (strncmp(line, "cat ", 4) == 0)        { cmdCat(line + 4); return; }
   if (strncmp(line, "rm ", 3) == 0)         { cmdRm(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
   if (strcmp(line, "notes") == 0)           { notes_app::debugSmoke(); return; }
@@ -1005,7 +1051,11 @@ void poll() {
       if (s_len > 0) {
         s_line[s_len] = '\0';
         s_len = 0;
+        // Blockierende Befehle (OTA, WLAN-Syncs, Tests) mit vollem Takt fahren
+        // — der Governor sieht sie sonst erst nach der Rückkehr (power.h).
+        power::boostLock();
         handleLine(s_line);
+        power::boostUnlock();
       }
     } else if (s_len < (int)sizeof(s_line) - 1) {
       s_line[s_len++] = c;

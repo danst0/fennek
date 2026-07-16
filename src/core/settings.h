@@ -74,6 +74,13 @@ struct MeshParams {
 MeshParams meshParams();
 void       setMeshParams(const MeshParams& p);   // schreibt nur Änderungen
 
+// RX-Sparmodus: SX1262-Duty-Cycle-Empfang (Radio schläft zwischen kurzen
+// Horch-Fenstern, Präambel weckt es; spart ~2/3 des RX-Dauerstroms).
+// Voraussetzung: Sender im Netz nutzen mindestens unsere Präambel-Länge
+// (aktueller MeshCore-Standard). Konsole: `mesh eco on|off`.
+bool meshEco();                                  // Default true
+void setMeshEco(bool on);
+
 void meshName(char* out, size_t n);              // Node-Name (Default "T-Deck")
 void setMeshName(const char* name);
 

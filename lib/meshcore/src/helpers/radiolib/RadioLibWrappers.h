@@ -11,9 +11,16 @@ protected:
   int16_t _noise_floor, _threshold;
   uint16_t _num_floor_samples;
   int32_t _floor_sample_sum;
+  // Fennek: RX-Duty-Cycle aktiv (setzt CustomSX1262Wrapper::setLowPowerRx).
+  // loop() setzt dann das Noise-Floor-Sampling aus: jede RSSI-Probe (SPI)
+  // würde den im Duty-Sleep liegenden Chip aufwecken und den Zyklus abbrechen.
+  bool _lowPowerRx = false;
 
   void idle();
   void startRecv();
+  // Zentraler RX-Arm-Punkt (startRecv + recvRaw): Unterklassen können hier
+  // einen Duty-Cycle-Empfang statt des kontinuierlichen RX starten.
+  virtual int16_t startRx() { return _radio->startReceive(); }
   float packetScoreInt(float snr, int sf, int packet_len);
   virtual bool isReceivingPacket() =0;
 
@@ -22,6 +29,9 @@ public:
 
   void begin() override;
   virtual void powerOff() { _radio->sleep(); }
+  // RX sauber neu armieren (z. B. nach Parameterwechsel oder Umschalten des
+  // Duty-Cycle-Modus) — ersetzt rohe startReceive()-Aufrufe am Radio vorbei.
+  void restartRecv() { idle(); startRecv(); }
   int recvRaw(uint8_t* bytes, int sz) override;
   uint32_t getEstAirtimeFor(int len_bytes) override;
   bool startSendRaw(const uint8_t* bytes, int len) override;

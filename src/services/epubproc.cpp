@@ -5,6 +5,7 @@
 #include "epubzip.h"
 #include "core/board.h"
 #include "core/gui.h"
+#include "core/power.h"
 #include "core/settings.h"
 
 #include <Arduino.h>
@@ -462,6 +463,9 @@ void cleanup(bool removeTxt) {
   if (s_cv.epubFile) s_cv.epubFile.close();
   if (removeTxt) SD.remove(s_cv.txtPath);
   spiUnlock();
+  // Boost-Gegenstück zu convertBegin(): nur wenn die Konvertierung wirklich
+  // lief (die Fehlpfade in convertBegin() räumen vor active=true auf).
+  if (s_cv.active) power::boostUnlock();
   s_cv.active = false;
 }
 
@@ -552,6 +556,7 @@ bool convertBegin(const char* epubPath, const char* txtPath) {
 
   Serial.printf("[EPUB] '%s': %d Kapitel\n", title, s_cv.chapterCount);
   s_cv.active = true;
+  power::boostLock();   // XHTML-Strippen ist CPU-Arbeit — voller Takt bis cleanup()
   return true;
 }
 

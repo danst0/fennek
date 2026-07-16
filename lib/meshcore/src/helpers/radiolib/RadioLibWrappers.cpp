@@ -63,7 +63,11 @@ void RadioLibWrapper::resetAGC() {
 }
 
 void RadioLibWrapper::loop() {
-  if (state == STATE_RX && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
+  // Im Duty-Cycle-RX (_lowPowerRx) kein RSSI-Sampling: getCurrentRSSI() ist
+  // eine SPI-Probe, die den schlafenden Chip weckt und den Zyklus abbricht —
+  // der Noise-Floor bleibt dann beim letzten Wert (Fennek nutzt ihn nur zur
+  // Anzeige; der Interference-Threshold ist 0 = deaktiviert).
+  if (state == STATE_RX && !_lowPowerRx && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
     if (!isReceivingPacket()) {
       int rssi = getCurrentRSSI();
       if (rssi < _noise_floor + SAMPLING_THRESHOLD) {  // only consider samples below current floor + sampling THRESHOLD
@@ -83,7 +87,7 @@ void RadioLibWrapper::loop() {
 }
 
 void RadioLibWrapper::startRecv() {
-  int err = _radio->startReceive();
+  int err = startRx();
   if (err == RADIOLIB_ERR_NONE) {
     state = STATE_RX;
   } else {
@@ -114,7 +118,7 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   }
 
   if (state != STATE_RX) {
-    int err = _radio->startReceive();
+    int err = startRx();
     if (err == RADIOLIB_ERR_NONE) {
       state = STATE_RX;
     } else {

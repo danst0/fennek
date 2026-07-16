@@ -304,6 +304,15 @@ void setMeshParams(const MeshParams& p) {
   s_mesh = p;
 }
 
+bool meshEco() {
+  if (!s_open) return true;
+  return s_prefs.getBool("mesheco", true);
+}
+void setMeshEco(bool on) {
+  if (!s_open || on == meshEco()) return;
+  s_prefs.putBool("mesheco", on);
+}
+
 void meshName(char* out, size_t n) {
   meshEnsure();
   strncpy(out, s_meshName, n - 1);
@@ -922,6 +931,7 @@ size_t exportIni(char* out, size_t cap) {
     "cr = %u\n"
     "tx_dbm = %u\n"
     "node_name = %s\n"
+    "eco = %u\n"                // RX-Duty-Cycle (Radio-Sparmodus)
     "\n[wifi]\n"
     "ssid = %s\n"
     "password =\n"             // leer = nicht exportiert; manuell eintragbar
@@ -955,6 +965,7 @@ size_t exportIni(char* out, size_t cap) {
     (unsigned)volume(), (unsigned)standbyMinutes(), (unsigned)language(), tz,
     (unsigned)fontScale(),
     m.freqMhz, m.bwKhz, (unsigned)m.sf, (unsigned)m.cr, (unsigned)m.txDbm, name,
+    (unsigned)(meshEco() ? 1 : 0),
     ssid,
     (unsigned)(navEnabled() ? 1 : 0), nurl, nuser,
     (unsigned)(aiEnabled() ? 1 : 0), ourl, omod,
@@ -1040,6 +1051,7 @@ int importIni(const char* text) {
       else if (strcmp(key, "cr") == 0)        { m.cr = (uint8_t)atoi(val); setMeshParams(m); applied++; }
       else if (strcmp(key, "tx_dbm") == 0)    { m.txDbm = (uint8_t)atoi(val); setMeshParams(m); applied++; }
       else if (strcmp(key, "node_name") == 0) { setMeshName(val); applied++; }
+      else if (strcmp(key, "eco") == 0)       { setMeshEco(atoi(val) != 0); applied++; }
     } else if (strcmp(section, "wifi") == 0) {
       if      (strcmp(key, "ssid") == 0)     { setWifiSsid(val); applied++; }
       // Leeres Passwort-Feld überspringen: bewahrt das im NVS gespeicherte

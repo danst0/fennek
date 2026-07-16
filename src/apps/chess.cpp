@@ -21,6 +21,7 @@
 #include "core/appmgr.h"
 #include "core/gui.h"
 #include "core/i18n.h"
+#include "core/power.h"
 #include "core/settings.h"
 #include "apps/games_app.h"
 #include "apps/chess_core.h"
@@ -80,6 +81,7 @@ int         s_aiDepth;
 uint32_t    s_aiLimit;
 
 void aiTaskFn(void*) {
+  power::boostLock();   // Negamax braucht den vollen Takt (CPU-Governor, power.h)
   uint32_t gen = s_aiGen;
   uint32_t t0 = millis();
   chess::Move mv;
@@ -93,6 +95,7 @@ void aiTaskFn(void*) {
     s_aiOk = ok;
     s_aiDone = true;
   }
+  power::boostUnlock();
   vTaskDelete(nullptr);
 }
 

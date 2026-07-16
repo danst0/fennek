@@ -874,8 +874,9 @@ bool begin() {
   applyRadioParams();
 
   settings::MeshParams p = settings::meshParams();
-  Serial.printf("[MESH] bereit: '%s' @ %.3f MHz SF%u BW%.1f CR4/%u %udBm (Noise-Floor-Kalibrierung läuft)\n",
-                s_mesh->name(), (double)p.freqMhz, p.sf, (double)p.bwKhz, p.cr, p.txDbm);
+  Serial.printf("[MESH] bereit: '%s' @ %.3f MHz SF%u BW%.1f CR4/%u %udBm%s\n",
+                s_mesh->name(), (double)p.freqMhz, p.sf, (double)p.bwKhz, p.cr, p.txDbm,
+                settings::meshEco() ? " [RX-Eco]" : " (Noise-Floor-Kalibrierung läuft)");
 
   // Chat-Verlauf vom SD-Log wiederherstellen (falls Karte steckt).
   loadHistoryFromSd();
@@ -1159,7 +1160,7 @@ void setNodePosition(double lat, double lon) {
 }
 
 void applyRadioParams() {
-  if (!s_ready || !s_radio) return;
+  if (!s_ready || !s_radio || !s_radioDrv) return;
   settings::MeshParams p = settings::meshParams();
   spiLock();
   s_radio->setFrequency(p.freqMhz);
@@ -1169,8 +1170,11 @@ void applyRadioParams() {
   // Längere Präambel bei niedrigem SF (kürzere Symbole) — vgl. MeshCore PR#1954.
   s_radio->setPreambleLength((p.sf <= 8) ? 32 : 16);
   s_radio->setOutputPower(p.txDbm);
-  // Zurück in den Empfangsmodus (Parameterwechsel beendet laufendes RX).
-  s_radio->startReceive();
+  // RX-Sparmodus (SetRxDutyCycle) laut Settings übernehmen und den Empfang
+  // über den Wrapper neu armieren (Parameterwechsel beendet laufendes RX;
+  // ein rohes startReceive() würde den Duty-Cycle-Modus umgehen).
+  s_radioDrv->setLowPowerRx(settings::meshEco());
+  s_radioDrv->restartRecv();
   spiUnlock();
 }
 

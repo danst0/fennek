@@ -53,6 +53,18 @@ void poll();
 // nur der Knopf reagiert (kurz = entsperren, lang = Standby).
 bool locked();
 
+// --- CPU-Takt-Governor ---------------------------------------------------------
+// Basistakt 80 MHz statt fester 240 MHz: spart im wachen Leerlauf (Lesen, Menü,
+// Tippen) grob 20–30 mA. 80/160/240 MHz laufen alle aus der PLL, der APB-Takt
+// bleibt 80 MHz — SPI (4 MHz), GPS-UART, I2C und I2S sind vom Umschalten nicht
+// betroffen. Rechenintensive Phasen fordern per boostLock() 240 MHz an
+// (Zähler, paarweise mit boostUnlock()): Audio-Decode, WLAN (zentral über
+// WiFi-Events, kein Service muss selbst locken), Schach-KI, EPUB-Konvertierung,
+// Konsolen-Befehle. Greift erst ab boostBegin() — der Boot läuft mit 240 MHz.
+void boostBegin();     // einmal am Ende von setup(): Basistakt aktivieren
+void boostLock();      // 240 MHz anfordern (Zähler hoch)
+void boostUnlock();    // Anforderung zurückgeben; bei 0 zurück auf 80 MHz
+
 // Sofort in Deep-Sleep-Standby gehen (Audio/Radio/Peripherie aus, Wake-Quellen
 // = Knopf + Stunden-Timer). Kehrt nicht zurück (Aufwachen ist ein Reboot).
 void enterStandby();
