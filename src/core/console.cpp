@@ -283,7 +283,7 @@ void cmdBatLog() {
 }
 
 // Beliebige SD-Textdatei gechunkt über Serial ausgeben (SD-Read unter spiLock,
-// Serial danach) — z. B. `cat /.fennek/bisect.log`.
+// Serial danach) — z. B. `cat /.fennek/battery.log`.
 void cmdCat(const char* path) {
   if (!board::sdReady()) { Serial.println("[CON] Keine SD-Karte"); return; }
   spiLock();
