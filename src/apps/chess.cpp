@@ -194,7 +194,7 @@ void newGame() {
   s_dirtySave = true;
   s_sub = BOARD;
   Serial.printf("[GAME] Schach: neue Partie (%s, Stufe %s)\n",
-                s_mode ? "2 Spieler" : "gegen Fennek", kLevelName[s_level]);
+                s_mode ? "2 Spieler" : "gegen Fennek", i18n::tr(kLevelName[s_level]));
   maybeStartAi();
   appmgr::markDirty();
 }
