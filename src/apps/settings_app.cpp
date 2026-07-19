@@ -591,6 +591,29 @@ void drawCatRow(Adafruit_GFX& g, int idx, int y) {
   }
 }
 
+// Zeile der WLAN-Liste: SSID (bzw. „+ Neues WLAN") groß + ►, ausgewählt gerahmt.
+void drawWifiListRow(Adafruit_GFX& g, int idx, int y) {
+  char label[40];
+  if (wifiIsNewRow(idx)) {
+    snprintf(label, sizeof(label), "+ Neues WLAN");
+  } else {
+    char ssid[33];
+    settings::wifiSsidAt(idx, ssid, sizeof(ssid));
+    snprintf(label, sizeof(label), "%s", ssid[0] ? ssid : "(leer)");
+  }
+  g.setTextSize(2);
+  g.setCursor(10, y + 4);
+  gui::print(g, label);
+  g.drawFastHLine(0, y + ROW_H, W, GxEPD_BLACK);
+  g.setTextSize(1);
+  g.setCursor(W - 13, y + 8);
+  g.write((uint8_t)0x10);                // ►
+  if (idx == s_sel) {
+    g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
+    g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
+  }
+}
+
 // Einstellungs-Zeile: Label klein links, Wert groß rechtsbündig; ausgewählte
 // Zeile mit Doppelrahmen + ◄/►-Pfeilen (Tap-Hälften bzw. A/D).
 void drawRow(Adafruit_GFX& g, int row, int y, bool selected) {
@@ -622,7 +645,7 @@ void drawRow(Adafruit_GFX& g, int row, int y, bool selected) {
   if (selected) {
     g.drawRect(0, y, W, ROW_H, GxEPD_BLACK);
     g.drawRect(1, y + 1, W - 2, ROW_H - 2, GxEPD_BLACK);
-    if (!rowEditable(row) && row != ROW_OTAGO) {  // Text/Aktion: kein ◄/► (Enter)
+    if (!rowEditable(row) && row != ROW_OTAGO && row != ROW_WDEL) {  // Text/Aktion: kein ◄/► (Enter)
       g.setTextSize(1);
       g.setCursor(vx - 15, y + 8);
       g.write((uint8_t)0x11);            // ◄
@@ -718,7 +741,8 @@ void finishEdit(bool save) {
   // Nach Anlegen eines neuen WLANs bzw. wenn die SSID-Bearbeitung das Profil
   // geleert (gelöscht) hat: zurück in die WLAN-Liste.
   if (s_wifiAdding) { s_wifiAdding = false; s_wifiIdx = -1; s_sel = 0; }
-  else if (inWifiDetail() && wasEdit == ROW_WSSID && s_wifiIdx >= settings::wifiCount()) {
+  else if (save && inWifiDetail() && wasEdit == ROW_WSSID &&
+           (s_editBuf[0] == '\0' || s_wifiIdx >= settings::wifiCount())) {
     s_wifiIdx = -1; s_sel = 0;
   }
   markDirty();
@@ -774,8 +798,42 @@ void onKey(char k) {
     switch (k) {
       case 'w': case 'W': s_sel = (s_sel + CAT_COUNT - 1) % CAT_COUNT; markDirty(); break;
       case 's': case 'S': s_sel = (s_sel + 1) % CAT_COUNT; markDirty(); break;
-      case '\r': case 'd': case 'D': s_cat = s_sel; s_sel = 0; markDirty(); break;
+      case '\r': case 'd': case 'D':
+        s_cat = s_sel; s_sel = 0; s_wifiIdx = -1; s_wifiAdding = false; markDirty(); break;
       case '\b': case 'q': case 'Q': appmgr::goHome(); break;
+      default: break;
+    }
+    return;
+  }
+
+  // WLAN-Kategorie: dynamische Liste bekannter Netze bzw. Profil-Detailansicht.
+  if (s_cat == CAT_WIFI) {
+    if (inWifiList()) {
+      int n = wifiListRows();
+      switch (k) {
+        case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+        case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
+        case '\r': case 'd': case 'D':
+          if (wifiIsNewRow(s_sel)) {                    // „+ Neues WLAN" → SSID direkt eingeben
+            s_wifiAdding = true; s_wifiIdx = settings::wifiCount(); s_sel = 0; startEdit(ROW_WSSID);
+          } else { s_wifiIdx = s_sel; s_sel = 0; markDirty(); }   // Profil öffnen
+          break;
+        case '\b': case 'q': case 'Q': s_sel = s_cat; s_cat = -1; markDirty(); break;
+        default: break;
+      }
+      return;
+    }
+    // Detailansicht: SSID / Passwort / Löschen.
+    int n   = kCats[CAT_WIFI].count;
+    int row = kCats[CAT_WIFI].rows[s_sel];
+    switch (k) {
+      case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+      case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
+      case '\r': case 'd': case 'D':
+        if (rowEditable(row)) startEdit(row);
+        else if (row == ROW_WDEL) { settings::wifiRemove(s_wifiIdx); s_wifiIdx = -1; s_sel = 0; markDirty(); }
+        break;
+      case '\b': case 'q': case 'Q': s_wifiIdx = -1; s_sel = 0; markDirty(); break;  // zurück zur Liste
       default: break;
     }
     return;
@@ -800,11 +858,38 @@ void onKey(char k) {
   }
 }
 
+// Touch in der WLAN-Kategorie (dynamische Liste bzw. Profil-Detail).
+void onTouchWifi(int x, int y) {
+  (void)x;
+  // Kopfzeile: eine Ebene zurück (Detail → Liste, Liste → Kategorie-Liste).
+  if (y >= VP_TOP && y < VP_TOP + SEC_H) {
+    if (inWifiDetail()) { s_wifiIdx = -1; s_sel = 0; }
+    else                { s_sel = s_cat; s_cat = -1; }
+    markDirty();
+    return;
+  }
+  int rows = inWifiList() ? wifiListRows() : kCats[CAT_WIFI].count;
+  int sidx = -1, yy = VP_TOP + SEC_H;
+  for (int i = 0; i < rows; i++) { if (y >= yy && y < yy + ROW_H) { sidx = i; break; } yy += ROW_H; }
+  if (sidx < 0) return;
+  if (sidx != s_sel) { s_sel = sidx; markDirty(); return; }   // erster Tap wählt nur
+
+  if (inWifiList()) {
+    if (wifiIsNewRow(sidx)) { s_wifiAdding = true; s_wifiIdx = settings::wifiCount(); s_sel = 0; startEdit(ROW_WSSID); }
+    else { s_wifiIdx = sidx; s_sel = 0; markDirty(); }
+    return;
+  }
+  int row = kCats[CAT_WIFI].rows[sidx];
+  if (rowEditable(row)) { startEdit(row); return; }
+  if (row == ROW_WDEL) { settings::wifiRemove(s_wifiIdx); s_wifiIdx = -1; s_sel = 0; markDirty(); }
+}
+
 void onTouch(int x, int y) {
   // Unterer Eckknopf = „Zurück" (genau eine Ebene): Bearbeitung verlassen →
   // Kategorie-Liste → Launcher. Home global über die Statuszeile.
   if (kHome.hit(x, y)) {
     if (s_edit >= 0) { finishEdit(true); return; }
+    if (inWifiDetail()) { s_wifiIdx = -1; s_sel = 0; markDirty(); return; }  // Detail → Liste
     if (s_cat >= 0) { s_sel = s_cat; s_cat = -1; markDirty(); return; }
     appmgr::goHome();
     return;
@@ -813,9 +898,11 @@ void onTouch(int x, int y) {
   // Wurzelebene: Tap auf eine Kategorie öffnet sie.
   if (s_cat < 0) {
     int c = hitCat(y);
-    if (c >= 0) { s_cat = c; s_sel = 0; markDirty(); }
+    if (c >= 0) { s_cat = c; s_sel = 0; s_wifiIdx = -1; s_wifiAdding = false; markDirty(); }
     return;
   }
+
+  if (s_cat == CAT_WIFI) { onTouchWifi(x, y); return; }
 
   // Tap auf die Kopfzeile geht zurück zur Kategorie-Liste.
   if (y >= VP_TOP && y < VP_TOP + SEC_H) {
@@ -840,6 +927,7 @@ class SettingsApp : public App {
 
   void onEnter() override {
     s_cat = -1; s_sel = 0; s_edit = -1;
+    s_wifiIdx = -1; s_wifiAdding = false;
     s_otaReady = false; s_otaStatus[0] = '\0';   // OTA-Zustand pro Sitzung frisch
   }
 
@@ -860,11 +948,25 @@ class SettingsApp : public App {
       // Wurzel: Kategorie-Liste.
       int y = VP_TOP;
       for (int i = 0; i < CAT_COUNT; i++) { drawCatRow(g, i, y); y += ROW_H; }
+    } else if (inWifiList()) {
+      // WLAN-Kategorie: dynamische Liste bekannter Netze + „Neu".
+      g.setTextSize(1);
+      g.setCursor(8, VP_TOP + 3);
+      gui::print(g, "\x11 WLAN (bekannte Netze)");           // 0x11 = ◄
+      g.drawFastHLine(0, VP_TOP + SEC_H - 1, W, GxEPD_BLACK);
+      int y = VP_TOP + SEC_H;
+      for (int i = 0; i < wifiListRows(); i++) { drawWifiListRow(g, i, y); y += ROW_H; }
     } else {
-      // Kopfzeile mit Zurück-Hinweis (◄), darunter die Zeilen.
+      // Kategorie- bzw. WLAN-Profil-Detailzeilen. Kopfzeile mit Zurück-Hinweis (◄).
       g.setTextSize(1);
       char hdr[40];
-      snprintf(hdr, sizeof(hdr), "\x11 %s", catName(s_cat));   // 0x11 = ◄
+      if (s_cat == CAT_WIFI) {
+        char ssid[33];
+        settings::wifiSsidAt(s_wifiIdx, ssid, sizeof(ssid));
+        snprintf(hdr, sizeof(hdr), "\x11 WLAN: %s", s_wifiAdding || !ssid[0] ? "neu" : ssid);
+      } else {
+        snprintf(hdr, sizeof(hdr), "\x11 %s", catName(s_cat));
+      }
       g.setCursor(8, VP_TOP + 3);
       gui::print(g, hdr);
       g.drawFastHLine(0, VP_TOP + SEC_H - 1, W, GxEPD_BLACK);
@@ -880,6 +982,8 @@ class SettingsApp : public App {
     g.setCursor(FOOT_X, 278);
     if (s_edit >= 0)                gui::print(g, i18n::tr(Str::HintEnterSave));
     else if (s_cat < 0)            gui::print(g, "Ordner oeffnen");
+    else if (inWifiList())         gui::print(g, wifiIsNewRow(s_sel) ? "Enter legt WLAN an" : "Enter oeffnet");
+    else if (curRow() == ROW_WDEL) gui::print(g, "Enter loescht");
     else if (curRow() == ROW_OTAGO) gui::print(g, s_otaReady ? "Enter installiert" : "Enter prueft");
     else if (curRow() == ROW_NAME) gui::print(g, i18n::tr(Str::HintNameEdit));
     else if (rowEditable(curRow())) gui::print(g, i18n::tr(Str::HintEdit));
