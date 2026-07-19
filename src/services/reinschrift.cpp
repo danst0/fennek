@@ -9,6 +9,7 @@
 #include "services/timesync.h"
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -301,14 +302,12 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
 
   if (!settings::todoEnabled()) { setLog("Todo-Sync aus"); return true; }
 
-  char user[64], pass[65], ssid[33], wpass[65], base[160];
+  char user[64], pass[65], base[160];
   settings::todoUrl(base, sizeof(base));
   settings::todoUser(user, sizeof(user));
   settings::todoPass(pass, sizeof(pass));
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(wpass, sizeof(wpass));
   if (!base[0] || !user[0]) { setLog("WebDAV nicht konfiguriert"); return false; }
-  if (!ssid[0])             { setLog("kein WLAN konfiguriert"); return false; }
+  if (settings::wifiCount() == 0) { setLog("kein WLAN konfiguriert"); return false; }
   if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); return false; }
 
   if (useBackoff) {
@@ -322,14 +321,7 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
     s_lastAttemptEpoch = cur;
   }
 
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wpass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  bool connected = (WiFi.status() == WL_CONNECTED);
+  bool connected = wifi::connect(kConnectTimeoutMs);
 
   bool ok = false;
   int pushed = 0;
@@ -366,9 +358,7 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
     }
   }
 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
+  wifi::disconnect();
 
   if (useBackoff) {
     if (ok) s_failCount = 0;

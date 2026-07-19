@@ -89,7 +89,21 @@ void setMeshName(const char* name);
 void meshPos(double* lat, double* lon);
 void setMeshPos(double lat, double lon);          // schreibt nur Änderungen
 
-// --- WLAN-Zugangsdaten (Web-Dateiverwaltung; Eingabe via Serial-Konsole) -----
+// --- WLAN-Zugangsdaten --------------------------------------------------------
+// Mehrere bekannte Netze (Profile). Beim Verbinden wählt services/wifi das
+// stärkste in Reichweite befindliche bekannte Netz (Scan-Match). Slot 0 ist
+// zugleich die "einfache" WLAN-Einstellung (ini-Export, webfm-Anzeige).
+constexpr int kMaxWifiProfiles = 20;
+
+int  wifiCount();                                // Zahl gesetzter Profile (0..kMaxWifiProfiles)
+void wifiSsidAt(int i, char* out, size_t n);     // "" falls i ungültig
+void wifiPassAt(int i, char* out, size_t n);
+// Profil i setzen. i == wifiCount() hängt ein neues an. Leere SSID löscht das
+// Profil (wie wifiRemove). true = etwas geändert.
+bool wifiSet(int i, const char* ssid, const char* pass);
+void wifiRemove(int i);
+
+// Legacy-/Einfach-Zugriff = Slot 0 (Rückwärtskompatibilität).
 void wifiSsid(char* out, size_t n);              // "" = nicht konfiguriert
 void setWifiSsid(const char* ssid);
 void wifiPass(char* out, size_t n);

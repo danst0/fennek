@@ -66,4 +66,31 @@ uint64_t perft(const Pos& p, int depth);
 bool search(const Pos& p, int maxDepth, uint32_t nodeLimit, Move* best,
             int* score = nullptr, uint32_t* nodesOut = nullptr);
 
+// --- Trainer-Analyse ---------------------------------------------------------
+// Einstufung eines Schülerzugs relativ zum Engine-Bestzug.
+enum MoveClass : uint8_t { MC_BEST, MC_GOOD, MC_INACCURACY, MC_MISTAKE, MC_BLUNDER };
+
+struct MoveEval {
+  MoveClass cls;
+  int  lossCp;        // Zentibauern-Verlust ggü. bestem Zug (>= 0)
+  int  scoreAfter;    // Bewertung aus Schülersicht nach dem Zug (cp; Matt ~ ±100000)
+  Move best;          // Engine-Empfehlung in der Ausgangsstellung
+  bool playedIsBest;  // Schülerzug == Empfehlung
+  bool isCapture;     // Schülerzug schlug etwas
+  bool givesCheck;    // Schülerzug gibt Schach
+  bool hangsPiece;    // gezogene Figur steht danach ungedeckt im Angriff
+  bool missedCapture; // Empfehlung war ein Schlag, den der Schüler ausließ
+  bool getsMated;     // Zug führt in absehbares Matt gegen den Schüler
+  bool missedMate;    // Empfehlung war ein Matt, Schüler spielte anders
+  Move reply;         // Antwortzug des Trainers (Folgestellung), gültig bei hasReply
+  bool hasReply;      // Folgestellung hat legale Züge (Partie läuft weiter)
+};
+
+// Schülerzug `played` in Stellung `before` (Schüler am Zug) bewerten. Führt zwei
+// Suchen (bester Zug in `before` + Bewertung/Antwort in der Folgestellung).
+// false nur, wenn `before` keinen legalen Zug hat (dürfte nach einem realen Zug
+// nie vorkommen). Reine CPU-Arbeit — im Schach-KI-Task aufrufen.
+bool analyzeMove(const Pos& before, const Move& played, int maxDepth,
+                 uint32_t nodeLimit, MoveEval* out);
+
 }  // namespace chess

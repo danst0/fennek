@@ -210,6 +210,24 @@
   X(ChessKeyHint,  "WASD+Enter oder Tap · N=Neu · Backspace=Menü", "WASD+Enter o tap · N=Nuovo · Backspace=Menu", "WASD+Enter eller tryck · N=Ny · Backspace=Meny", "WASD+Enter or tap · N=New · Backspace=Menu", "WASD+Enter o tap · N=Nuevo · Backspace=Menú") \
   X(FmtChessSaved, "Partie läuft · Siege: %u", "Partita in corso · Vittorie: %u", "Parti pågår · Segrar: %u", "Game running · Wins: %u", "Partida en curso · Victorias: %u") /* fmt: %u */ \
   X(FmtChessWins,  "Siege gegen Fennek: %u", "Vittorie su Fennek: %u", "Segrar mot Fennek: %u", "Wins vs Fennek: %u", "Victorias contra Fennek: %u") /* fmt: %u */ \
+  /* --- Schach-Trainer --- */ \
+  X(ChessTrainer,  "Trainer",        "Allenatore",      "Tränare",        "Coach",           "Entrenador") \
+  X(ChessAnalyzing,"Trainer prüft ...","L'allenatore valuta ...","Tränaren granskar ...","Coach reviewing ...","El entrenador revisa ...") \
+  X(ChessClsBest,  "Bester Zug",     "Mossa migliore",  "Bästa draget",   "Best move",        "Mejor jugada") \
+  X(ChessClsGood,  "Gut",            "Buona",           "Bra",            "Good",             "Buena") \
+  X(ChessClsInacc, "Ungenau",        "Imprecisa",       "Onöjaktig",      "Inaccuracy",       "Imprecisa") \
+  X(ChessClsMist,  "Fehler",         "Errore",          "Misstag",        "Mistake",          "Error") \
+  X(ChessClsBlund, "Patzer",         "Errore grave",    "Blunder",        "Blunder",          "Error grave") \
+  X(ChessBetter,   "Besser:",        "Meglio:",         "Bättre:",        "Better:",          "Mejor:") \
+  X(ChessRsnMate,  "Führt ins Matt.","Porta al matto.", "Leder till matt.","Leads to mate.",  "Lleva al mate.") \
+  X(ChessRsnMissM, "Es gab ein Matt!","C'era un matto!","Det fanns matt!","There was a mate!","¡Había mate!") \
+  X(ChessRsnHang,  "Figur steht ungedeckt im Angriff.","Pezzo indifeso sotto attacco.","Pjäs oskyddad och hotad.","Piece left hanging.","Pieza sin defensa atacada.") \
+  X(ChessRsnMissC, "Ein Schlag blieb ungenutzt.","Cattura mancata.","Ett slag missades.","Missed a capture.","Captura desaprovechada.") \
+  X(ChessRsnGoodC, "Guter Schlag.",  "Buona cattura.",  "Bra slag.",      "Good capture.",    "Buena captura.") \
+  X(ChessRsnCheck, "Aktives Schach.","Scacco attivo.",  "Aktiv schack.",  "Active check.",    "Jaque activo.") \
+  X(ChessRsnSolid, "Solider Zug.",   "Mossa solida.",   "Solitt drag.",   "Solid move.",      "Jugada sólida.") \
+  X(ChessRsnBetter,"Ein klar besserer Zug war da.","C'era una mossa molto migliore.","Ett klart bättre drag fanns.","A clearly better move existed.","Había una jugada mucho mejor.") \
+  X(ChessTrainerHint,"Trainer bewertet jeden deiner Züge","L'allenatore valuta ogni tua mossa","Tränaren bedömer varje drag","Coach rates each of your moves","El entrenador evalúa cada jugada") \
   /* --- Tic-Tac-Toe --- */ \
   X(TttXWins,      "X gewinnt!",     "Vince X!",        "X vinner!",      "X wins!",         "¡Gana X!") \
   X(TttOWins,      "O gewinnt!",     "Vince O!",        "O vinner!",      "O wins!",         "¡Gana O!") \

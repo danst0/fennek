@@ -39,7 +39,7 @@ constexpr int FOOT_X = 120;                               // Textspalte rechts v
 // --- Zeilen ---------------------------------------------------------------------
 enum RowId {
   ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME,
-  ROW_LANG, ROW_STANDBY, ROW_FONT, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS,
+  ROW_LANG, ROW_STANDBY, ROW_FONT, ROW_TZ, ROW_TIME, ROW_WSSID, ROW_WPASS, ROW_WDEL,
   ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS,
   ROW_AION, ROW_AIURL, ROW_AIMODEL,
   ROW_OTAURL, ROW_OTAVER, ROW_OTAGO,
@@ -55,7 +55,9 @@ enum { CAT_RADIO, CAT_SYSTEM, CAT_TIME, CAT_WIFI, CAT_NAV, CAT_AI, CAT_OTA,
 const RowId kRadioRows[]  = {ROW_PRESET, ROW_FREQ, ROW_BW, ROW_SF, ROW_CR, ROW_TX, ROW_NAME};
 const RowId kSystemRows[] = {ROW_LANG, ROW_STANDBY, ROW_FONT};
 const RowId kTimeRows[]   = {ROW_TZ, ROW_TIME};
-const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS};
+// Detailzeilen eines einzelnen WLAN-Profils (die WLAN-Kategorie selbst ist eine
+// dynamische Liste, siehe s_wifiIdx / drawWifiList).
+const RowId kWifiRows[]   = {ROW_WSSID, ROW_WPASS, ROW_WDEL};
 const RowId kNavRows[]    = {ROW_NAVON, ROW_NAVURL, ROW_NAVUSER, ROW_NAVPASS};
 const RowId kAiRows[]     = {ROW_AION, ROW_AIURL, ROW_AIMODEL};
 const RowId kOtaRows[]    = {ROW_OTAVER, ROW_OTAGO, ROW_OTAURL};
@@ -94,6 +96,24 @@ int  s_cat  = -1;          // -1 = Kategorie-Liste (Wurzel); sonst CAT_*
 int  s_sel  = 0;           // Index in der aktuellen Ebene (Kategorie bzw. Zeile)
 int  s_edit = -1;          // gerade editierte Zeile (RowId; -1 = keine)
 char s_editBuf[128] = "";  // groß genug für die Navidrome-URL (127)
+
+// WLAN-Kategorie: dynamische Liste bekannter Netze. s_wifiIdx == -1 → Listenansicht
+// (SSIDs + „Neu"-Zeile); s_wifiIdx >= 0 → Detailansicht des Profils (SSID/Pass/Löschen).
+// s_wifiAdding: gerade wird per Direkteingabe ein neues Profil angelegt.
+int  s_wifiIdx    = -1;
+bool s_wifiAdding = false;
+
+// Zeilen der WLAN-Liste: ein Eintrag je Profil, zuletzt „+ Neues WLAN" (solange
+// Platz ist). Rückgabe = Zeilenzahl der Liste.
+int wifiListRows() {
+  int c = settings::wifiCount();
+  return c < settings::kMaxWifiProfiles ? c + 1 : c;
+}
+bool wifiIsNewRow(int idx) {
+  return idx == settings::wifiCount() && settings::wifiCount() < settings::kMaxWifiProfiles;
+}
+bool inWifiList()   { return s_cat == CAT_WIFI && s_wifiIdx < 0; }
+bool inWifiDetail() { return s_cat == CAT_WIFI && s_wifiIdx >= 0; }
 
 // --- OTA-Update (Aktions-Zeile in der Kategorie „Update") ----------------------
 // Zwei-Schritt-Bedienung wie das Web-UI: erst „Pruefen", bei Treffer „Installieren".
@@ -265,6 +285,7 @@ const char* rowName(int row) {
     case ROW_TIME:     return "Zeit";
     case ROW_WSSID:    return i18n::tr(Str::LblWifiSsid);
     case ROW_WPASS:    return i18n::tr(Str::LblWifiPass);
+    case ROW_WDEL:     return "Loeschen";
     case ROW_NAVON:    return "Scrobbeln";
     case ROW_NAVURL:   return "Server";
     case ROW_NAVUSER:  return "Benutzer";
@@ -341,7 +362,7 @@ void rowValue(int row, char* v, size_t n) {
     case ROW_WSSID:
       if (s_edit == ROW_WSSID) snprintf(v, n, "%s_", s_editBuf);
       else {
-        settings::wifiSsid(v, n);
+        settings::wifiSsidAt(s_wifiIdx, v, n);
         if (!v[0]) snprintf(v, n, "-");
       }
       break;
@@ -350,9 +371,12 @@ void rowValue(int row, char* v, size_t n) {
       if (s_edit == ROW_WPASS) snprintf(v, n, "%s_", s_editBuf);
       else {
         char pw[65];
-        settings::wifiPass(pw, sizeof(pw));
+        settings::wifiPassAt(s_wifiIdx, pw, sizeof(pw));
         snprintf(v, n, "%s", pw[0] ? "****" : "-");
       }
+      break;
+    case ROW_WDEL:
+      snprintf(v, n, "%s", "");   // reine Aktionszeile
       break;
     case ROW_NAVON:
       snprintf(v, n, "%s", settings::navEnabled() ? "An" : "Aus");
@@ -612,8 +636,8 @@ void startEdit(int row) {
   s_editBuf[0] = '\0';
   switch (row) {
     case ROW_NAME:    settings::meshName(s_editBuf, sizeof(s_editBuf)); break;
-    case ROW_WSSID:   settings::wifiSsid(s_editBuf, sizeof(s_editBuf)); break;
-    case ROW_WPASS:   settings::wifiPass(s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WSSID:   if (!s_wifiAdding) settings::wifiSsidAt(s_wifiIdx, s_editBuf, sizeof(s_editBuf)); break;
+    case ROW_WPASS:   settings::wifiPassAt(s_wifiIdx, s_editBuf, sizeof(s_editBuf)); break;
     case ROW_NAVURL:  settings::navUrl(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_NAVUSER: settings::navUser(s_editBuf, sizeof(s_editBuf)); break;
     case ROW_NAVPASS: settings::navPass(s_editBuf, sizeof(s_editBuf)); break;
@@ -646,8 +670,22 @@ void finishEdit(bool save) {
     switch (s_edit) {
       // Leerer Node-Name wird verworfen; leere WLAN-/Navidrome-Werte löschen.
       case ROW_NAME:    if (s_editBuf[0]) mesh_client::setNodeName(s_editBuf); break;
-      case ROW_WSSID:   settings::setWifiSsid(s_editBuf); break;
-      case ROW_WPASS:   settings::setWifiPass(s_editBuf); break;
+      case ROW_WSSID:
+        if (s_wifiAdding) {
+          // Direkteingabe eines neuen Profils: nur bei nicht-leerer SSID anlegen.
+          if (s_editBuf[0]) settings::wifiSet(settings::wifiCount(), s_editBuf, "");
+        } else {
+          char keepPass[65];
+          settings::wifiPassAt(s_wifiIdx, keepPass, sizeof(keepPass));
+          settings::wifiSet(s_wifiIdx, s_editBuf, keepPass);   // leere SSID löscht das Profil
+        }
+        break;
+      case ROW_WPASS: {
+        char keepSsid[33];
+        settings::wifiSsidAt(s_wifiIdx, keepSsid, sizeof(keepSsid));
+        settings::wifiSet(s_wifiIdx, keepSsid, s_editBuf);
+        break;
+      }
       case ROW_NAVURL:  settings::setNavUrl(s_editBuf); break;
       case ROW_NAVUSER: settings::setNavUser(s_editBuf); break;
       case ROW_NAVPASS: settings::setNavPass(s_editBuf); break;
@@ -675,12 +713,24 @@ void finishEdit(bool save) {
       }
     }
   }
+  int wasEdit = s_edit;
   s_edit = -1;
+  // Nach Anlegen eines neuen WLANs bzw. wenn die SSID-Bearbeitung das Profil
+  // geleert (gelöscht) hat: zurück in die WLAN-Liste.
+  if (s_wifiAdding) { s_wifiAdding = false; s_wifiIdx = -1; s_sel = 0; }
+  else if (inWifiDetail() && wasEdit == ROW_WSSID && s_wifiIdx >= settings::wifiCount()) {
+    s_wifiIdx = -1; s_sel = 0;
+  }
   markDirty();
 }
 
 // Aktuell ausgewählte Zeile (RowId) innerhalb der geöffneten Kategorie; -1 Wurzel.
-int curRow() { return s_cat < 0 ? -1 : kCats[s_cat].rows[s_sel]; }
+// In der WLAN-Detailansicht liefern die kWifiRows die Zeilen.
+int curRow() {
+  if (s_cat < 0) return -1;
+  if (inWifiList()) return -1;                       // Liste hat keine RowId-Zeilen
+  return kCats[s_cat].rows[s_sel];
+}
 
 void onKey(char k) {
   // Editiermodus: Tasten gehen in den Text (Name/SSID/Passwort/URL …).

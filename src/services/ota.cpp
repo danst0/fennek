@@ -7,6 +7,7 @@
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
 #include "core/settings.h"
+#include "services/wifi.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -25,23 +26,14 @@ constexpr uint32_t kReadTimeoutMs    = 8000;
 // ein. nullptr im Konsolen-/Web-Pfad (dort nur Serial).
 ota::ProgressFn s_uiCb = nullptr;
 
-// --- WLAN auf/zu (WLAN-Regel: Audio stop + Mesh suspend; wie notes_ai/scrobble) -
+// --- WLAN auf/zu (zentraler Helfer: Scan → stärkstes bekanntes Netz) ------------
+// ssid/pass werden ignoriert; wifi::connect wählt selbst aus den Profilen.
 bool wifiUp(const char* ssid, const char* pass) {
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  return WiFi.status() == WL_CONNECTED;
+  (void)ssid; (void)pass;
+  return wifi::connect(kConnectTimeoutMs);
 }
 
-void wifiDown() {
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
-}
+void wifiDown() { wifi::disconnect(); }
 
 int hexVal(char c) {
   if (c >= '0' && c <= '9') return c - '0';

@@ -9,6 +9,7 @@
 #include "services/timesync.h"
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 #include "apps/ical_core.h"
 #include "apps/podcast_core.h"   // feedSlug() wiederverwenden
 
@@ -355,13 +356,10 @@ bool fetchCaldav(const char* url, const char* user, const char* pass,
 bool syncCore(bool useBackoff, char* log, size_t logN) {
   auto setLog = [&](const char* m) { if (log && logN) { strncpy(log, m, logN - 1); log[logN - 1] = '\0'; } };
 
-  char ssid[33], wpass[65];
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(wpass, sizeof(wpass));
   static char urls[kMaxFeeds][192];
   int feeds = readFeeds(urls, kMaxFeeds);
   if (feeds == 0) { setLog("keine Feeds"); return false; }
-  if (!ssid[0])   { setLog("kein WLAN konfiguriert"); return false; }
+  if (settings::wifiCount() == 0) { setLog("kein WLAN konfiguriert"); return false; }
   if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); return false; }
 
   if (useBackoff) {
@@ -375,14 +373,7 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
     s_lastAttemptEpoch = cur;
   }
 
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wpass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  bool connected = (WiFi.status() == WL_CONNECTED);
+  bool connected = wifi::connect(kConnectTimeoutMs);
 
   int fetched = 0;
   if (connected) {
@@ -418,9 +409,7 @@ bool syncCore(bool useBackoff, char* log, size_t logN) {
     sortEvents();
   }
 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
+  wifi::disconnect();
 
   if (useBackoff) {
     if (connected) s_failCount = 0;

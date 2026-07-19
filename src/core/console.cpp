@@ -83,8 +83,11 @@ void cmdHelp() {
   Serial.println("[CON]   ls <pfad>         - SD-Verzeichnis listen (z.B. ls /books)");
   Serial.println("[CON]   rm <pfad>         - Datei/Ordner rekursiv loeschen (auch ueberlange Calibre-Pfade)");
   Serial.println("[CON]   books             - Bücher-Scan neu ausführen + dumpen");
-  Serial.println("[CON]   wifi ssid <name>  - WLAN-SSID setzen (NVS)");
-  Serial.println("[CON]   wifi pass <pw>    - WLAN-Passwort setzen (NVS)");
+  Serial.println("[CON]   wifi list         - bekannte WLANs auflisten");
+  Serial.println("[CON]   wifi ssid <name>  - WLAN-SSID von Profil 0 setzen (NVS)");
+  Serial.println("[CON]   wifi pass <pw>    - WLAN-Passwort von Profil 0 setzen (NVS)");
+  Serial.println("[CON]   wifi add <name> [pw] - weiteres WLAN-Profil anlegen");
+  Serial.println("[CON]   wifi del <n>      - WLAN-Profil n loeschen");
   Serial.println("[CON]   wifi status       - WLAN-/Webserver-Status");
   Serial.println("[CON]   wifi start        - Web-Dateiverwaltung starten");
   Serial.println("[CON]   wifi stop         - Web-Dateiverwaltung stoppen");
@@ -142,9 +145,9 @@ void cmdWifiStatus() {
   }
   char ip[16];
   webfm::ipStr(ip, sizeof(ip));
-  Serial.printf("[CON] WiFi: SSID='%s' Passwort=%s | Status: %s%s%s | Requests=%lu\n",
+  Serial.printf("[CON] WiFi: SSID='%s' Passwort=%s | Profile: %d | Status: %s%s%s | Requests=%lu\n",
                 ssid[0] ? ssid : "(nicht gesetzt)",
-                pass[0] ? "gesetzt" : "(nicht gesetzt)", st,
+                pass[0] ? "gesetzt" : "(nicht gesetzt)", settings::wifiCount(), st,
                 ip[0] ? " http://" : "", ip,
                 (unsigned long)webfm::requestCount());
 }
@@ -754,14 +757,48 @@ void handleLine(char* line) {
   if (strncmp(line, "rm ", 3) == 0)         { cmdRm(line + 3); return; }
   if (strcmp(line, "books") == 0)           { reader_app::debugScan(); return; }
   if (strcmp(line, "notes") == 0)           { notes_app::debugSmoke(); return; }
+  if (strcmp(line, "wifi list") == 0) {
+    int n = settings::wifiCount();
+    if (n == 0) { Serial.println("[CON] Keine WLAN-Profile"); return; }
+    for (int i = 0; i < n; i++) {
+      char ssid[33], pass[65];
+      settings::wifiSsidAt(i, ssid, sizeof(ssid));
+      settings::wifiPassAt(i, pass, sizeof(pass));
+      Serial.printf("[CON]   %d: '%s' (Passwort %s)\n", i, ssid,
+                    pass[0] ? "gesetzt" : "-");
+    }
+    return;
+  }
   if (strncmp(line, "wifi ssid ", 10) == 0) {
     settings::setWifiSsid(line + 10);
-    Serial.printf("[CON] WLAN-SSID gesetzt: '%s'\n", line + 10);
+    Serial.printf("[CON] WLAN-SSID (Profil 0) gesetzt: '%s'\n", line + 10);
     return;
   }
   if (strncmp(line, "wifi pass ", 10) == 0) {
     settings::setWifiPass(line + 10);
-    Serial.println("[CON] WLAN-Passwort gesetzt");
+    Serial.println("[CON] WLAN-Passwort (Profil 0) gesetzt");
+    return;
+  }
+  if (strncmp(line, "wifi add ", 9) == 0) {
+    // "wifi add <name> [pw]" — erstes Leerzeichen trennt SSID vom optionalen Passwort.
+    char arg[130];
+    strncpy(arg, line + 9, sizeof(arg) - 1); arg[sizeof(arg) - 1] = '\0';
+    char* sp = strchr(arg, ' ');
+    const char* pw = "";
+    if (sp) { *sp = '\0'; pw = sp + 1; }
+    if (!arg[0]) { Serial.println("[CON] Nutzung: wifi add <name> [pw]"); return; }
+    if (settings::wifiCount() >= settings::kMaxWifiProfiles) {
+      Serial.println("[CON] Maximale Profilzahl erreicht"); return;
+    }
+    if (settings::wifiSet(settings::wifiCount(), arg, pw))
+      Serial.printf("[CON] WLAN-Profil angelegt: '%s'\n", arg);
+    return;
+  }
+  if (strncmp(line, "wifi del ", 9) == 0) {
+    int idx = atoi(line + 9);
+    if (idx < 0 || idx >= settings::wifiCount()) { Serial.println("[CON] Ungueltiger Index"); return; }
+    settings::wifiRemove(idx);
+    Serial.printf("[CON] WLAN-Profil %d geloescht\n", idx);
     return;
   }
   if (strcmp(line, "wifi status") == 0)     { cmdWifiStatus(); return; }

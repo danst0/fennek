@@ -73,12 +73,20 @@ bool s_dirtySave = false;   // Partie seit letztem NVS-Write verändert
 // --- KI-Task ------------------------------------------------------------------------
 volatile bool s_thinking = false;
 volatile bool s_aiDone = false;
+volatile bool s_analyzing = false;   // Trainer wertet gerade einen Schülerzug aus
 volatile uint32_t s_aiGen = 0;    // entwertet Alt-Ergebnisse nach Neustart
 chess::Move s_aiMove;
 bool        s_aiOk = false;
 chess::Pos  s_aiPos;
 int         s_aiDepth;
 uint32_t    s_aiLimit;
+
+// --- Trainer-Feedback ---------------------------------------------------------
+chess::Pos      s_analyzeBefore;   // Stellung vor dem Schülerzug
+chess::Move     s_analyzePlayed;   // der zu bewertende Schülerzug
+chess::MoveEval s_eval;            // Analyse-Ergebnis (aus dem Task)
+bool            s_haveEval = false;// Feedback vorhanden (anzeigen)
+char s_fbHead[48], s_fbReason[48], s_fbRec[32];   // aufbereitete Feedback-Zeilen
 
 void aiTaskFn(void*) {
   power::boostLock();   // Negamax braucht den vollen Takt (CPU-Governor, power.h)
@@ -112,6 +120,100 @@ void startThinking() {
     Serial.println("[GAME] Schach-KI: Task-Start FEHLGESCHLAGEN");
   }
   appmgr::markDirty();   // "Fennek denkt…" anzeigen
+}
+
+// --- Trainer-Modus ------------------------------------------------------------
+// Zug in Kurznotation: <Figur><von><-/x><nach>[Umwandlung], z. B. "Sg1-f3",
+// "Lf1xb5", "Bd7-d8D". Braucht die Ausgangsstellung (Schlag-Erkennung).
+void moveToStr(const chess::Pos& p, const chess::Move& m, char* out, size_t n) {
+  int8_t pc = p.board[m.from];
+  int t = pc > 0 ? pc : -pc;
+  bool cap = p.board[m.to] != chess::EMPTY ||
+             (t == chess::PAWN && (m.from & 7) != (m.to & 7));   // inkl. en passant
+  char promo[2] = {0, 0};
+  if (m.promo) promo[0] = kLetter[m.promo];
+  snprintf(out, n, "%c%c%c%c%c%c%s", kLetter[t],
+           'a' + (m.from & 7), '1' + (m.from >> 3), cap ? 'x' : '-',
+           'a' + (m.to & 7), '1' + (m.to >> 3), promo);
+}
+
+const char* classNameTr(chess::MoveClass c) {
+  switch (c) {
+    case chess::MC_BEST:       return i18n::tr(i18n::Str::ChessClsBest);
+    case chess::MC_GOOD:       return i18n::tr(i18n::Str::ChessClsGood);
+    case chess::MC_INACCURACY: return i18n::tr(i18n::Str::ChessClsInacc);
+    case chess::MC_MISTAKE:    return i18n::tr(i18n::Str::ChessClsMist);
+    default:                   return i18n::tr(i18n::Str::ChessClsBlund);
+  }
+}
+
+// Konkreteste passende Begründung wählen.
+const char* reasonTr(const chess::MoveEval& e) {
+  if (e.getsMated)     return i18n::tr(i18n::Str::ChessRsnMate);
+  if (e.missedMate)    return i18n::tr(i18n::Str::ChessRsnMissM);
+  if (e.hangsPiece)    return i18n::tr(i18n::Str::ChessRsnHang);
+  if (e.missedCapture) return i18n::tr(i18n::Str::ChessRsnMissC);
+  if (e.cls <= chess::MC_GOOD) {
+    if (e.isCapture)   return i18n::tr(i18n::Str::ChessRsnGoodC);
+    if (e.givesCheck)  return i18n::tr(i18n::Str::ChessRsnCheck);
+    return i18n::tr(i18n::Str::ChessRsnSolid);
+  }
+  return i18n::tr(i18n::Str::ChessRsnBetter);
+}
+
+// Aus s_eval die drei Anzeige-Zeilen bauen (nach Task-Ende, im UI-Thread).
+void buildFeedback() {
+  char ev[10];
+  int sc = s_eval.scoreAfter;
+  if      (sc >=  99000) snprintf(ev, sizeof(ev), "#");     // Schüler setzt matt
+  else if (sc <= -99000) snprintf(ev, sizeof(ev), "-#");    // Schüler wird matt
+  else                   snprintf(ev, sizeof(ev), "%+.1f", sc / 100.0);
+
+  char mv[16];
+  moveToStr(s_analyzeBefore, s_analyzePlayed, mv, sizeof(mv));
+  snprintf(s_fbHead, sizeof(s_fbHead), "%s: %s (%s)", mv, classNameTr(s_eval.cls), ev);
+  snprintf(s_fbReason, sizeof(s_fbReason), "%s", reasonTr(s_eval));
+
+  s_fbRec[0] = 0;
+  if (!s_eval.playedIsBest) {
+    char bm[16];
+    moveToStr(s_analyzeBefore, s_eval.best, bm, sizeof(bm));
+    snprintf(s_fbRec, sizeof(s_fbRec), "%s %s", i18n::tr(i18n::Str::ChessBetter), bm);
+  }
+  s_haveEval = true;
+}
+
+void trainerTaskFn(void*) {
+  power::boostLock();   // zwei Suchen — voller Takt (CPU-Governor)
+  uint32_t gen = s_aiGen;
+  chess::MoveEval ev{};
+  uint32_t t0 = millis();
+  bool ok = chess::analyzeMove(s_analyzeBefore, s_analyzePlayed, s_aiDepth, s_aiLimit, &ev);
+  Serial.printf("[GAME] Trainer-Analyse: %lu ms, Verlust %d cp, Klasse %d\n",
+                (unsigned long)(millis() - t0), ok ? ev.lossCp : -1, ok ? ev.cls : -1);
+  if (gen == s_aiGen) {
+    s_eval = ev;
+    s_aiOk = ok;
+    s_aiDone = true;
+  }
+  power::boostUnlock();
+  vTaskDelete(nullptr);
+}
+
+void startTrainerAnalysis() {
+  s_aiDepth = kDepth[s_level];
+  s_aiLimit = kNodeLimit[s_level];
+  s_aiOk = false;
+  s_aiDone = false;
+  s_analyzing = true;
+  s_thinking = true;
+  // 24 KB Stack wie beim KI-Task (Negamax kopiert je Ebene Stellung + Zugliste).
+  if (xTaskCreatePinnedToCore(trainerTaskFn, "chess_tr", 24576, nullptr, 1, nullptr, 1) != pdPASS) {
+    s_thinking = false;
+    s_analyzing = false;
+    Serial.println("[GAME] Trainer-Analyse: Task-Start FEHLGESCHLAGEN");
+  }
+  appmgr::markDirty();
 }
 
 // --- Partie-Verwaltung ----------------------------------------------------------------
@@ -172,14 +274,17 @@ void applyMove(const chess::Move& m) {
 }
 
 void maybeStartAi() {
-  if (!s_result && s_mode == 0 && s_pos.stm != s_human && !s_thinking)
+  // Engine-Gegner gilt für "gegen Fennek" (0) und "Trainer" (2), nicht 2-Spieler (1).
+  if (!s_result && s_mode != 1 && s_pos.stm != s_human && !s_thinking)
     startThinking();
 }
 
 void newGame() {
-  s_aiGen++;             // laufende Suche entwerten
+  s_aiGen++;             // laufende Suche/Analyse entwerten
   s_thinking = false;
   s_aiDone = false;
+  s_analyzing = false;
+  s_haveEval = false;
   chess::startPos(s_pos);
   s_active = true;
   s_result = 0;
@@ -203,7 +308,7 @@ bool loadGame() {
   SaveBlob b;
   if (!settings::chessGame(&b, sizeof(b)) || b.magic != kSaveMagic) return false;
   s_pos = b.pos;
-  s_mode = b.mode <= 1 ? b.mode : 0;
+  s_mode = b.mode <= 2 ? b.mode : 0;
   s_level = b.level <= 2 ? b.level : 1;
   s_human = (b.human < 0) ? -1 : 1;
   s_active = true;
@@ -212,6 +317,8 @@ bool loadGame() {
   s_hist[s_nHist++] = chess::hashPos(s_pos);   // Historie vor dem Save entfällt bewusst
   s_sel = -1;
   s_promoFrom = s_promoTo = -1;
+  s_analyzing = false;
+  s_haveEval = false;   // Feedback bezieht sich auf einen Zug dieser Sitzung
   refreshLegal();
   updateResult();
   Serial.println("[GAME] Schach: Partie aus NVS geladen");
@@ -220,12 +327,22 @@ bool loadGame() {
 
 // --- Zugeingabe ------------------------------------------------------------------------
 void afterHumanMove() {
-  maybeStartAi();
+  // Trainer: erst den Schülerzug bewerten (der Task liefert zugleich den
+  // Antwortzug). Sonst normal die Engine ziehen lassen.
+  if (s_mode == 2) startTrainerAnalysis();
+  else             maybeStartAi();
+}
+
+// Schülerzug ausführen; im Trainer-Modus die Ausgangsstellung für die Analyse sichern.
+void applyHumanMove(const chess::Move& m) {
+  if (s_mode == 2) { s_analyzeBefore = s_pos; s_analyzePlayed = m; }
+  applyMove(m);
+  afterHumanMove();
 }
 
 bool humanMayMove() {
   if (s_result || s_thinking || s_promoFrom >= 0) return false;
-  if (s_mode == 0 && s_pos.stm != s_human) return false;
+  if (s_mode != 1 && s_pos.stm != s_human) return false;
   return true;
 }
 
@@ -234,8 +351,7 @@ void choosePromo(int8_t type) {
     if (s_moves[i].from == s_promoFrom && s_moves[i].to == s_promoTo &&
         s_moves[i].promo == type) {
       s_promoFrom = s_promoTo = -1;
-      applyMove(s_moves[i]);
-      afterHumanMove();
+      applyHumanMove(s_moves[i]);
       return;
     }
   }
@@ -260,8 +376,7 @@ void tapSquare(int sq) {
       appmgr::markDirty();
       return;
     }
-    applyMove(s_moves[i]);
-    afterHumanMove();
+    applyHumanMove(s_moves[i]);
     return;
   }
   // illegales Ziel: Auswahl stehen lassen, kein Refresh
@@ -275,11 +390,18 @@ constexpr int kSetupRowY = 70, kSetupRowH = 30;
 
 void setupChange(int row) {
   switch (row) {
-    case 0: s_mode = (uint8_t)(1 - s_mode); break;
-    case 1: if (s_mode == 0) s_human = (int8_t)-s_human; break;
+    case 0: s_mode = (uint8_t)((s_mode + 1) % 3); break;   // Fennek / 2 Spieler / Trainer
+    case 1: if (s_mode != 1) s_human = (int8_t)-s_human; break;
     case 2: s_level = (uint8_t)((s_level + 1) % 3); break;
   }
   appmgr::markDirty();
+}
+
+// Gegner-Name für Modus 0/1/2.
+const char* opponentName() {
+  if (s_mode == 1) return i18n::tr(i18n::Str::TwoPlayers);
+  if (s_mode == 2) return i18n::tr(i18n::Str::ChessTrainer);
+  return "Fennek";
 }
 
 void setupInput(const InputEvent& e) {
@@ -316,9 +438,9 @@ void setupDraw(Adafruit_GFX& g) {
   char lbl[40];
   for (int row = 0; row < 3; row++) {
     switch (row) {
-      case 0: snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtOpponent), s_mode ? i18n::tr(i18n::Str::TwoPlayers) : "Fennek"); break;
+      case 0: snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtOpponent), opponentName()); break;
       case 1:
-        if (s_mode == 0)
+        if (s_mode != 1)
           snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtYourColor), s_human > 0 ? i18n::tr(i18n::Str::ColorWhite) : i18n::tr(i18n::Str::ColorBlack));
         else
           snprintf(lbl, sizeof(lbl), i18n::tr(i18n::Str::FmtYourColor), "-");
@@ -337,6 +459,10 @@ void setupDraw(Adafruit_GFX& g) {
   g.setTextSize(1);
   g.setCursor(10, 294);
   gui::print(g, s_active ? i18n::tr(i18n::Str::ChessBackHint) : i18n::tr(i18n::Str::HintChange));
+  if (s_mode == 2) {
+    g.setCursor(10, 306);
+    gui::print(g, i18n::tr(i18n::Str::ChessTrainerHint));
+  }
 }
 
 // --- Brett zeichnen ------------------------------------------------------------------------
@@ -460,7 +586,8 @@ void boardDraw(Adafruit_GFX& g) {
   if (s_result) {
     snprintf(head, sizeof(head), "%s", s_resultText);
   } else if (s_thinking) {
-    snprintf(head, sizeof(head), "%s", i18n::tr(i18n::Str::ChessThinking));
+    snprintf(head, sizeof(head), "%s",
+             i18n::tr(s_analyzing ? i18n::Str::ChessAnalyzing : i18n::Str::ChessThinking));
   } else {
     bool chk = chess::inCheck(s_pos, s_pos.stm);
     snprintf(head, sizeof(head), i18n::tr(i18n::Str::FmtChessTurn),
@@ -477,13 +604,26 @@ void boardDraw(Adafruit_GFX& g) {
   for (int sq = 0; sq < 64; sq++) drawSquare(g, sq);
 
   g.setTextSize(1);
-  g.setCursor(8, kFooterY);
-  if (s_mode == 0)
-    gui::print(g, s_human > 0 ? i18n::tr(i18n::Str::YouWhite) : i18n::tr(i18n::Str::YouBlack));
-  else
-    gui::print(g, i18n::tr(i18n::Str::TwoPlayers));
-  g.setCursor(8, kFooterY + 14);
-  gui::print(g, i18n::tr(i18n::Str::ChessKeyHint));
+  if (s_mode == 2) {
+    // Trainer: Bewertung des letzten Schülerzugs (3 Zeilen) — oder Hinweis,
+    // solange noch kein Zug bewertet wurde.
+    if (s_haveEval) {
+      g.setCursor(6, 280); gui::print(g, s_fbHead);
+      g.setCursor(6, 292); gui::print(g, s_fbReason);
+      if (s_fbRec[0]) { g.setCursor(6, 304); gui::print(g, s_fbRec); }
+    } else {
+      g.setCursor(6, 284); gui::print(g, i18n::tr(i18n::Str::ChessTrainerHint));
+      g.setCursor(6, 298); gui::print(g, i18n::tr(i18n::Str::ChessKeyHint));
+    }
+  } else {
+    g.setCursor(8, kFooterY);
+    if (s_mode == 0)
+      gui::print(g, s_human > 0 ? i18n::tr(i18n::Str::YouWhite) : i18n::tr(i18n::Str::YouBlack));
+    else
+      gui::print(g, i18n::tr(i18n::Str::TwoPlayers));
+    g.setCursor(8, kFooterY + 14);
+    gui::print(g, i18n::tr(i18n::Str::ChessKeyHint));
+  }
 
   if (s_promoFrom >= 0) drawPromoDialog(g);
 }
@@ -519,8 +659,21 @@ void tick() {
   if (s_thinking && s_aiDone) {
     s_thinking = false;
     s_aiDone = false;
-    if (s_aiOk) applyMove(s_aiMove);
-    else appmgr::markDirty();
+    if (s_analyzing) {
+      s_analyzing = false;
+      if (s_aiOk) {
+        buildFeedback();                       // Feedback-Zeilen aus s_eval
+        if (s_eval.hasReply && !s_result)      // Trainer zieht (Partie läuft weiter)
+          applyMove(s_eval.reply);
+        else
+          appmgr::markDirty();                 // nur Feedback anzeigen (Partie-Ende)
+      } else {
+        appmgr::markDirty();
+      }
+    } else {
+      if (s_aiOk) applyMove(s_aiMove);
+      else appmgr::markDirty();
+    }
   }
 }
 

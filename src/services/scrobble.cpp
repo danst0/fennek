@@ -10,6 +10,7 @@
 #include "services/timesync.h"
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -272,14 +273,12 @@ bool flushCore(bool useBackoff, char* logMsg, size_t logN) {
   if (!settings::navEnabled()) { setLog("Scrobbeln aus"); return true; }
   if (pendingCount() == 0)     { setLog("nichts offen"); return true; }
 
-  char base[128], user[64], pass[65], ssid[33], wpass[65];
+  char base[128], user[64], pass[65];
   baseUrl(base, sizeof(base));
   settings::navUser(user, sizeof(user));
   settings::navPass(pass, sizeof(pass));
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(wpass, sizeof(wpass));
   if (!base[0] || !user[0]) { setLog("Navidrome nicht konfiguriert"); return false; }
-  if (!ssid[0])             { setLog("kein WLAN konfiguriert"); return false; }
+  if (settings::wifiCount() == 0) { setLog("kein WLAN konfiguriert"); return false; }
   if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); return false; }
 
   if (useBackoff) {
@@ -298,15 +297,8 @@ bool flushCore(bool useBackoff, char* logMsg, size_t logN) {
     s_lastAttemptEpoch = cur;
   }
 
-  // WLAN-Regel (CLAUDE.md): Audio stoppen + Mesh-Pumpe pausieren.
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wpass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  bool connected = (WiFi.status() == WL_CONNECTED);
+  // WLAN-Regel (CLAUDE.md): Audio stoppen + Mesh-Pumpe pausieren (zentral in wifi).
+  bool connected = wifi::connect(kConnectTimeoutMs);
 
   int uploaded = 0, failed = 0;
   if (connected) {
@@ -342,9 +334,7 @@ bool flushCore(bool useBackoff, char* logMsg, size_t logN) {
     if (ok)   free(ok);
   }
 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
+  wifi::disconnect();
 
   saveToSd();
 
@@ -418,35 +408,20 @@ bool flushNow(char* log, size_t logN) {
 
 bool ping(char* msg, size_t msgN) {
   auto setMsg = [&](const char* m) { if (msg && msgN) { strncpy(msg, m, msgN - 1); msg[msgN - 1] = '\0'; } };
-  char base[128], user[64], pass[65], ssid[33], wpass[65];
+  char base[128], user[64], pass[65];
   baseUrl(base, sizeof(base));
   settings::navUser(user, sizeof(user));
   settings::navPass(pass, sizeof(pass));
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(wpass, sizeof(wpass));
   if (!base[0] || !user[0]) { setMsg("Navidrome nicht konfiguriert"); return false; }
-  if (!ssid[0])             { setMsg("kein WLAN konfiguriert"); return false; }
+  if (settings::wifiCount() == 0) { setMsg("kein WLAN konfiguriert"); return false; }
   if (webfm::state() != webfm::State::OFF) { setMsg("WLAN belegt"); return false; }
 
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wpass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  bool ok = false;
-  if (WiFi.status() == WL_CONNECTED) {
-    String url = String(base) + "/rest/ping.view?" + authQuery(user, pass);
-    String body;
-    ok = httpGet(url, body) && bodyOk(body);
-    setMsg(ok ? "Verbindung OK" : "Server-Fehler (Auth/URL?)");
-  } else {
-    setMsg("WLAN-Fehler");
-  }
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
+  if (!wifi::connect(kConnectTimeoutMs)) { setMsg("WLAN-Fehler"); return false; }
+  String url = String(base) + "/rest/ping.view?" + authQuery(user, pass);
+  String body;
+  bool ok = httpGet(url, body) && bodyOk(body);
+  setMsg(ok ? "Verbindung OK" : "Server-Fehler (Auth/URL?)");
+  wifi::disconnect();
   return ok;
 }
 

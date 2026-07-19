@@ -12,6 +12,7 @@
 #include "services/battlog.h"
 #include "services/ota.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -433,10 +434,7 @@ namespace webfm {
 bool start() {
   if (s_state == State::CONNECTING || s_state == State::RUNNING) return true;
 
-  char pass[65];
-  settings::wifiSsid(s_ssid, sizeof(s_ssid));
-  settings::wifiPass(pass, sizeof(pass));
-  if (!s_ssid[0]) {
+  if (settings::wifiCount() == 0) {
     Serial.println("[WEBFM] Keine SSID konfiguriert ('wifi ssid <name>')");
     return false;
   }
@@ -446,8 +444,10 @@ bool start() {
   audio::stop();
   mesh_client::setSuspended(true);
 
-  WiFi.persistent(false);   // WiFi-Lib soll nicht selbst ins NVS schreiben
-  WiFi.mode(WIFI_STA);
+  // pickBest setzt STA-Mode + scannt und wählt das stärkste bekannte Netz;
+  // wir behalten den bestehenden asynchronen Verbindungsaufbau (State-Machine).
+  char pass[65];
+  wifi::pickBest(s_ssid, sizeof(s_ssid), pass, sizeof(pass));
   WiFi.begin(s_ssid, pass);
   s_connectT0 = millis();
   s_requests = 0;
@@ -476,6 +476,7 @@ void stop() {
 void poll() {
   if (s_state == State::CONNECTING) {
     if (WiFi.status() == WL_CONNECTED) {
+      WiFi.setSleep(false);   // Modem-Sleep aus für vollen Datei-Transfer-Durchsatz
       snprintf(s_ip, sizeof(s_ip), "%s", WiFi.localIP().toString().c_str());
       ensureServer();
       s_server->begin();

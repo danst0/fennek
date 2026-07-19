@@ -471,4 +471,75 @@ bool search(const Pos& p, int maxDepth, uint32_t nodeLimit, Move* best,
   return true;
 }
 
+bool analyzeMove(const Pos& before, const Move& played, int maxDepth,
+                 uint32_t nodeLimit, MoveEval* out) {
+  // 1) Bester Zug + Bewertung in der Ausgangsstellung (Schülersicht).
+  Move best;
+  int sBest = 0;
+  if (!search(before, maxDepth, nodeLimit, &best, &sBest)) return false;
+  const bool isBest = (played.from == best.from && played.to == best.to &&
+                       played.promo == best.promo);
+
+  // War der Schülerzug ein Schlag? (auch en passant: Bauer diagonal auf leer)
+  const bool isCapture =
+      before.board[played.to] != EMPTY ||
+      (before.board[played.from] == (int8_t)(PAWN * before.stm) &&
+       fileOf(played.from) != fileOf(played.to) && before.board[played.to] == EMPTY);
+
+  // 2) Folgestellung: liefert Bewertung UND den Antwortzug des Trainers.
+  Pos after = before;
+  makeMove(after, played);
+  const bool givesCheck = inCheck(after, after.stm);   // Gegner am Zug im Schach?
+
+  Move reply;
+  bool hasReply = false;
+  int scoreAfter;
+  int sOpp = 0;
+  if (search(after, maxDepth, nodeLimit, &reply, &sOpp)) {
+    scoreAfter = -sOpp;          // Gegnersicht -> Schülersicht
+    hasReply = true;
+  } else {
+    // Partie endete mit dem Schülerzug: Gegner matt (Schüler gab Matt) oder Patt.
+    scoreAfter = inCheck(after, after.stm) ? MATE_SCORE : 0;
+  }
+
+  int loss = sBest - scoreAfter;
+  if (loss < 0) loss = 0;
+
+  const bool getsMated  = scoreAfter <= -(MATE_SCORE - 1000);
+  const bool missedMate = (sBest >= MATE_SCORE - 1000) && !isBest;
+
+  MoveClass cls;
+  if (isBest || loss <= 15)   cls = MC_BEST;
+  else if (loss <= 60)        cls = MC_GOOD;
+  else if (loss <= 150)       cls = MC_INACCURACY;
+  else if (loss <= 350)       cls = MC_MISTAKE;
+  else                        cls = MC_BLUNDER;
+  if (getsMated)              cls = MC_BLUNDER;
+
+  // Hängt die gezogene Figur? (vom Gegner angegriffen, von uns ungedeckt)
+  const int8_t opp = after.stm;
+  const bool hangs = after.board[played.to] != EMPTY &&
+                     attacked(after, played.to, opp) &&
+                     !attacked(after, played.to, (int8_t)-opp);
+  // Empfehlung war ein Schlag, den der Schüler ausließ?
+  const bool missedCapture =
+      !isBest && before.board[best.to] != EMPTY && before.board[played.to] == EMPTY;
+
+  out->cls           = cls;
+  out->lossCp        = loss;
+  out->scoreAfter    = scoreAfter;
+  out->best          = best;
+  out->playedIsBest  = isBest;
+  out->isCapture     = isCapture;
+  out->givesCheck    = givesCheck;
+  out->hangsPiece    = hangs;
+  out->missedCapture = missedCapture;
+  out->getsMated     = getsMated;
+  out->missedMate    = missedMate;
+  out->reply         = reply;
+  out->hasReply      = hasReply;
+  return true;
+}
+
 }  // namespace chess

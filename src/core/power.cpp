@@ -162,16 +162,17 @@ void drawSleepBanner(Adafruit_GFX& g) {
   g.drawFastHLine(0, kBannerY, kSleepImgW, GxEPD_WHITE);
   g.setTextColor(GxEPD_WHITE);
 
-  // Zeile 1: Titel links, GROBE Uhr rechts. Das Banner wird nur stündlich
-  // (Timer-Wake) aufgefrischt — deshalb bewusst „Nach HH:xx" statt Minuten,
-  // die längst veraltet wären. Der exakte Sperrbildschirm zeigt HH:MM.
+  // Zeile 1: Titel links, Uhr rechts. Das Banner wird nur stündlich
+  // (Timer-Wake) aufgefrischt — die Minuten zeigen also den Stand des letzten
+  // Wakes und können bis zum nächsten leicht nachlaufen; „Nach HH:MM" macht das
+  // deutlich. Der exakte Sperrbildschirm zeigt die Live-Zeit.
   gui::printAt(g, 6, kBannerY + 3, "Fennek", 2);
   time_t tt = (time_t)timesync::now();
   struct tm lt;
   localtime_r(&tt, &lt);
   if (lt.tm_year + 1900 >= 2025) {
     char clk[16];
-    snprintf(clk, sizeof(clk), "Nach %02d:xx", lt.tm_hour);
+    snprintf(clk, sizeof(clk), "Nach %02d:%02d", lt.tm_hour, lt.tm_min);
     g.setTextSize(2);
     uint16_t cw, ch;
     gui::textBounds(g, clk, &cw, &ch);

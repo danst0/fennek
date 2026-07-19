@@ -10,6 +10,7 @@
 #include "services/timesync.h"
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -396,12 +397,9 @@ bool syncCore(bool autoRun, char* log, size_t logN) {
   settings::calibreShelf(shelf, sizeof(shelf));
   settings::calibreUser(s_user, sizeof(s_user));
   settings::calibrePass(s_pass, sizeof(s_pass));
-  char ssid[33], wpass[65];
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(wpass, sizeof(wpass));
 
   if (!base[0])           { setLog("keine Server-URL"); return false; }
-  if (!ssid[0])           { setLog("kein WLAN konfiguriert"); return false; }
+  if (settings::wifiCount() == 0) { setLog("kein WLAN konfiguriert"); return false; }
   if (!board::sdReady())  { setLog("keine SD-Karte"); return false; }
   if (webfm::state() != webfm::State::OFF) { setLog("WLAN belegt"); return false; }
 
@@ -421,14 +419,7 @@ bool syncCore(bool autoRun, char* log, size_t logN) {
     s_lastAttemptEpoch = nowE;
   }
 
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, wpass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  bool connected = (WiFi.status() == WL_CONNECTED);
+  bool connected = wifi::connect(kConnectTimeoutMs);
 
   int  found = -1, fresh = 0, failed = 0;
   bool authFail = false, more = false, noShelf = false;
@@ -481,9 +472,7 @@ bool syncCore(bool autoRun, char* log, size_t logN) {
     if (body) free(body);
   }
 
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
+  wifi::disconnect();
 
   bool ok = connected && found >= 0 && failed == 0;
   if (autoRun) {

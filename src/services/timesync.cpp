@@ -4,6 +4,7 @@
 #include "timesync.h"
 #include "apps/mesh_client.h"
 #include "services/webfm.h"
+#include "services/wifi.h"
 #include "services/gps.h"
 #include "core/settings.h"
 
@@ -129,29 +130,16 @@ void handleNtpSynced() {
 // (Pre-Standby: Gerät idle + Audio gestoppt; oder Konsole auf Nutzerwunsch).
 // Schaltet WLAN danach immer wieder aus. true = Uhr frisch gesetzt.
 bool blockingNtp() {
-  char ssid[33], pass[65];
-  settings::wifiSsid(ssid, sizeof(ssid));
-  settings::wifiPass(pass, sizeof(pass));
-  if (!ssid[0]) { Serial.println("[TIME] Kein WLAN konfiguriert"); return false; }
-
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
+  if (settings::wifiCount() == 0) { Serial.println("[TIME] Kein WLAN konfiguriert"); return false; }
+  if (!wifi::connect(kConnectTimeoutMs)) { Serial.println("[TIME] WLAN-Connect-Timeout"); return false; }
 
   bool ok = false;
-  if (WiFi.status() == WL_CONNECTED) {
-    beginNtpAttempt();
-    uint32_t t1 = millis();
-    while (!s_ntpFresh && millis() - t1 < kNtpWaitMs) delay(100);
-    if (s_ntpFresh) { handleNtpSynced(); ok = true; }
-    else            Serial.println("[TIME] NTP-Timeout");
-  } else {
-    Serial.println("[TIME] WLAN-Connect-Timeout");
-  }
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
+  beginNtpAttempt();
+  uint32_t t1 = millis();
+  while (!s_ntpFresh && millis() - t1 < kNtpWaitMs) delay(100);
+  if (s_ntpFresh) { handleNtpSynced(); ok = true; }
+  else            Serial.println("[TIME] NTP-Timeout");
+  wifi::disconnect();
   return ok;
 }
 

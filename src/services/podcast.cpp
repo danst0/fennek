@@ -9,6 +9,7 @@
 #include "services/timesync.h"
 #include "services/webfm.h"
 #include "apps/mesh_client.h"
+#include "services/wifi.h"
 #include "apps/podcast_core.h"
 #include "core/power.h"
 
@@ -77,26 +78,14 @@ void writeState(const char* slug, const char* title, const char* guid, const cha
   spiUnlock();
 }
 
-// --- WLAN auf/zu (WLAN-Regel: Audio stop + Mesh suspend) ----------------------
+// --- WLAN auf/zu (zentraler Helfer: Scan → stärkstes bekanntes Netz) ------------
+// Modem-Sleep aus für vollen Download-Durchsatz erledigt wifi::connect zentral.
 bool wifiUp(const char* ssid, const char* pass) {
-  audio::stop();
-  mesh_client::setSuspended(true);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, pass);
-  WiFi.setSleep(false);   // Modem-Sleep aus: sonst schläft das WiFi zwischen den
-                          // DTIM-Beacons und der Download bricht auf ~15 KB/s ein
-                          // (16-KB-Bursts mit ~1 s Pause). Aus = voller Durchsatz.
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < kConnectTimeoutMs) delay(100);
-  return WiFi.status() == WL_CONNECTED;
+  (void)ssid; (void)pass;
+  return wifi::connect(kConnectTimeoutMs);
 }
 
-void wifiDown() {
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
-  mesh_client::setSuspended(false);
-}
+void wifiDown() { wifi::disconnect(); }
 
 // HTTP-GET mit manueller Redirect-Auflösung (max 6 Hops; deckt http→https und
 // CDN-Umleitungen ab, die der eingebaute Follow je nach Schema-Wechsel verschluckt).

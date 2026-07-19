@@ -340,48 +340,130 @@ void setMeshPos(double lat, double lon) {
   if (lon != s_meshLon) { s_meshLon = lon; s_prefs.putDouble("mlon", lon); }
 }
 
-// --- WLAN-Zugangsdaten ----------------------------------------------------------
+// --- WLAN-Profile ---------------------------------------------------------------
+// Bis zu kMaxWifiProfiles bekannte Netze. Persistenz als kompakter NVS-Blob
+// "wifis" (längenpräfigierte Strings), damit nur echte Daten Platz kosten (das
+// NVS-Budget ist knapp). Slot 0 wird bei Bedarf aus dem Alt-Schlüssel wssid/wpass
+// migriert und bleibt das "einfache" WLAN (ini-Export/webfm/Konsole).
 namespace {
 
-bool s_wifiLoaded = false;
-char s_wifiSsid[33] = "";
-char s_wifiPass[65] = "";
+struct WifiProfile { char ssid[33]; char pass[65]; };
+
+bool        s_wifiLoaded = false;
+int         s_wifiCount  = 0;
+WifiProfile s_wifi[kMaxWifiProfiles];
+
+// Blob-Format: [u8 count] dann je Eintrag [u8 ssidLen][ssid][u8 passLen][pass].
+void wifiSave() {
+  if (!s_open) return;
+  uint8_t buf[1 + kMaxWifiProfiles * (1 + 32 + 1 + 64)];
+  size_t o = 0;
+  buf[o++] = (uint8_t)s_wifiCount;
+  for (int i = 0; i < s_wifiCount; i++) {
+    uint8_t sl = (uint8_t)strnlen(s_wifi[i].ssid, sizeof(s_wifi[i].ssid) - 1);
+    buf[o++] = sl; memcpy(buf + o, s_wifi[i].ssid, sl); o += sl;
+    uint8_t pl = (uint8_t)strnlen(s_wifi[i].pass, sizeof(s_wifi[i].pass) - 1);
+    buf[o++] = pl; memcpy(buf + o, s_wifi[i].pass, pl); o += pl;
+  }
+  s_prefs.putBytes("wifis", buf, o);
+}
 
 void wifiEnsure() {
   if (s_wifiLoaded || !s_open) return;
   s_wifiLoaded = true;
-  if (s_prefs.isKey("wssid")) s_prefs.getString("wssid", s_wifiSsid, sizeof(s_wifiSsid));
-  if (s_prefs.isKey("wpass")) s_prefs.getString("wpass", s_wifiPass, sizeof(s_wifiPass));
+
+  size_t len = s_prefs.getBytesLength("wifis");
+  if (len > 0) {
+    uint8_t buf[1 + kMaxWifiProfiles * (1 + 32 + 1 + 64)];
+    if (len <= sizeof(buf) && s_prefs.getBytes("wifis", buf, len) == len) {
+      size_t o = 0;
+      int cnt = buf[o++];
+      for (int i = 0; i < cnt && i < kMaxWifiProfiles && o < len; i++) {
+        uint8_t sl = buf[o++];
+        if (sl > sizeof(s_wifi[i].ssid) - 1 || o + sl > len) break;
+        memcpy(s_wifi[i].ssid, buf + o, sl); s_wifi[i].ssid[sl] = '\0'; o += sl;
+        if (o >= len) break;
+        uint8_t pl = buf[o++];
+        if (pl > sizeof(s_wifi[i].pass) - 1 || o + pl > len) break;
+        memcpy(s_wifi[i].pass, buf + o, pl); s_wifi[i].pass[pl] = '\0'; o += pl;
+        s_wifiCount = i + 1;
+      }
+    }
+    return;
+  }
+
+  // Migration: Alt-Schlüssel wssid/wpass → Slot 0.
+  if (s_prefs.isKey("wssid")) {
+    s_prefs.getString("wssid", s_wifi[0].ssid, sizeof(s_wifi[0].ssid));
+    if (s_prefs.isKey("wpass")) s_prefs.getString("wpass", s_wifi[0].pass, sizeof(s_wifi[0].pass));
+    if (s_wifi[0].ssid[0]) { s_wifiCount = 1; wifiSave(); }
+  }
 }
 
 }  // namespace
 
-void wifiSsid(char* out, size_t n) {
+int wifiCount() { wifiEnsure(); return s_wifiCount; }
+
+void wifiSsidAt(int i, char* out, size_t n) {
   wifiEnsure();
-  strncpy(out, s_wifiSsid, n - 1);
+  if (i < 0 || i >= s_wifiCount) { if (n) out[0] = '\0'; return; }
+  strncpy(out, s_wifi[i].ssid, n - 1);
   out[n - 1] = '\0';
 }
+
+void wifiPassAt(int i, char* out, size_t n) {
+  wifiEnsure();
+  if (i < 0 || i >= s_wifiCount) { if (n) out[0] = '\0'; return; }
+  strncpy(out, s_wifi[i].pass, n - 1);
+  out[n - 1] = '\0';
+}
+
+void wifiRemove(int i) {
+  wifiEnsure();
+  if (i < 0 || i >= s_wifiCount) return;
+  for (int j = i; j < s_wifiCount - 1; j++) s_wifi[j] = s_wifi[j + 1];
+  s_wifiCount--;
+  wifiSave();
+}
+
+bool wifiSet(int i, const char* ssid, const char* pass) {
+  wifiEnsure();
+  if (!s_open || i < 0 || i > s_wifiCount || i >= kMaxWifiProfiles) return false;
+  // Leere SSID = Löschen (nur bei bestehendem Eintrag sinnvoll).
+  if (!ssid || !ssid[0]) { if (i < s_wifiCount) { wifiRemove(i); return true; } return false; }
+  if (i == s_wifiCount) s_wifiCount++;           // anhängen
+  strncpy(s_wifi[i].ssid, ssid, sizeof(s_wifi[i].ssid) - 1);
+  s_wifi[i].ssid[sizeof(s_wifi[i].ssid) - 1] = '\0';
+  if (pass) {
+    strncpy(s_wifi[i].pass, pass, sizeof(s_wifi[i].pass) - 1);
+    s_wifi[i].pass[sizeof(s_wifi[i].pass) - 1] = '\0';
+  }
+  wifiSave();
+  return true;
+}
+
+// --- Legacy-/Einfach-Zugriff = Slot 0 -------------------------------------------
+void wifiSsid(char* out, size_t n) { wifiSsidAt(0, out, n); }
 
 void setWifiSsid(const char* ssid) {
   wifiEnsure();
-  if (!s_open || !ssid || strcmp(ssid, s_wifiSsid) == 0) return;
-  strncpy(s_wifiSsid, ssid, sizeof(s_wifiSsid) - 1);
-  s_wifiSsid[sizeof(s_wifiSsid) - 1] = '\0';
-  s_prefs.putString("wssid", s_wifiSsid);
+  if (!s_open || !ssid) return;
+  char cur[33]; wifiSsidAt(0, cur, sizeof(cur));
+  if (strcmp(ssid, cur) == 0) return;
+  char pass[65]; wifiPassAt(0, pass, sizeof(pass));   // Passwort erhalten
+  wifiSet(0, ssid, s_wifiCount > 0 ? pass : "");
 }
 
-void wifiPass(char* out, size_t n) {
-  wifiEnsure();
-  strncpy(out, s_wifiPass, n - 1);
-  out[n - 1] = '\0';
-}
+void wifiPass(char* out, size_t n) { wifiPassAt(0, out, n); }
 
 void setWifiPass(const char* pass) {
   wifiEnsure();
-  if (!s_open || !pass || strcmp(pass, s_wifiPass) == 0) return;
-  strncpy(s_wifiPass, pass, sizeof(s_wifiPass) - 1);
-  s_wifiPass[sizeof(s_wifiPass) - 1] = '\0';
-  s_prefs.putString("wpass", s_wifiPass);
+  if (!s_open || !pass) return;
+  char cur[65]; wifiPassAt(0, cur, sizeof(cur));
+  if (strcmp(pass, cur) == 0) return;
+  if (s_wifiCount == 0) return;                       // ohne SSID kein Passwort
+  char ssid[33]; wifiSsidAt(0, ssid, sizeof(ssid));
+  wifiSet(0, ssid, pass);
 }
 
 // --- Navidrome/Subsonic-Zugangsdaten -------------------------------------------

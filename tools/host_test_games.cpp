@@ -383,6 +383,31 @@ static int testChess() {
   p.stm = -1;
   CHECK(hashPos(p) != h1);
 
+  // --- Trainer-Analyse ---
+  // Hängende Figur: Ta1-c1 stellt den Turm ungedeckt ins Bauern-Feuer (b2).
+  fromFen(p, "4k3/8/8/8/8/8/1p6/R3K3 w - -");
+  MoveEval ev;
+  Move hang = {0, 2, 0};                 // a1 -> c1
+  CHECK(analyzeMove(p, hang, 3, 0, &ev));
+  CHECK(ev.hangsPiece);
+  CHECK(!ev.playedIsBest);
+  CHECK(ev.cls == MC_BLUNDER);
+
+  // Matt-in-1 vorhanden (Ta1-a8):
+  fromFen(p, "6k1/5ppp/8/8/8/8/8/R5K1 w - -");
+  Move mate = {0, 56, 0};                // a1 -> a8 (Matt)
+  CHECK(analyzeMove(p, mate, 2, 0, &ev));
+  CHECK(ev.playedIsBest);
+  CHECK(ev.cls == MC_BEST);
+  CHECK(!ev.hasReply);                    // Matt -> keine Trainer-Antwort
+
+  // ... und wer das Matt auslässt (Kg1-h1), bekommt „Patzer" + missedMate.
+  Move quiet = {6, 7, 0};                // g1 -> h1
+  CHECK(analyzeMove(p, quiet, 2, 0, &ev));
+  CHECK(ev.missedMate);
+  CHECK(ev.cls == MC_BLUNDER);
+  CHECK(ev.hasReply);                    // Partie läuft weiter
+
   return 0;
 }
 
