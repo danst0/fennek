@@ -79,7 +79,8 @@
   X(NoSdCard,      "Keine SD-Karte",        "Nessuna scheda SD",         "Inget SD-kort",         "No SD card",          "No hay tarjeta SD") \
   X(InsertCard,    "Karte einlegen, dann:", "Inserisci la scheda, poi:", "Sätt i kortet, sedan:", "Insert card, then:",  "Inserta la tarjeta, luego:") \
   X(StatusLocked,  "Gesperrt",       "Bloccato",        "Låst",           "Locked",          "Bloqueado") \
-  X(SleepWakeHint, "Knopf drücken zum Aufwecken", "Premi il tasto per svegliare", "Tryck på knappen för att väcka", "Press the button to wake", "Pulsa el botón para despertar") \
+  X(SleepWakeHint, "Oberen Knopf drücken zum Aufwecken", "Premi il tasto superiore per svegliare", "Tryck på övre knappen för att väcka", "Press the top button to wake", "Pulsa el botón superior para despertar") \
+  X(LockUnlockHint,"Oberen Knopf drücken zum Entsperren", "Premi il tasto superiore per sbloccare", "Tryck på övre knappen för att låsa upp", "Press the top button to unlock", "Pulsa el botón superior para desbloquear") \
   X(EmptyList,     "(leer)",         "(vuoto)",         "(tomt)",         "(empty)",         "(vacío)") \
   /* --- Musik --- */ \
   X(MusicArtists,  "Künstler",       "Artisti",         "Artister",       "Artists",         "Artistas") \

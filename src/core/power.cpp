@@ -65,7 +65,9 @@ bool     s_locked       = false; // Tastensperre aktiv?
 // Batterie-% fürs Schlafbild (DrawFn ist ein nackter Funktionszeiger, daher
 // keine Captures möglich). Der Wake-Zähler liegt im RTC-RAM: überlebt den
 // Deep Sleep ohne NVS-Verschleiß, ist nach Kaltstart/Knopf-Boot egal.
-uint8_t s_sleepPct = 0;
+uint8_t  s_sleepPct   = 0;
+bool     s_sleepChg   = false;  // lädt beim Einschlafen/Wake? (Ladeanzeige)
+uint32_t s_sleepAlarm = 0;      // nächster Weckzeitpunkt (Epoch) fürs Banner, 0=keiner
 RTC_DATA_ATTR uint32_t s_timerWakes = 0;
 
 // --- Schlaf-Diagnose (RTC-RAM) ----------------------------------------------
@@ -159,19 +161,45 @@ void drawSleepBanner(Adafruit_GFX& g) {
   g.fillRect(0, kBannerY, kSleepImgW, kSleepImgH - kBannerY, GxEPD_BLACK);
   g.drawFastHLine(0, kBannerY, kSleepImgW, GxEPD_WHITE);
   g.setTextColor(GxEPD_WHITE);
-  gui::printAt(g, 120 - 53, kBannerY + 6, "Fennek", 3);
-  // Aufweck-Hinweis dynamisch zentrieren (Textbreite ist sprachabhängig).
-  const char* hint = i18n::tr(i18n::Str::SleepWakeHint);
+
+  // Zeile 1: Titel links, GROBE Uhr rechts. Das Banner wird nur stündlich
+  // (Timer-Wake) aufgefrischt — deshalb bewusst „Nach HH:xx" statt Minuten,
+  // die längst veraltet wären. Der exakte Sperrbildschirm zeigt HH:MM.
+  gui::printAt(g, 6, kBannerY + 3, "Fennek", 2);
+  time_t tt = (time_t)timesync::now();
+  struct tm lt;
+  localtime_r(&tt, &lt);
+  if (lt.tm_year + 1900 >= 2025) {
+    char clk[16];
+    snprintf(clk, sizeof(clk), "Nach %02d:xx", lt.tm_hour);
+    g.setTextSize(2);
+    uint16_t cw, ch;
+    gui::textBounds(g, clk, &cw, &ch);
+    gui::printAt(g, kSleepImgW - (int)cw - 6, kBannerY + 3, clk, 2);
+  }
+
+  // Zeile 2: nächster Wecker links, Akku (mit Ladeanzeige „+") rechts.
   g.setTextSize(1);
-  uint16_t hw, hh;
-  gui::textBounds(g, hint, &hw, &hh);
-  gui::printAt(g, (kSleepImgW - (int)hw) / 2, kBannerY + 31, hint, 1);
-  // Batterie-% rechtsbündig in der Hinweis-Zeile.
-  char pct[8];
-  snprintf(pct, sizeof(pct), "%u%%", (unsigned)s_sleepPct);
+  if (s_sleepAlarm) {
+    time_t at = (time_t)s_sleepAlarm;
+    struct tm al;
+    localtime_r(&at, &al);
+    char aw[24];
+    snprintf(aw, sizeof(aw), "Wecker %02d:%02d", al.tm_hour, al.tm_min);
+    gui::printAt(g, 6, kBannerY + 24, aw, 1);
+  }
+  char pct[10];
+  snprintf(pct, sizeof(pct), "%u%%%s", (unsigned)s_sleepPct, s_sleepChg ? "+" : "");
   uint16_t pw, ph;
   gui::textBounds(g, pct, &pw, &ph);
-  gui::printAt(g, kSleepImgW - (int)pw - 4, kBannerY + 31, pct, 1);
+  gui::printAt(g, kSleepImgW - (int)pw - 6, kBannerY + 24, pct, 1);
+
+  // Zeile 3: Aufweck-Hinweis zentriert (Textbreite ist sprachabhängig).
+  const char* hint = i18n::tr(i18n::Str::SleepWakeHint);
+  uint16_t hw, hh;
+  gui::textBounds(g, hint, &hw, &hh);
+  gui::printAt(g, (kSleepImgW - (int)hw) / 2, kBannerY + 34, hint, 1);
+
   g.setTextColor(GxEPD_BLACK);
 }
 
@@ -422,6 +450,8 @@ void enterStandby() {
   //    Akkustand lesen (I2C-Peripherie ist hier noch versorgt). Danach den
   //    Panel-Controller in den eigenen Deep Sleep schicken (µA statt Standby).
   s_sleepPct = battery::percent();
+  s_sleepChg = battery::charging();
+  s_sleepAlarm = alarmclock::nextDueEpoch(timesync::now());   // fürs Banner
   s_timerWakes = 0;
   // Standby-Marker. Der Coulomb-Stand wird hier gelesen, solange der I2C-Gauge
   // noch versorgt ist und die Rails (DAC/LoRa/GPS) schon aus sind — die Differenz
@@ -505,6 +535,8 @@ bool handleTimerWake() {
   pinMode(PIN_USER_BTN, INPUT);
 
   s_sleepPct = battery::percent();
+  s_sleepChg = battery::charging();
+  s_sleepAlarm = s_alarmWakeEpoch;   // im RTC-RAM erhalten; fürs Banner
   s_timerWakes++;
   // Coulomb-Stand so früh wie möglich lesen — vor dem E-Ink-Refresh unten, damit
   // die Differenz zum vorigen Eintrag den Schlaf misst und nicht den Wake.

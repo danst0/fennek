@@ -64,6 +64,93 @@ void drawLock(Adafruit_GFX& g, int x, int y) {
   g.fillCircle(x + 5, y + 8, 1, GxEPD_WHITE);    // Schlüsselloch
 }
 
+// ---- Sperrbildschirm (Vollbild) --------------------------------------------
+// Beim Kurzdruck auf den oberen Knopf zeigt der appmgr statt der App einen
+// eigenen Sperrbildschirm: große EXAKTE Uhr (das Gerät läuft, minütlich per
+// Region-Refresh nachgezogen), Datum + Akku, ggf. Now-Playing und ein
+// Entsperr-Hinweis. Gegenstück zum groben Standby-Screen in core/power.cpp.
+constexpr int LOCK_BAND_Y = 70;    // Info-Band (Uhr/Datum/Akku/Now-Playing)
+constexpr int LOCK_BAND_H = 150;   // minütlich per renderRegion aktualisiert
+
+// Text der Größe `size` horizontal zentriert bei y ausgeben.
+void drawCentered(Adafruit_GFX& g, int y, const char* utf8, uint8_t size) {
+  g.setTextSize(size);
+  uint16_t w, h;
+  gui::textBounds(g, utf8, &w, &h);
+  gui::printAt(g, (EINK_W - (int)w) / 2, y, utf8, size);
+}
+
+// Now-Playing-Kurzname: Dateiname des laufenden Tracks ohne Pfad/Endung;
+// leer, wenn nichts spielt.
+void currentTrackLabel(char* out, size_t n) {
+  out[0] = '\0';
+  audio::Status st = audio::status();
+  if (!st.playing) return;
+  char p[TRACK_PATH_LEN];
+  audio::currentPath(p, sizeof(p));
+  if (!p[0]) return;
+  const char* base = strrchr(p, '/');
+  base = base ? base + 1 : p;
+  strncpy(out, base, n - 1);
+  out[n - 1] = '\0';
+  char* dot = strrchr(out, '.');
+  if (dot && dot != out) *dot = '\0';
+}
+
+// Größeres Schloss-Symbol, Bügelmitte bei (cx, cy).
+void drawBigLock(Adafruit_GFX& g, int cx, int cy) {
+  for (int r = 7; r <= 8; r++)
+    g.drawCircleHelper(cx, cy, r, 0x1 | 0x2, GxEPD_BLACK);  // Bügel (obere Hälfte)
+  g.fillRoundRect(cx - 12, cy, 24, 18, 3, GxEPD_BLACK);     // Körper
+  g.fillCircle(cx, cy + 8, 2, GxEPD_WHITE);                 // Schlüsselloch
+  g.fillRect(cx - 1, cy + 8, 2, 5, GxEPD_WHITE);
+}
+
+// Info-Band: Uhr + Datum + Akku + Now-Playing. Eigenständig, damit die Uhr
+// minütlich als Region-Refresh (ohne Vollflackern) nachgezogen werden kann.
+void drawLockBand(Adafruit_GFX& g) {
+  g.fillRect(0, LOCK_BAND_Y, EINK_W, LOCK_BAND_H, GxEPD_WHITE);
+  g.setTextColor(GxEPD_BLACK);
+
+  time_t tt = (time_t)timesync::now();
+  struct tm lt;
+  localtime_r(&tt, &lt);
+  bool haveClock = (lt.tm_year + 1900 >= 2025);
+
+  char clk[6];
+  if (haveClock) snprintf(clk, sizeof(clk), "%02d:%02d", lt.tm_hour, lt.tm_min);
+  else           snprintf(clk, sizeof(clk), "--:--");
+  drawCentered(g, LOCK_BAND_Y + 4, clk, 6);   // große exakte Uhr
+
+  static const char* kWd[7] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+  char info[40];
+  if (haveClock)
+    snprintf(info, sizeof(info), "%s %02d.%02d.  %d%%%s",
+             kWd[lt.tm_wday % 7], lt.tm_mday, lt.tm_mon + 1,
+             s_battPct, s_battChg ? "+" : "");
+  else
+    snprintf(info, sizeof(info), "%d%%%s", s_battPct, s_battChg ? "+" : "");
+  drawCentered(g, LOCK_BAND_Y + 78, info, 2);
+
+  char trk[48];
+  currentTrackLabel(trk, sizeof(trk));
+  if (trk[0]) {
+    char np[52];
+    snprintf(np, sizeof(np), "\x0E %s", trk);   // CP437 0x0E = Doppelnote
+    drawCentered(g, LOCK_BAND_Y + 112, np, 2);
+  }
+}
+
+void drawLockScreen(Adafruit_GFX& g) {
+  g.fillScreen(GxEPD_WHITE);
+  g.setTextColor(GxEPD_BLACK);
+  drawCentered(g, 34, i18n::tr(i18n::Str::StatusLocked), 2);   // Kopf: „Gesperrt"
+  drawLockBand(g);
+  g.drawFastHLine(24, 234, EINK_W - 48, GxEPD_BLACK);          // Fuß-Trennlinie
+  drawBigLock(g, EINK_W / 2, 252);
+  drawCentered(g, 288, i18n::tr(i18n::Str::LockUnlockHint), 1);
+}
+
 void drawStatusBar(Adafruit_GFX& g) {
   g.fillRect(0, 0, EINK_W, appmgr::STATUS_H, GxEPD_WHITE);
   g.setTextColor(GxEPD_BLACK);
@@ -120,6 +207,7 @@ void drawStatusBar(Adafruit_GFX& g) {
 }
 
 void drawComposite(Adafruit_GFX& g) {
+  if (power::locked()) { drawLockScreen(g); return; }
   drawStatusBar(g);
   if (s_cur) s_cur->draw(g);
 }
@@ -255,7 +343,9 @@ void loop() {
   }
 
   // 3) Vordergrund-Tick (kann markDirty() setzen oder Region-Refreshes machen).
-  if (s_cur) s_cur->tick();
+  //    Bei Tastensperre ausgesetzt — sonst würde App-Inhalt über den
+  //    Sperrbildschirm gezeichnet.
+  if (!locked && s_cur) s_cur->tick();
 
   uint32_t now = millis();
 
@@ -271,7 +361,7 @@ void loop() {
   }
 
   // 5) Statuszeile aktuell halten (nur Region-Refresh bei Änderung).
-  if (!s_dirty && now - s_lastStatusPoll >= 1000) {
+  if (!locked && !s_dirty && now - s_lastStatusPoll >= 1000) {
     s_lastStatusPoll = now;
     uint8_t a  = audioGlyph();
     uint8_t mn = clockMinute();
@@ -282,12 +372,23 @@ void loop() {
     }
   }
 
-  // 5b) Tastensperre-Wechsel sofort in der Statuszeile spiegeln.
+  // 5b) Sperrzustand-Wechsel → kompletter Neuaufbau: rein zum Sperrbildschirm,
+  //     raus zurück zur App (drawComposite verzweigt auf power::locked()).
   static int s_lockShown = -1;
-  int lk = power::locked() ? 1 : 0;
+  int lk = locked ? 1 : 0;
   if (lk != s_lockShown) {
     s_lockShown = lk;
-    if (!s_dirty) display::renderRegion(drawStatusBar, 0, STATUS_H);
+    s_dirty = true;
+  }
+
+  // 5c) Gesperrt: exakte Uhr minütlich im Info-Band nachziehen — Region-Refresh
+  //     statt Vollflackern. (Voll-Redraw in Schritt 6 setzt s_lastClockMin.)
+  if (locked && !s_dirty) {
+    uint8_t mn = clockMinute();
+    if (mn != s_lastClockMin) {
+      s_lastClockMin = mn;
+      display::renderRegion(drawLockBand, LOCK_BAND_Y, LOCK_BAND_H);
+    }
   }
 
   // 6) Koaleszierter Voll-Redraw.
