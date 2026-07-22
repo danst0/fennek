@@ -571,8 +571,8 @@ void onListTouch(int x, int y) {
 
 void onListKey(char k) {
   switch (k) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(+1); break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(+1); break;
     case '\r':          if (s_fileCount > 0) openBook(s_sel); break;
     case 'r': case 'R': if (!s_scanning) { scanStart(); markDirty(); } break;
     case '\b':
@@ -583,8 +583,8 @@ void onListKey(char k) {
 
 void onReadKey(char k) {
   switch (k) {
-    case 'd': case 'D': case 's': case 'S': case ' ': turnPage(+1); break;
-    case 'a': case 'A': case 'w': case 'W':           turnPage(-1); break;
+    case 'd': case 'D': case 's': case 'S': case 'l': case 'L': case 'k': case 'K': case ' ': turnPage(+1); break;
+    case 'a': case 'A': case 'w': case 'W': case 'j': case 'J': case 'i': case 'I':           turnPage(-1); break;
     case '\b':          leaveRead(); break;
     case 'q': case 'Q': leaveRead(); appmgr::goHome(); break;
     default: break;

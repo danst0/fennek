@@ -123,10 +123,10 @@ void handleInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'a': case 'A': doMove(game2048::LEFT);  break;
-    case 'd': case 'D': doMove(game2048::RIGHT); break;
-    case 'w': case 'W': doMove(game2048::UP);    break;
-    case 's': case 'S': doMove(game2048::DOWN);  break;
+    case 'a': case 'A': case 'j': case 'J': doMove(game2048::LEFT);  break;
+    case 'd': case 'D': case 'l': case 'L': doMove(game2048::RIGHT); break;
+    case 'w': case 'W': case 'i': case 'I': doMove(game2048::UP);    break;
+    case 's': case 'S': case 'k': case 'K': doMove(game2048::DOWN);  break;
     case 'n': case 'N': newGame(); break;
     case '\b':
     case 'q': case 'Q':

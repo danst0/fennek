@@ -584,8 +584,8 @@ void activateSel() {
 void onBrowseKey(char k) {
   audio::Status st = audio::status();
   switch (k) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(+1); break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(+1); break;
     case '\r':          activateSel(); break;
     case '\b':          if (s_depth > 0) goBack(); else appmgr::goHome(); break;
     case 'q': case 'Q': appmgr::goHome(); break;
@@ -607,10 +607,10 @@ void cycleSleep() {
 void onPlayerKey(char k) {
   switch (k) {
     case ' ': case '\r': audio::togglePause(); markDirty(); break;
-    case 'a': case 'A':  audio::prev(); markDirty(); break;
-    case 'd': case 'D':  audio::next(); markDirty(); break;
-    case 'w': case 'W':  audio::volumeUp(); markDirty(); break;
-    case 's': case 'S':  audio::volumeDown(); markDirty(); break;
+    case 'a': case 'A':  case 'j': case 'J':  audio::prev(); markDirty(); break;
+    case 'd': case 'D':  case 'l': case 'L':  audio::next(); markDirty(); break;
+    case 'w': case 'W':  case 'i': case 'I':  audio::volumeUp(); markDirty(); break;
+    case 's': case 'S':  case 'k': case 'K':  audio::volumeDown(); markDirty(); break;
     case 'x': case 'X':  audio::setShuffle(!audio::status().shuffle); markDirty(); break;
     case 'r': case 'R':  cycleRepeat(); markDirty(); break;
     case 'z': case 'Z':  cycleSleep(); markDirty(); break;

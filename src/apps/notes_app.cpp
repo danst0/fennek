@@ -710,8 +710,8 @@ void onListTouch(int x, int y) {
 void onListKey(char k) {
   if (k == 0x02) { startRecord(); return; }   // Mikrofontaste
   switch (k) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(+1); break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(+1); break;
     case '\r':          openSel(); break;
     case 'x': case 'X':
       if (s_sel >= kSpecialRows) { s_screen = CONFIRM_DEL; markDirty(); }
@@ -750,8 +750,8 @@ void onPlayerTouch(int x, int y) {
 void onPlayerKey(char k) {
   switch (k) {
     case '\r': case 'p': case 'P': togglePlay(); break;
-    case 'a': case 'A': audio::seekRel(-10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
-    case 'd': case 'D': audio::seekRel(+10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
+    case 'a': case 'A': case 'j': case 'J': audio::seekRel(-10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
+    case 'd': case 'D': case 'l': case 'L': audio::seekRel(+10); s_lastShownSec = 0xFFFFFFFF; markDirty(); break;
     case '\b':
     case 'q': case 'Q': s_screen = LIST; markDirty(); break;
     default: break;

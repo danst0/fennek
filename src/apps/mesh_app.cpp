@@ -599,16 +599,16 @@ void onKey(char k) {
 
   if (s_screen == CHATS || s_screen == CONTACTS) {
     switch (k) {
-      case 'w': case 'W': moveSel(-1); break;
-      case 's': case 'S': moveSel(+1); break;
+      case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+      case 's': case 'S': case 'k': case 'K': moveSel(+1); break;
       case '\r':
         if (s_screen == CHATS) {
           if (s_sel == kAddChannelRow) openJoinChannel();
           else                         openChat(s_sel - 1);
         } else if (s_sel < mesh_client::contactCount()) openDm(s_sel);
         break;
-      case 'k': case 'K': if (s_screen == CHATS) goContacts(); break;
-      case '\b':          if (s_screen == CONTACTS) backToChats(); break;
+      case 'd': case 'D': case 'l': case 'L': if (s_screen == CHATS) goContacts(); break;
+      case '\b': case 'a': case 'A': case 'j': case 'J': if (s_screen == CONTACTS) backToChats(); break;
       case 'q': case 'Q': appmgr::goHome(); break;
       default: break;
     }

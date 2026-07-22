@@ -194,10 +194,10 @@ void handleInput(const InputEvent& e) {
   }
   int r = s_cursor / kW, c = s_cursor % kW;
   switch (e.key) {
-    case 'w': case 'W': r = (r + kH - 1) % kH; break;
-    case 's': case 'S': r = (r + 1) % kH;      break;
-    case 'a': case 'A': c = (c + kW - 1) % kW; break;
-    case 'd': case 'D': c = (c + 1) % kW;      break;
+    case 'w': case 'W': case 'i': case 'I': r = (r + kH - 1) % kH; break;
+    case 's': case 'S': case 'k': case 'K': r = (r + 1) % kH;      break;
+    case 'a': case 'A': case 'j': case 'J': c = (c + kW - 1) % kW; break;
+    case 'd': case 'D': case 'l': case 'L': c = (c + 1) % kW;      break;
     case 'f': case 'F':
       s_flagMode = !s_flagMode;
       appmgr::markDirty();

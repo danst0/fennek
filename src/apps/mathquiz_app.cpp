@@ -163,10 +163,10 @@ void menuInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': s_sel = (s_sel + kNumModes - 1) % kNumModes; loadLevelForMode(); appmgr::markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % kNumModes;            loadLevelForMode(); appmgr::markDirty(); break;
-    case 'a': case 'A': setLevelManual((s_level + 2) % 3);          break;
-    case 'd': case 'D': setLevelManual((s_level + 1) % 3);          break;
+    case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + kNumModes - 1) % kNumModes; loadLevelForMode(); appmgr::markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % kNumModes;            loadLevelForMode(); appmgr::markDirty(); break;
+    case 'a': case 'A': case 'j': case 'J': setLevelManual((s_level + 2) % 3);          break;
+    case 'd': case 'D': case 'l': case 'L': setLevelManual((s_level + 1) % 3);          break;
     case '\r':          startQuiz(); break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;

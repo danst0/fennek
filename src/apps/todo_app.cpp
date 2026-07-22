@@ -238,11 +238,11 @@ void listInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(1);  break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(1);  break;
     case '\r': case ' ': toggleSel(); break;
-    case 'a': case 'A': dueSel(0); break;   // heute
-    case 'd': case 'D': dueSel(1); break;   // morgen
+    case 'a': case 'A': case 'j': case 'J': dueSel(0); break;   // heute
+    case 'd': case 'D': case 'l': case 'L': dueSel(1); break;   // morgen
     case 'n': case 'N': case '+': s_add[0] = '\0'; s_screen = ADD; appmgr::markDirty(); break;
     case 'f': case 'F': cycleFilter(); break;
     case 'y': case 'Y': requestSync(); break;

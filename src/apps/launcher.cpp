@@ -83,10 +83,10 @@ class LauncherApp : public App {
     }
 
     switch (e.key) {
-      case 'w': case 'W': moveCursor(-2); break;
-      case 's': case 'S': moveCursor(+2); break;
-      case 'a': case 'A': moveCursor(-1); break;
-      case 'd': case 'D': moveCursor(+1); break;
+      case 'w': case 'W': case 'i': case 'I': moveCursor(-2); break;
+      case 's': case 'S': case 'k': case 'K': moveCursor(+2); break;
+      case 'a': case 'A': case 'j': case 'J': moveCursor(-1); break;
+      case 'd': case 'D': case 'l': case 'L': moveCursor(+1); break;
       case 'q': case 'Q': flipPage(-1); break;
       case 'e': case 'E': flipPage(+1); break;
       case '\r': {

@@ -74,8 +74,8 @@ void menuInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': s_sel = (s_sel + kEntries - 1) % kEntries; appmgr::markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % kEntries;            appmgr::markDirty(); break;
+    case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + kEntries - 1) % kEntries; appmgr::markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % kEntries;            appmgr::markDirty(); break;
     case '\r':          openGame(s_sel); break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;

@@ -257,8 +257,8 @@ void onRingKey(char k) {
 
 void onListKey(char k) {
   switch (k) {
-    case 'w': case 'W': s_sel = (s_sel + kLastRow) % (kLastRow + 1); markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % (kLastRow + 1); markDirty(); break;
+    case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + kLastRow) % (kLastRow + 1); markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % (kLastRow + 1); markDirty(); break;
     case '\r':          openEdit(s_sel); break;
     case '\b': case 'q': case 'Q': appmgr::goHome(); break;
     default: break;
@@ -268,10 +268,10 @@ void onListKey(char k) {
 void onEditKey(char k) {
   if (k >= '0' && k <= '9') { typeDigit(k - '0'); return; }   // Zeit direkt tippen
   switch (k) {
-    case 'w': case 'W': s_typeCount = 0; s_sel = (s_sel + F_COUNT - 1) % F_COUNT; markDirty(); break;
-    case 's': case 'S': s_typeCount = 0; s_sel = (s_sel + 1) % F_COUNT; markDirty(); break;
-    case 'a': case 'A': s_typeCount = 0; changeField(s_sel, -1); break;
-    case 'd': case 'D': s_typeCount = 0; changeField(s_sel, +1); break;
+    case 'w': case 'W': case 'i': case 'I': s_typeCount = 0; s_sel = (s_sel + F_COUNT - 1) % F_COUNT; markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_typeCount = 0; s_sel = (s_sel + 1) % F_COUNT; markDirty(); break;
+    case 'a': case 'A': case 'j': case 'J': s_typeCount = 0; changeField(s_sel, -1); break;
+    case 'd': case 'D': case 'l': case 'L': s_typeCount = 0; changeField(s_sel, +1); break;
     case '\r':          s_typeCount = 0; changeField(s_sel, +1); break;
     case '\b': case 'q': case 'Q': saveEdit(); break;   // zurück = speichern
     default: break;

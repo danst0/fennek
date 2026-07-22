@@ -238,10 +238,10 @@ class MapsApp : public App {
   void handleInput(const InputEvent& e) override {
     if (e.type == InputEvent::KEY) {
       switch (e.key) {
-        case 'a': case 'A': panPixels(-VW / 3, 0); break;
-        case 'd': case 'D': panPixels(+VW / 3, 0); break;
-        case 'w': case 'W': panPixels(0, -VH / 3); break;
-        case 's': case 'S': panPixels(0, +VH / 3); break;
+        case 'a': case 'A': case 'j': case 'J': panPixels(-VW / 3, 0); break;
+        case 'd': case 'D': case 'l': case 'L': panPixels(+VW / 3, 0); break;
+        case 'w': case 'W': case 'i': case 'I': panPixels(0, -VH / 3); break;
+        case 's': case 'S': case 'k': case 'K': panPixels(0, +VH / 3); break;
         case '+': case '=': zoomBy(+1); break;
         case '-': case '_': zoomBy(-1); break;
         case '0':           recenterToFix(); break;

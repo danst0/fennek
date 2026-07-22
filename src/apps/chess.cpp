@@ -415,10 +415,10 @@ void setupInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': s_setupSel = (s_setupSel + 3) % 4; appmgr::markDirty(); break;
-    case 's': case 'S': s_setupSel = (s_setupSel + 1) % 4; appmgr::markDirty(); break;
-    case 'a': case 'A':
-    case 'd': case 'D': if (s_setupSel < 3) setupChange(s_setupSel); break;
+    case 'w': case 'W': case 'i': case 'I': s_setupSel = (s_setupSel + 3) % 4; appmgr::markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_setupSel = (s_setupSel + 1) % 4; appmgr::markDirty(); break;
+    case 'a': case 'A': case 'j': case 'J':
+    case 'd': case 'D': case 'l': case 'L': if (s_setupSel < 3) setupChange(s_setupSel); break;
     case '\r':
       if (s_setupSel == 3) newGame();
       else setupChange(s_setupSel);
@@ -566,10 +566,10 @@ void boardInput(const InputEvent& e) {
   }
   int f = s_cursor & 7, r = s_cursor >> 3;
   switch (e.key) {
-    case 'w': case 'W': r = (r + 1) % 8; break;
-    case 's': case 'S': r = (r + 7) % 8; break;
-    case 'a': case 'A': f = (f + 7) % 8; break;
-    case 'd': case 'D': f = (f + 1) % 8; break;
+    case 'w': case 'W': case 'i': case 'I': r = (r + 1) % 8; break;
+    case 's': case 'S': case 'k': case 'K': r = (r + 7) % 8; break;
+    case 'a': case 'A': case 'j': case 'J': f = (f + 7) % 8; break;
+    case 'd': case 'D': case 'l': case 'L': f = (f + 1) % 8; break;
     case '\r': tapSquare(s_cursor); return;
     case 'n': case 'N': s_sub = SETUP; appmgr::markDirty(); return;
     case '\b':

@@ -796,9 +796,9 @@ void onKey(char k) {
   // Wurzelebene: Kategorien durchblättern, Enter/► öffnet.
   if (s_cat < 0) {
     switch (k) {
-      case 'w': case 'W': s_sel = (s_sel + CAT_COUNT - 1) % CAT_COUNT; markDirty(); break;
-      case 's': case 'S': s_sel = (s_sel + 1) % CAT_COUNT; markDirty(); break;
-      case '\r': case 'd': case 'D':
+      case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + CAT_COUNT - 1) % CAT_COUNT; markDirty(); break;
+      case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % CAT_COUNT; markDirty(); break;
+      case '\r': case 'd': case 'D': case 'l': case 'L':
         s_cat = s_sel; s_sel = 0; s_wifiIdx = -1; s_wifiAdding = false; markDirty(); break;
       case '\b': case 'q': case 'Q': appmgr::goHome(); break;
       default: break;
@@ -811,9 +811,9 @@ void onKey(char k) {
     if (inWifiList()) {
       int n = wifiListRows();
       switch (k) {
-        case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
-        case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
-        case '\r': case 'd': case 'D':
+        case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+        case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % n; markDirty(); break;
+        case '\r': case 'd': case 'D': case 'l': case 'L':
           if (wifiIsNewRow(s_sel)) {                    // „+ Neues WLAN" → SSID direkt eingeben
             s_wifiAdding = true; s_wifiIdx = settings::wifiCount(); s_sel = 0; startEdit(ROW_WSSID);
           } else { s_wifiIdx = s_sel; s_sel = 0; markDirty(); }   // Profil öffnen
@@ -827,9 +827,9 @@ void onKey(char k) {
     int n   = kCats[CAT_WIFI].count;
     int row = kCats[CAT_WIFI].rows[s_sel];
     switch (k) {
-      case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
-      case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
-      case '\r': case 'd': case 'D':
+      case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+      case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % n; markDirty(); break;
+      case '\r': case 'd': case 'D': case 'l': case 'L':
         if (rowEditable(row)) startEdit(row);
         else if (row == ROW_WDEL) { settings::wifiRemove(s_wifiIdx); s_wifiIdx = -1; s_sel = 0; markDirty(); }
         break;
@@ -843,10 +843,10 @@ void onKey(char k) {
   int n   = kCats[s_cat].count;
   int row = kCats[s_cat].rows[s_sel];
   switch (k) {
-    case 'w': case 'W': s_sel = (s_sel + n - 1) % n; markDirty(); break;
-    case 's': case 'S': s_sel = (s_sel + 1) % n; markDirty(); break;
-    case 'a': case 'A': changeRow(row, -1); break;
-    case 'd': case 'D': changeRow(row, +1); break;
+    case 'w': case 'W': case 'i': case 'I': s_sel = (s_sel + n - 1) % n; markDirty(); break;
+    case 's': case 'S': case 'k': case 'K': s_sel = (s_sel + 1) % n; markDirty(); break;
+    case 'a': case 'A': case 'j': case 'J': changeRow(row, -1); break;
+    case 'd': case 'D': case 'l': case 'L': changeRow(row, +1); break;
     case '\r':
       if (rowEditable(row)) startEdit(row);
       else if (row == ROW_OTAGO) runOtaAction();

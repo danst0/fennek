@@ -152,8 +152,8 @@ class CalendarApp : public App {
       return;
     }
     switch (e.key) {
-      case 'w': case 'W': moveScroll(-1); break;
-      case 's': case 'S': moveScroll(1);  break;
+      case 'w': case 'W': case 'i': case 'I': moveScroll(-1); break;
+      case 's': case 'S': case 'k': case 'K': moveScroll(1);  break;
       case 'y': case 'Y': requestSync();  break;
       case '\b': case 'q': case 'Q': appmgr::goHome(); break;
       default: break;

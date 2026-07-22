@@ -529,8 +529,8 @@ void deckListInput(const InputEvent& e) {
     return;
   }
   switch (e.key) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(1);  break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(1);  break;
     case '\r':          if (s_deckCount > 0) openDeck(s_sel); else retrySD(); break;
     case '\b':
     case 'q': case 'Q': appmgr::goHome(); break;
@@ -568,8 +568,8 @@ void studyInput(const InputEvent& e) {
       if (!s_revealed) { s_revealed = true; appmgr::markDirty(); }
       else rate(true);
       break;
-    case 'a': case 'A': if (s_revealed) rate(false); break;
-    case 'd': case 'D': if (s_revealed) rate(true);  break;
+    case 'a': case 'A': case 'j': case 'J': if (s_revealed) rate(false); break;
+    case 'd': case 'D': case 'l': case 'L': if (s_revealed) rate(true);  break;
     case '\b':
     case 'q': case 'Q': saveProgress(); s_screen = STATS; appmgr::markDirty(); break;
     default: break;

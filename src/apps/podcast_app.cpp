@@ -348,8 +348,8 @@ void onDetailTouch(int x, int y) {
 
 void onListKey(char k) {
   switch (k) {
-    case 'w': case 'W': moveSel(-1); break;
-    case 's': case 'S': moveSel(+1); break;
+    case 'w': case 'W': case 'i': case 'I': moveSel(-1); break;
+    case 's': case 'S': case 'k': case 'K': moveSel(+1); break;
     case '\r':          if (s_n > 0) enterDetail(s_sel); break;
     case 'y': case 'Y': requestSync(-1); break;
     case '\b': case 'q': case 'Q': appmgr::goHome(); break;
@@ -360,10 +360,10 @@ void onListKey(char k) {
 void onDetailKey(char k) {
   switch (k) {
     case ' ': case '\r': togglePlay(); break;
-    case 'a': case 'A':  audio::seekRel(-30); markDirty(); break;
-    case 'd': case 'D':  audio::seekRel(+30); markDirty(); break;
-    case 'w': case 'W':  audio::volumeUp(); markDirty(); break;
-    case 's': case 'S':  audio::volumeDown(); markDirty(); break;
+    case 'a': case 'A':  case 'j': case 'J':  audio::seekRel(-30); markDirty(); break;
+    case 'd': case 'D':  case 'l': case 'L':  audio::seekRel(+30); markDirty(); break;
+    case 'w': case 'W':  case 'i': case 'I':  audio::volumeUp(); markDirty(); break;
+    case 's': case 'S':  case 'k': case 'K':  audio::volumeDown(); markDirty(); break;
     case 'y': case 'Y':  requestSync(s_openFeed); break;
     case '\b':           s_screen = LIST; markDirty(); break;
     case 'q': case 'Q':  appmgr::goHome(); break;
