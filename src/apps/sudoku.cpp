@@ -3,8 +3,9 @@
 
 // =============================================================================
 // sudoku.cpp — Sudoku-UI (siehe sudoku.h). Logik in sudoku_core.h (host-getestet).
-// 9×9-Gitter à 26 px; Touch-Tap/WASD bewegen den Cursor, Zifferntasten 1–9
-// setzen, 0/Backspace/Mikrofon leeren. Refresh nur pro Zug (E-Ink-Invariante).
+// 9×9-Gitter à 26 px; Touch-Tap/IJKL bewegen den Cursor. Ziffern ohne Alt über
+// das Tastenaufdruck-Numpad W E R / S D F / Z X C = 1..9 (Alt+1..9 zusätzlich).
+// 0/Backspace/Mikrofon leeren. Refresh nur pro Zug (E-Ink-Invariante).
 // =============================================================================
 #include "sudoku.h"
 
@@ -164,21 +165,35 @@ void handleInput(const InputEvent& e) {
   }
 
   int r = s_cursor / 9, c = s_cursor % 9;
-  switch (e.key) {
-    case 'w': case 'W': r = (r + 8) % 9; break;
-    case 's': case 'S': r = (r + 1) % 9; break;
-    case 'a': case 'A': c = (c + 8) % 9; break;
-    case 'd': case 'D': c = (c + 1) % 9; break;
+  char k = e.key;
+  if (k >= 'A' && k <= 'Z') k = k - 'A' + 'a';   // Groß-/Kleinschreibung egal
+  switch (k) {
+    // Cursor: IJKL (rechte Hand) — WSD sind jetzt Ziffern.
+    case 'i': r = (r + 8) % 9; break;
+    case 'k': r = (r + 1) % 9; break;
+    case 'j': c = (c + 8) % 9; break;
+    case 'l': c = (c + 1) % 9; break;
+    // Ziffern ohne Alt: Tastenaufdruck-Numpad W E R / S D F / Z X C = 1..9.
+    case 'w': enterDigit(1); return;
+    case 'e': enterDigit(2); return;
+    case 'r': enterDigit(3); return;
+    case 's': enterDigit(4); return;
+    case 'd': enterDigit(5); return;
+    case 'f': enterDigit(6); return;
+    case 'z': enterDigit(7); return;
+    case 'x': enterDigit(8); return;
+    case 'c': enterDigit(9); return;
+    // Alt-Ebene weiterhin möglich.
     case '1': case '2': case '3': case '4': case '5':
     case '6': case '7': case '8': case '9':
-      enterDigit((uint8_t)(e.key - '0')); return;
+      enterDigit((uint8_t)(k - '0')); return;
     case '0': case '\b': case 0x02:        // 0 / Backspace / Mikrofon = leeren
       enterDigit(0); return;
-    case 'n': case 'N': newGame(); return;
-    case 'm': case 'M': case '+':
+    case 'n': newGame(); return;
+    case 'm': case '+':
       s_diff = (uint8_t)((s_diff + 1) % sudoku::DIFF_COUNT);
       newGame(); return;
-    case 'q': case 'Q': games_app::showMenu(); return;
+    case 'q': games_app::showMenu(); return;
     default: return;
   }
   s_cursor = r * 9 + c;
@@ -196,7 +211,9 @@ void draw(Adafruit_GFX& g) {
   g.setTextColor(GxEPD_BLACK);
   g.setTextSize(1);
   g.setCursor(6, kFooterY);
-  gui::print(g, "1-9 setzen · 0 leeren · N neu · Q Menü");
+  gui::print(g, "IJKL bewegen · 1-9 setzen (ohne Alt)");
+  g.setCursor(6, kFooterY + 11);
+  gui::print(g, "0 leeren · N neu · Q Menü");
 
   if (s_counted) drawOverlay(g);
 }
