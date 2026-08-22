@@ -22,6 +22,20 @@ constexpr int kFullRefreshEvery = 10;
 int  s_partialCount = 0;
 bool s_initialized  = false;
 
+// RST-Puls-Längen (ms) für den Panel-Reset, eskalierend.
+// hibernate() schickt den UC8253 im GDEQ031T10 per Kommando 0x07 in den
+// Controller-Deep-Sleep; da kommt er NUR über einen Hardware-Reset heraus.
+// GxEPD2 setzt danach `_hibernating = false`, egal ob der Puls gewirkt hat —
+// war er zu kurz, ignoriert das schlafende Panel den anschließenden Soft-Reset,
+// BUSY bleibt für immer aktiv und jeder Refresh endet in „Busy Timeout!".
+// Genau so gesehen auf einer T-Deck Pro V1.0 (GitHub-Issue #2): das Panel hing
+// firmwareübergreifend fest, bis es sich nach Stunden selbst entladen hatte.
+// Wir starten deshalb bei 20 ms (GxEPD2-Default: 10, bisher hier: 2) und fassen
+// mit längeren Pulsen nach, falls BUSY nicht freigibt.
+constexpr uint16_t kResetPulseMs[] = {20, 50, 200};
+// Wartezeit auf die BUSY-Freigabe nach dem Reset (Panel meldet sich in ~10 ms).
+constexpr uint32_t kReadyTimeoutMs = 500;
+
 // Wird von GxEPD2 während der ~600 ms BUSY-Wartephase wiederholt aufgerufen.
 // In dieser Phase aktualisiert der E-Ink-Controller die Anzeige INTERN — es
 // läuft KEIN SPI-Verkehr. Wir geben den Bus deshalb kurz frei, damit der
@@ -32,6 +46,30 @@ void einkBusyWait(const void*) {
   vTaskDelay(1);   // dem Audio-Task einen Zug auf dem Bus geben
   spiLock();
 }
+
+// BUSY ist beim GDEQ031T10 active-LOW: HIGH = Panel bereit.
+bool panelReady(uint32_t timeoutMs) {
+  uint32_t t0 = millis();
+  while (digitalRead(PIN_EINK_BUSY) == LOW) {
+    if (millis() - t0 > timeoutMs) return false;
+    delay(2);
+  }
+  return true;
+}
+
+// init() mit eskalierender Reset-Puls-Länge, bis das Panel BUSY freigibt.
+// `initial` = GxEPD2-Semantik: true verwirft den stehenden Bildinhalt,
+// false setzt auf dem angezeigten Bild auf (Wake-from-Deep-Sleep-Muster).
+bool initPanel(bool initial) {
+  for (uint16_t ms : kResetPulseMs) {
+    g_disp.init(115200, initial, ms, false);
+    if (panelReady(kReadyTimeoutMs)) return true;
+    Serial.printf("[EINK] BUSY bleibt aktiv nach %u-ms-Reset — neuer Versuch\n",
+                  (unsigned)ms);
+  }
+  Serial.println("[EINK] Panel antwortet nicht (BUSY aktiv) — fahre trotzdem fort");
+  return false;
+}
 }  // namespace
 
 namespace display {
@@ -40,7 +78,7 @@ void begin() {
   spiLock();
   // Geteilten Bus + 4 MHz für zuverlässige E-Ink-Kommunikation verwenden.
   g_disp.epd2.selectSPI(g_spi, SPISettings(SPI_BUS_HZ, MSBFIRST, SPI_MODE0));
-  g_disp.init(115200, true, 2, false);
+  initPanel(true);
   // Bus während der Panel-BUSY-Phase für den Audio-Task freigeben.
   g_disp.epd2.setBusyCallback(einkBusyWait);
   g_disp.setRotation(0);
@@ -64,7 +102,7 @@ void beginAfterSleep() {
   // initial=false (GxEPD2-Muster „wake from deep sleep"): der Controller wird
   // initialisiert, ohne den stehenden Bildinhalt zu verwerfen — Partial-
   // Refreshes arbeiten danach gegen das angezeigte Schlafbild.
-  g_disp.init(115200, false, 2, false);
+  initPanel(false);
   g_disp.epd2.setBusyCallback(einkBusyWait);
   g_disp.setRotation(0);
   g_disp.setTextColor(GxEPD_BLACK);

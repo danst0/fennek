@@ -106,3 +106,4 @@ Default **„EU/UK Narrow"**: **869,618 MHz, BW 62,5 kHz, SF 8, CR 4/5**, 22 dBm
 6. **Standby-Tests auf Akku:** USB-JTAG-DTR kann GPIO0-Druck als Reset interpretieren.
 7. **Flood statt Zero-Hop für Mesh-Position:** Zero-Hop erreicht 1-Hop-Bridges nicht.
 8. **GPS-Baudrate 38400** (MIA-M10Q) — bei 9600 nur Müll.
+9. **E-Ink-Reset-Puls nicht verkürzen:** `display::hibernate()` schickt den UC8253 per 0x07 in den Controller-Deep-Sleep, aus dem nur ein Hardware-Reset zurückholt. GxEPD2 setzt `_hibernating=false` bedingungslos — ein zu kurzer RST-Puls (früher 2 ms) lässt das Panel schlafen, BUSY bleibt aktiv und jeder Refresh endet in „Busy Timeout!“ (Issue #2, T-Deck Pro V1.0). `initPanel()` in `core/display.cpp` eskaliert deshalb 20/50/200 ms und prüft BUSY nach jedem Versuch.
