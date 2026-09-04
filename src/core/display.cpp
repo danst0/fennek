@@ -4,6 +4,7 @@
 #include "display.h"
 #include "board.h"
 #include "config.h"
+#include "settings.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -21,17 +22,15 @@ namespace {
 constexpr int kFullRefreshEvery = 10;
 int  s_partialCount = 0;
 bool s_initialized  = false;
+// Panel-Init an klemmender BUSY-Leitung gescheitert -> Hardware-Reset wirkt
+// auf diesem Board nicht. hibernate() schaltet daraufhin dauerhaft ab.
+bool s_panelStuck   = false;
 
-// RST-Puls-Längen (ms) für den Panel-Reset, eskalierend.
-// hibernate() schickt den UC8253 im GDEQ031T10 per Kommando 0x07 in den
-// Controller-Deep-Sleep; da kommt er NUR über einen Hardware-Reset heraus.
-// GxEPD2 setzt danach `_hibernating = false`, egal ob der Puls gewirkt hat —
-// war er zu kurz, ignoriert das schlafende Panel den anschließenden Soft-Reset,
-// BUSY bleibt für immer aktiv und jeder Refresh endet in „Busy Timeout!".
-// Genau so gesehen auf einer T-Deck Pro V1.0 (GitHub-Issue #2): das Panel hing
-// firmwareübergreifend fest, bis es sich nach Stunden selbst entladen hatte.
-// Wir starten deshalb bei 20 ms (GxEPD2-Default: 10, bisher hier: 2) und fassen
-// mit längeren Pulsen nach, falls BUSY nicht freigibt.
+// RST-Puls-Längen (ms) für den Panel-Reset, eskalierend. GxEPD2-Default ist
+// 10 ms, hier standen früher 2 ms — zu wenig, um ein zickiges Panel sauber
+// zurückzusetzen. Der Reset ist auch der einzige Weg aus dem Controller-Deep-
+// Sleep (s. hibernate() unten), deshalb fassen wir mit längeren Pulsen nach,
+// falls BUSY nicht freigibt.
 constexpr uint16_t kResetPulseMs[] = {20, 50, 200};
 // Wartezeit auf die BUSY-Freigabe nach dem Reset (Panel meldet sich in ~10 ms).
 constexpr uint32_t kReadyTimeoutMs = 500;
@@ -68,6 +67,7 @@ bool initPanel(bool initial) {
                   (unsigned)ms);
   }
   Serial.println("[EINK] Panel antwortet nicht (BUSY aktiv) — fahre trotzdem fort");
+  s_panelStuck = true;
   return false;
 }
 }  // namespace
@@ -151,10 +151,33 @@ void renderRegion(DrawFn draw, int y, int h) {
 
 void hibernate() {
   if (!s_initialized) return;
+
+  // GxEPD2::hibernate() = powerOff + Kommando 0x07: der UC8253 im GDEQ031T10
+  // geht in den Controller-Deep-Sleep und kommt dort NUR über einen Hardware-
+  // Reset wieder heraus. Auf der T-Deck Pro V1.0 gibt es diesen Weg nicht — die
+  // RST-Leitung zum EPD ist gar nicht verdrahtet (LilyGO definiert für V1.0
+  // BOARD_EPD_RST -1; GPIO 16 ist dort der Helligkeitssensor-Interrupt). Das
+  // Panel bleibt dann firmwareübergreifend mit aktivem BUSY stehen, bis es sich
+  // nach Stunden selbst entladen hat — genau so in GitHub-Issue #2 gesehen.
+  // Keine Puls-Länge der Welt hilft dagegen, also senden wir 0x07 per Default
+  // nicht mehr: powerOff() schaltet den Booster ab, das Bild steht auch so
+  // stromlos weiter, und der Aufwach-Pfad braucht keinen Reset.
+  //
+  // Selbstheilung: Ist das Panel schon einmal nicht zurückgekommen, ist der
+  // Reset auf dieser Hardware wirkungslos — dann das Flag dauerhaft löschen.
+  if (s_panelStuck && settings::einkHibernate()) {
+    settings::setEinkHibernate(false);
+    Serial.println("[EINK] Panel kam nicht aus dem Deep-Sleep — hibernate dauerhaft aus");
+  }
+  const bool deepSleep = settings::einkHibernate() && !s_panelStuck;
+
   spiLock();
-  g_disp.hibernate();   // powerOff + Deep-Sleep-Kommando (Wake via RST)
+  if (deepSleep) g_disp.hibernate();   // 0x07: µA, Wake nur via RST
+  else           g_disp.powerOff();    // Booster aus, Controller bleibt wach
   spiUnlock();
 }
+
+bool panelStuck() { return s_panelStuck; }
 
 int width()  { return g_disp.width(); }
 int height() { return g_disp.height(); }

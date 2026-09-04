@@ -117,6 +117,15 @@ void setFontScale(uint8_t s) {
   s_prefs.putUChar("fscale", s);
 }
 
+bool einkHibernate() {
+  if (!s_open) return false;
+  return s_prefs.getBool("einkhib", false);
+}
+void setEinkHibernate(bool on) {
+  if (!s_open || on == einkHibernate()) return;
+  s_prefs.putBool("einkhib", on);
+}
+
 void lastApp(char* out, size_t n) {
   strncpy(out, s_lastApp, n - 1);
   out[n - 1] = '\0';

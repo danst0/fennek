@@ -40,6 +40,15 @@ void    setLanguage(uint8_t lang);     // schreibt nur bei Änderung
 uint8_t fontScale();
 void    setFontScale(uint8_t s);       // 1..2; schreibt nur bei Änderung
 
+// E-Ink-Controller-Deep-Sleep vor dem Standby (Kommando 0x07 an den UC8253).
+// Spart ein paar µA, braucht zum Aufwecken aber eine verdrahtete RST-Leitung —
+// die T-Deck Pro V1.0 hat keine (LilyGO definiert dort BOARD_EPD_RST -1), das
+// Panel bleibt danach bis zur Selbstentladung haengen (GitHub-Issue #2).
+// Default aus: vor dem Schlafen wird nur der Booster abgeschaltet (powerOff),
+// das Bild steht ohnehin stromlos. Konsole: `eink hib on|off`.
+bool    einkHibernate();               // Default false
+void    setEinkHibernate(bool on);     // schreibt nur bei Änderung
+
 // --- Musik: zuletzt gespielter Track (für Resume) ----------------------------
 // Pfad + Position; leerer Pfad = nichts gespeichert.
 void    lastTrack(char* pathOut, size_t n, uint32_t* posSec);

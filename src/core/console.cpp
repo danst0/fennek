@@ -6,6 +6,7 @@
 #include "core/battery.h"
 #include "core/board.h"
 #include "core/power.h"
+#include "core/display.h"
 #include "core/settings.h"
 #include "apps/mesh_client.h"
 #include "apps/reader_app.h"
@@ -59,6 +60,7 @@ void cmdHelp() {
   Serial.println("[CON]   time sync         - NTP-Sync jetzt erzwingen (WLAN)");
   Serial.println("[CON]   tz <POSIX-TZ>     - Zeitzone setzen (Default Europe/Berlin)");
   Serial.println("[CON]   sleep             - Standby ausloesen (wie Langdruck)");
+  Serial.println("[CON]   eink hib [on|off] - E-Ink-Controller-Deep-Sleep im Standby (Default aus)");
   Serial.println("[CON]   alarm             - Wecker auflisten");
   Serial.println("[CON]   alarm <i> <hh:mm> [tage] - Wecker setzen (tage: einmal|taeglich|mo,di,..)");
   Serial.println("[CON]   alarm <i> off / <i> mode ton|blink|vibra|beides|alle / sound <pfad> / test / stop / snooze");
@@ -724,6 +726,15 @@ void handleLine(char* line) {
     timesync::applyTimezone();
     Serial.printf("[CON] Zeitzone gesetzt: '%s'\n", line + 3);
     cmdTime();
+    return;
+  }
+  if (strncmp(line, "eink hib", 8) == 0) {
+    const char* a = line + 8;
+    while (*a == ' ') a++;
+    if (*a) settings::setEinkHibernate(strcmp(a, "on") == 0 || strcmp(a, "1") == 0);
+    Serial.printf("[CON] E-Ink-Controller-Deep-Sleep: %s%s\n",
+                  settings::einkHibernate() ? "an" : "aus",
+                  display::panelStuck() ? " (Panel-Reset wirkungslos — gesperrt)" : "");
     return;
   }
   if (strcmp(line, "mesh init") == 0)       { ensureMesh(); return; }

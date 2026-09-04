@@ -36,10 +36,19 @@ void render(DrawFn draw, bool full = false);
 // x ist fix 0 / w fix volle Breite (E-Ink verlangt 8er-Ausrichtung in x).
 void renderRegion(DrawFn draw, int y, int h);
 
-// Panel-Controller in seinen eigenen Deep Sleep schicken (µA statt Standby-
-// Strom nach powerOff). Nur unmittelbar vor dem ESP32-Deep-Sleep aufrufen;
-// das stehende Bild bleibt erhalten, beginAfterSleep() weckt per RST wieder.
+// Panel vor dem ESP32-Deep-Sleep stromsparend zurücklassen. Standard ist der
+// blosse powerOff() (Booster aus, Bild steht stromlos weiter) — das kommt ohne
+// Hardware-Reset zurück und funktioniert auf jeder Hardware-Revision.
+// Der eigentliche Controller-Deep-Sleep (Kommando 0x07, spart nochmal ein paar
+// µA) wird nur gesendet, wenn settings::einkHibernate() gesetzt ist; ohne
+// verdrahtete RST-Leitung ist er eine Einbahnstrasse (s. display.cpp).
+// Nur unmittelbar vor dem ESP32-Deep-Sleep aufrufen.
 void hibernate();
+
+// true, sobald ein Panel-Init an einer klemmenden BUSY-Leitung gescheitert ist
+// (Symptom eines nicht wirksamen Hardware-Resets). Setzt hibernate() dauerhaft
+// auf den sicheren powerOff()-Pfad zurück.
+bool panelStuck();
 
 int width();
 int height();
